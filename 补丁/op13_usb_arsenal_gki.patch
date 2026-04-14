@@ -1,0 +1,15 @@
+diff --git a/arch/arm64/configs/gki_defconfig b/arch/arm64/configs/gki_defconfig
+index 4f756dca5e05..b54795af3a71 100644
+--- a/arch/arm64/configs/gki_defconfig
++++ b/arch/arm64/configs/gki_defconfig
+@@ -545,8 +547,10 @@ CONFIG_USB_CONFIGFS=y
+ CONFIG_ANDROID_USB_CONFIGFS_UEVENT=y
+ CONFIG_USB_CONFIGFS_SERIAL=y
+ CONFIG_USB_CONFIGFS_ACM=y
++CONFIG_USB_CONFIGFS_OBEX=y
+ CONFIG_USB_CONFIGFS_NCM=y
+ CONFIG_USB_CONFIGFS_ECM=y
++CONFIG_USB_CONFIGFS_ECM_SUBSET=y
+ CONFIG_USB_CONFIGFS_EEM=y
+ CONFIG_USB_CONFIGFS_MASS_STORAGE=y
+ CONFIG_USB_CONFIGFS_F_FS=y
