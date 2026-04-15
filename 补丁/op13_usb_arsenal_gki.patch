@@ -1,15 +1,35 @@
 diff --git a/arch/arm64/configs/gki_defconfig b/arch/arm64/configs/gki_defconfig
-index 4f756dca5e05..b54795af3a71 100644
+index 4f756dca5e05..f3d69fff3e2c 100644
 --- a/arch/arm64/configs/gki_defconfig
 +++ b/arch/arm64/configs/gki_defconfig
-@@ -545,8 +547,10 @@ CONFIG_USB_CONFIGFS=y
+@@ -539,14 +541,18 @@ CONFIG_USB_STORAGE=y
+ CONFIG_USB_UAS=y
+ CONFIG_USB_DWC3=y
+ CONFIG_USB_SERIAL=m
++CONFIG_USB_SERIAL_CH341=m
+ CONFIG_USB_SERIAL_FTDI_SIO=m
++CONFIG_USB_SERIAL_PL2303=m
+ CONFIG_USB_GADGET=y
+ CONFIG_USB_CONFIGFS=y
  CONFIG_ANDROID_USB_CONFIGFS_UEVENT=y
  CONFIG_USB_CONFIGFS_SERIAL=y
  CONFIG_USB_CONFIGFS_ACM=y
-+CONFIG_USB_CONFIGFS_OBEX=y
  CONFIG_USB_CONFIGFS_NCM=y
  CONFIG_USB_CONFIGFS_ECM=y
-+CONFIG_USB_CONFIGFS_ECM_SUBSET=y
  CONFIG_USB_CONFIGFS_EEM=y
  CONFIG_USB_CONFIGFS_MASS_STORAGE=y
  CONFIG_USB_CONFIGFS_F_FS=y
+diff --git a/modules.bzl b/modules.bzl
+index e6d7523a9c84..b4d6aa7b5b8b 100644
+--- a/modules.bzl
++++ b/modules.bzl
+@@ -44,7 +48,9 @@ _COMMON_GKI_MODULES_LIST = [
+     "drivers/ptp/ptp.ko",
+     "drivers/usb/class/cdc-acm.ko",
+     "drivers/usb/mon/usbmon.ko",
++    "drivers/usb/serial/ch341.ko",
+     "drivers/usb/serial/ftdi_sio.ko",
++    "drivers/usb/serial/pl2303.ko",
+     "drivers/usb/serial/usbserial.ko",
+     "drivers/virtio/virtio_balloon.ko",
+     "drivers/virtio/virtio_pci.ko",
