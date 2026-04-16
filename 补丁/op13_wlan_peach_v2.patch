@@ -45,7 +45,10 @@
 +  mkdir -p ${ANDROID_KERNEL_OUT}/vendor_dlkm
 +
 +  WLAN_PLATFORM_KOS="cnss2.ko icnss2.ko cnss_nl.ko cnss_plat_ipc_qmi_svc.ko cnss_prealloc.ko cnss_utils.ko wlan_firmware_service.ko"
-+  WLAN_QCACLD_KOS="qca_cld3_kiwi_v2.ko"
++  WLAN_QCACLD_KOS="qca_cld3_peach_v2.ko"
++
++  find ${ANDROID_KP_OUT_DIR}/dist -maxdepth 1 -type f -name 'qca_cld3_*.ko' -delete
++  find ${ANDROID_KERNEL_OUT}/vendor_dlkm -maxdepth 1 -type f -name 'qca_cld3_*.ko' -delete
 +
 +  for ko in ${WLAN_PLATFORM_KOS}; do
 +    src=${ANDROID_EXT_MODULES_COMMON_OUT}/vendor/qcom/opensource/wlan/platform/${ko}
@@ -63,6 +66,14 @@
 +    fi
 +  done
 +
++  if [ -f ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load ]; then
++    grep -v 'vendor/qcom/opensource/wlan/qcacld-3.0/qca_cld3_' \
++      ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load > \
++      ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load.tmp
++    mv ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load.tmp \
++      ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load
++  fi
++
 +  cat >> ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load <<'EOF'
 +vendor/qcom/opensource/wlan/platform/cnss2.ko
 +vendor/qcom/opensource/wlan/platform/icnss2.ko
@@ -71,7 +82,7 @@
 +vendor/qcom/opensource/wlan/platform/cnss_prealloc.ko
 +vendor/qcom/opensource/wlan/platform/cnss_utils.ko
 +vendor/qcom/opensource/wlan/platform/wlan_firmware_service.ko
-+vendor/qcom/opensource/wlan/qcacld-3.0/qca_cld3_kiwi_v2.ko
++vendor/qcom/opensource/wlan/qcacld-3.0/qca_cld3_peach_v2.ko
 +EOF
 +  sort -u ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load -o ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load
 +  cp ${ANDROID_KP_OUT_DIR}/dist/vendor_dlkm.modules.load ${ANDROID_KERNEL_OUT}/vendor_dlkm/modules.load

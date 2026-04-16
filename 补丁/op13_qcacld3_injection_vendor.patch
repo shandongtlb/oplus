@@ -119,10 +119,10 @@ index 336d32f027d3d1244da96909a9bcbea20f40f276..0c61c8a1d6b71398ccd70fe7eb4d61d6
  CONFIG_FEATURE_MSCS=y
  CONFIG_FEATURE_NO_DBS_INTRABAND_MCC_SUPPORT=y
  CONFIG_FEATURE_OEM_DATA=y
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_kiwi-v2_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_kiwi-v2_defconfig
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig
 index f4a39178633dbe2920fd9a499e9620d1dac79c47..9b749e05b58c27775eb9e3f2bd4210d406fb4f33 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_kiwi-v2_defconfig
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_kiwi-v2_defconfig
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig
 @@ -86,6 +86,7 @@ CONFIG_FEATURE_HTC_CREDIT_HISTORY=y
  CONFIG_FEATURE_INTEROP_ISSUES_AP=y
  CONFIG_FEATURE_MEMDUMP_ENABLE=y

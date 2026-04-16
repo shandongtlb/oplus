@@ -9,7 +9,7 @@ Relevant remote commits:
 Post-processing:
 - Bundled .ko files were copied to /tmp/op13_usb_arsenal_strip on the NUC
 - Stripped with llvm-objcopy --strip-debug from clang-r510928
-- Strip reduces size substantially, especially qca_cld3_kiwi_v2.ko
+- Strip reduces size substantially, especially qca_cld3_peach_v2.ko
 
 Bundled modules:
 - system_dlkm/lib/modules/ch341.ko
@@ -23,7 +23,7 @@ Bundled modules:
 - vendor_dlkm/lib/modules/cnss_utils.ko
 - vendor_dlkm/lib/modules/cnss_plat_ipc_qmi_svc.ko
 - vendor_dlkm/lib/modules/wlan_firmware_service.ko
-- vendor_dlkm/lib/modules/qca_cld3_kiwi_v2.ko
+- vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko
 - vendor_dlkm/lib/modules/zd1201.ko
 - vendor_dlkm/lib/modules/rt2x00lib.ko
 - vendor_dlkm/lib/modules/rt2x00usb.ko

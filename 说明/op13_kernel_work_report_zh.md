@@ -7,7 +7,7 @@
 1. 连接并验证远端编译环境。
 2. 分析并验证 OnePlus 13 `sun perf` 内核编译链。
 3. 将 `vendor/qcom/opensource/wlan` 的 Bazel 构建接入主构建流程。
-4. 将 `kiwi_v2` 对应的 `qcacld3` 模块纳入 `vendor_dlkm` 产物链。
+4. 将运行机实际使用的 `peach_v2` 对应 `qcacld3` 模块纳入 `vendor_dlkm` 产物链。
 5. 研究并应用 Nethunter 的 wifi injection 补丁。
 6. 启用 `rt3070l` 对应的 `rt2800usb/rt2x00usb` USB 无线网卡支持。
 7. 导出补丁、提交 git、回退局部尝试改动，并做多轮编译验证。
@@ -178,7 +178,7 @@ Manifest 指向：
 - 不带 `TARGET_BOARD_PLATFORM=sun` 时，容易回退到 legacy make
 - 带上 `ENABLE_DDK_BUILD=true` 和 `TARGET_BOARD_PLATFORM=sun` 后，WLAN Bazel 目标可以成功编译
 
-### 5.6 `kiwi_v2` 机型收敛
+### 5.6 `peach_v2` 机型收敛修正
 
 `qcacld-3.0` 一次会产出多个 SoC/射频变体：
 
@@ -188,16 +188,23 @@ Manifest 指向：
 - `qca_cld3_wcn7750.ko`
 - `qca_cld3_kiwi_v2.ko`
 
-用户确认当前目标为：
+初始安装补丁曾假设当前目标为：
 
 - `kiwi_v2`
 
-因此做了两件事：
+但设备端后续运行时检查确认：
+
+- `/proc/modules` 实际加载的是 `qca_cld3_peach_v2`
+- `/vendor_dlkm/lib/modules` 同时存在 `peach` / `peach_v2` / `kiwi_v2`
+- `modules.load` 中也列入了多个 `qca_cld3_*` 变体
+
+因此后续修正为：
 
 1. 安装阶段只保留：
-   - `qca_cld3_kiwi_v2.ko`
-2. 在 `vendor_dlkm.modules.load` 中只追加：
-   - `vendor/qcom/opensource/wlan/qcacld-3.0/qca_cld3_kiwi_v2.ko`
+   - `qca_cld3_peach_v2.ko`
+2. 安装前清理旧的 `qca_cld3_*.ko`
+3. 在 `vendor_dlkm.modules.load` 中移除旧的 `qca_cld3_*` 项后，只追加：
+   - `vendor/qcom/opensource/wlan/qcacld-3.0/qca_cld3_peach_v2.ko`
 
 ### 5.7 最终结果
 
@@ -210,7 +217,7 @@ Manifest 指向：
 - `cnss_utils.ko`
 - `cnss_plat_ipc_qmi_svc.ko`
 - `wlan_firmware_service.ko`
-- `qca_cld3_kiwi_v2.ko`
+- `qca_cld3_peach_v2.ko`
 
 都进入了：
 
@@ -219,7 +226,7 @@ Manifest 指向：
 
 对应补丁：
 
-- `op13_wlan_kiwi_v2.patch`
+- `op13_wlan_peach_v2.patch`
 
 ---
 
@@ -543,10 +550,10 @@ ERROR! Defconfig fragment did not apply as expected
 
 ## 9. 关键文件清单
 
-### 9.1 WLAN / `kiwi_v2` 接入
+### 9.1 WLAN / `peach_v2` 接入
 
 - `kernel_platform/build/android/prepare_vendor.sh`
-- `op13_wlan_kiwi_v2.patch`
+- `op13_wlan_peach_v2.patch`
 
 ### 9.2 wifi injection
 
@@ -571,7 +578,7 @@ ERROR! Defconfig fragment did not apply as expected
 1. 远端编译环境已打通
 2. `sun perf` 基础内核编译可稳定成功
 3. WLAN Bazel 构建已接入主流程
-4. `kiwi_v2` 对应 `qcacld3` 模块已正确打包进入 `vendor_dlkm`
+4. 运行机实际使用的 `peach_v2` 对应 `qcacld3` 模块已正确纳入 `vendor_dlkm` 方案
 5. Nethunter wifi injection 驱动补丁已应用并通过完整编译
 6. `rt3070l` 对应 `rt2800usb/rt2x00usb` 模块已成功编译并产出
 
@@ -618,4 +625,3 @@ ERROR! Defconfig fragment did not apply as expected
    - 单独验证 `rt3070l` 模块在设备端 `insmod/modprobe` 的实际行为
    - 检查 `vendor_dlkm.img` 是否已打包包含对应模块
    - 再决定是否保留 ABI/LED 额外导出路线
-

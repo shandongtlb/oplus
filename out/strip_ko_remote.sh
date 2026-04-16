@@ -13,7 +13,7 @@ cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/cnss_utils.ko "$W
 cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/cnss2.ko "$WORK/vendor_dlkm/"
 cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/icnss2.ko "$WORK/vendor_dlkm/"
 cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/mac80211.ko "$WORK/vendor_dlkm/"
-cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/qca_cld3_kiwi_v2.ko "$WORK/vendor_dlkm/"
+cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/qca_cld3_peach_v2.ko "$WORK/vendor_dlkm/"
 cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/rt2800lib.ko "$WORK/vendor_dlkm/"
 cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/rt2800usb.ko "$WORK/vendor_dlkm/"
 cp /root/oneplus13-kernel-b/device/qcom/sun-kernel/vendor_dlkm/rt2x00lib.ko "$WORK/vendor_dlkm/"
@@ -26,4 +26,4 @@ find "$WORK" -type f -name '*.ko' -print0 | xargs -0 -n 1 "$TOOL" --strip-debug
 printf 'after\n'
 find "$WORK" -type f -name '*.ko' -printf '%P %s\n' | sort
 printf 'modinfo\n'
-modinfo "$WORK/vendor_dlkm/qca_cld3_kiwi_v2.ko" | sed -n '1,12p'
+modinfo "$WORK/vendor_dlkm/qca_cld3_peach_v2.ko" | sed -n '1,12p'

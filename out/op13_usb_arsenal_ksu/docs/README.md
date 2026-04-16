@@ -10,7 +10,7 @@ Build markers:
 Included modules:
 - `system_dlkm`: `ch341.ko`, `pl2303.ko`
 - `vendor_dlkm`: `cfg80211.ko`, `mac80211.ko`
-- `vendor_dlkm`: `cnss2.ko`, `icnss2.ko`, `cnss_nl.ko`, `cnss_prealloc.ko`, `cnss_utils.ko`, `cnss_plat_ipc_qmi_svc.ko`, `wlan_firmware_service.ko`, `qca_cld3_kiwi_v2.ko`
+- `vendor_dlkm`: `cnss2.ko`, `icnss2.ko`, `cnss_nl.ko`, `cnss_prealloc.ko`, `cnss_utils.ko`, `cnss_plat_ipc_qmi_svc.ko`, `wlan_firmware_service.ko`, `qca_cld3_peach_v2.ko`
 - `vendor_dlkm`: `zd1201.ko`, `rt2x00lib.ko`, `rt2x00usb.ko`, `rt2800lib.ko`, `rt2800usb.ko`
 
 Boot-time load flow:

@@ -12,7 +12,7 @@ This note only keeps items that are realistic when:
 
 Confirmed completed in the current OP13 work:
 
-- `qcacld3` `kiwi_v2` integration into `vendor_dlkm`
+- `qcacld3` `peach_v2` integration into `vendor_dlkm`
 - mac80211 / monitor / injection related porting
 - `rtl8187` and `zd1211rw` injection driver tweaks
 - `rt2800usb/rt2x00usb` support in `vendor_dlkm`

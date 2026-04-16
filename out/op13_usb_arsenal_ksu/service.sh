@@ -92,9 +92,9 @@ for delay in 8 16; do
   load_module rt2800lib "$MODDIR/vendor_dlkm/lib/modules/rt2800lib.ko" /vendor_dlkm/lib/modules/rt2800lib.ko
   load_module rt2x00usb "$MODDIR/vendor_dlkm/lib/modules/rt2x00usb.ko" /vendor_dlkm/lib/modules/rt2x00usb.ko
   load_module rt2800usb "$MODDIR/vendor_dlkm/lib/modules/rt2800usb.ko" /vendor_dlkm/lib/modules/rt2800usb.ko
-  load_module qca_cld3_kiwi_v2 "$MODDIR/vendor_dlkm/lib/modules/qca_cld3_kiwi_v2.ko" /vendor_dlkm/lib/modules/qca_cld3_kiwi_v2.ko
+  load_module qca_cld3_peach_v2 "$MODDIR/vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko" /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko
 
-  if is_loaded ch341 && is_loaded pl2303 && is_loaded zd1201 && is_loaded rt2800usb && is_loaded qca_cld3_kiwi_v2; then
+  if is_loaded ch341 && is_loaded pl2303 && is_loaded zd1201 && is_loaded rt2800usb && is_loaded qca_cld3_peach_v2; then
     log_i "all target modules are present"
     exit 0
   fi

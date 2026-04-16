@@ -5,7 +5,8 @@ This checklist is for validating the patched OP13 kernel on a real device.
 ## 1. Confirm the New WLAN Module Is Installed
 
 Check:
-- the deployed WLAN module is the new `qca_cld3_kiwi_v2.ko`
+- the deployed WLAN module is the new `qca_cld3_peach_v2.ko`
+- `/proc/modules` shows `qca_cld3_peach_v2` as the active qcacld variant
 - the module timestamp/version matches the newly built output
 - boot logs show the expected WLAN driver loading path
 
@@ -13,13 +14,16 @@ Suggested checks:
 ```sh
 uname -a
 lsmod | grep -i qca
+cat /proc/modules | grep qca_cld3
 dmesg | grep -i -E 'qca|qcacld|wlan|cnss'
-modinfo /vendor_dlkm/lib/modules/qca_cld3_kiwi_v2.ko 2>/dev/null
-strings /vendor_dlkm/lib/modules/qca_cld3_kiwi_v2.ko 2>/dev/null | grep -i 'legacy injection'
+cat /vendor_dlkm/lib/modules/modules.load 2>/dev/null | grep qca_cld3
+modinfo /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko 2>/dev/null
+strings /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko 2>/dev/null | grep -i 'legacy injection'
 ```
 
 Expected:
 - the module is present
+- `qca_cld3_peach_v2` is the one that ends up loaded
 - the module loads normally
 - no immediate load crash or unresolved symbol errors
 
