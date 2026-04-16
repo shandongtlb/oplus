@@ -1,5 +1,5 @@
---- a/kernel_platform/build/android/prepare_vendor.sh
-+++ b/kernel_platform/build/android/prepare_vendor.sh
+--- a/kernel_platform/build/kernel/android/prepare_vendor.sh
++++ b/kernel_platform/build/kernel/android/prepare_vendor.sh
 @@ -582,6 +582,82 @@
  
    ################################################################################
