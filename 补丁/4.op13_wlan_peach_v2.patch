@@ -1,9 +1,13 @@
+diff --git a/kernel_platform/build/kernel/android/prepare_vendor.sh b/kernel_platform/build/kernel/android/prepare_vendor.sh
+index a1b39fb5..3aea297d 100755
 --- a/kernel_platform/build/kernel/android/prepare_vendor.sh
 +++ b/kernel_platform/build/kernel/android/prepare_vendor.sh
-@@ -582,6 +582,82 @@
+@@ -580,6 +580,93 @@ if [ -n "${ANDROID_PRODUCT_OUT}" ] && [ -n "${ANDROID_BUILD_TOP}" ]; then
+   )
+   echo "kpl-time-check setting up Android tree end $(date +%H:%M:%S)"
  
-   ################################################################################
-   echo
++  ################################################################################
++  echo
 +  echo "  Building WLAN platform modules"
 +  echo "kpl-time-check Building WLAN platform start $(date +%H:%M:%S)"
 +  (
@@ -89,8 +93,6 @@
 +
 +  echo "kpl-time-check Installing WLAN modules end $(date +%H:%M:%S)"
 +
-+  ################################################################################
-+  echo
+   ################################################################################
+   echo
    if [ "${RECOMPILE_TECHPACK_DTBO}" != "0" ]; then
-     echo "  Compiling vendor devicetree overlays"
-     echo "kpl-time-check Compiling vendor devicetree start $(date +%H:%M:%S)"

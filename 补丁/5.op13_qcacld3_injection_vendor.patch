@@ -1,4 +1,4 @@
-﻿diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild b/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild b/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
 index 05eb992b2e7473837d619a76fbd5d87d6d1325d2..a53b133a3d49b24b8e6367919ec14169e998f55c 100755
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
