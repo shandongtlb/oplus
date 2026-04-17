@@ -16,7 +16,11 @@ Included modules:
 Boot-time load flow:
 - Reuse stock low-level dependency modules when present: `usbserial`, `rfkill`, `libarc4`
 - Prefer bundled vendor WLAN modules from this module directory: `cfg80211/mac80211/cnss/qca_cld3`
+- If `firmware_class.path` is empty, set it to the module's bundled `vendor/firmware` directory before loading USB Wi-Fi drivers
 - Then load the bundled USB add-on drivers
+
+Runtime note:
+- Seeing `rt2800*.ko` in `/proc/modules` but not under `/vendor_dlkm/lib/modules` is expected for this package when the ROM does not magic-mount `vendor_dlkm`; the service loads them directly from the module-private path.
 
 Important limitations:
 - This package does not replace `boot.img` or the running kernel.

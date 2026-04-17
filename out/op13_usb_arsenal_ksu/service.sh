@@ -11,6 +11,40 @@ log_e() {
   log -t "$LOGTAG" "E: $*"
 }
 
+configure_firmware_path() {
+  param=/sys/module/firmware_class/parameters/path
+  firmware_dir="$MODDIR/vendor/firmware"
+
+  if [ ! -d "$firmware_dir" ]; then
+    log_i "no bundled firmware directory at $firmware_dir"
+    return 0
+  fi
+
+  if [ ! -e "$param" ]; then
+    log_i "firmware_class path parameter is unavailable"
+    return 0
+  fi
+
+  current=$(cat "$param" 2>/dev/null)
+  if [ "$current" = "$firmware_dir" ]; then
+    log_i "firmware search path already set to $firmware_dir"
+    return 0
+  fi
+
+  if [ -n "$current" ]; then
+    log_i "preserving existing firmware search path: $current"
+    return 0
+  fi
+
+  if printf '%s' "$firmware_dir" >"$param" 2>/dev/null; then
+    log_i "firmware search path -> $firmware_dir"
+    return 0
+  fi
+
+  log_e "failed to set firmware search path -> $firmware_dir"
+  return 1
+}
+
 is_loaded() {
   grep -q "^$1 " /proc/modules 2>/dev/null
 }
@@ -70,6 +104,8 @@ load_module() {
 
 for delay in 8 16; do
   sleep "$delay"
+
+  configure_firmware_path
 
   load_module rfkill /system_dlkm/lib/modules/rfkill.ko
   load_module libarc4 /system_dlkm/lib/modules/libarc4.ko
