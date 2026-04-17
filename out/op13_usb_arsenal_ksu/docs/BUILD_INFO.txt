@@ -1,5 +1,5 @@
 Remote host: 39.99.33.163:7222
-Remote tree: /root/oneplus13-kernel-b
+Remote tree: /root/oneplus13_src
 
 Relevant remote commits:
 - kernel_platform/msm-kernel: bb0d8f037ce5 wireless: enable rt3070 usb support
