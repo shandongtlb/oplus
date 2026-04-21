@@ -1,15 +1,24 @@
+diff --git a/arch/arm64/configs/vendor/sun_perf.config b/arch/arm64/configs/vendor/sun_perf.config
 --- a/arch/arm64/configs/vendor/sun_perf.config
 +++ b/arch/arm64/configs/vendor/sun_perf.config
-@@ -410,6 +410,20 @@
+@@ -101,8 +101,9 @@
+ # CONFIG_MAC80211_LEDS is not set
+ # CONFIG_MAC80211_MESH is not set
+ # CONFIG_MAC80211_MESSAGE_TRACING is not set
+-CONFIG_MAC80211_RC_DEFAULT=""
+-# CONFIG_MAC80211_RC_MINSTREL is not set
++CONFIG_MAC80211_RC_MINSTREL=y
++CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
++CONFIG_MAC80211_RC_DEFAULT="minstrel_ht"
+ CONFIG_MAX31760_FAN_CONTROLLER=m
+ CONFIG_MEM_SHARE_QMI_SERVICE=m
+ CONFIG_MFD_I2C_PMIC=m
+@@ -410,8 +411,17 @@
  CONFIG_USB_REDRIVER_NB7VPQ904M=m
  CONFIG_USB_REPEATER=m
  CONFIG_USB_XHCI_SIDEBAND=m
 +CONFIG_WLAN_VENDOR_RALINK=y
 +CONFIG_RT2X00=m
-+CONFIG_MAC80211_RC_MINSTREL=y
-+CONFIG_MAC80211_RC_MINSTREL_HT=y
-+CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
-+CONFIG_MAC80211_RC_DEFAULT="minstrel_ht"
 +CONFIG_RT2800USB=m
 +CONFIG_RT2800USB_RT33XX=y
 +CONFIG_RT2800USB_RT35XX=y
@@ -20,6 +29,9 @@
  # CONFIG_VIDEO_QCOM_VENUS is not set
  CONFIG_VIRT_DRIVERS=y
  
+ CONFIG_OPLUS_CAMERA_AW37004=m
+ 
+diff --git a/drivers/net/wireless/ralink/rt2x00/Kconfig b/drivers/net/wireless/ralink/rt2x00/Kconfig
 --- a/drivers/net/wireless/ralink/rt2x00/Kconfig
 +++ b/drivers/net/wireless/ralink/rt2x00/Kconfig
 @@ -251,7 +251,7 @@
@@ -31,6 +43,7 @@
  
  config RT2X00_LIB_DEBUGFS
  	bool "Ralink debugfs support"
+diff --git a/sun.bzl b/sun.bzl
 --- a/sun.bzl
 +++ b/sun.bzl
 @@ -140,6 +140,10 @@
