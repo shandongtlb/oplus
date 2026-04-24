@@ -44,6 +44,21 @@ is_loaded() {
   grep -q "^$1 " /proc/modules 2>/dev/null
 }
 
+wait_until_unloaded() {
+  name="$1"
+  retries="${2:-20}"
+
+  while [ "$retries" -gt 0 ]; do
+    if ! is_loaded "$name"; then
+      return 0
+    fi
+    sleep 1
+    retries=$((retries - 1))
+  done
+
+  return 1
+}
+
 resolve_path() {
   leaf="$1"
   shift
@@ -105,8 +120,12 @@ unload_module() {
   fi
 
   if rmmod "$name" 2>/dev/null; then
-    log_i "unloaded $name"
-    return 0
+    if wait_until_unloaded "$name" 15; then
+      log_i "unloaded $name"
+      return 0
+    fi
+    log_e "$name rmmod returned, but module is still present"
+    return 1
   fi
 
   log_e "failed to unload $name"
@@ -130,6 +149,11 @@ wifi_is_enabled() {
   return 1
 }
 
+wifi_scan_always_available() {
+  state=$(settings get global wifi_scan_always_enabled 2>/dev/null || true)
+  [ "$state" = "1" ]
+}
+
 set_wifi_disabled() {
   svc wifi disable 2>/dev/null || cmd wifi set-wifi-enabled disabled 2>/dev/null || true
 }
@@ -138,15 +162,86 @@ set_wifi_enabled() {
   svc wifi enable 2>/dev/null || cmd wifi set-wifi-enabled enabled 2>/dev/null || true
 }
 
+set_wifi_scan_disabled() {
+  settings put global wifi_scan_always_enabled 0 2>/dev/null || true
+}
+
+set_wifi_scan_enabled() {
+  settings put global wifi_scan_always_enabled 1 2>/dev/null || true
+}
+
+process_running() {
+  ps -A 2>/dev/null | grep -q "[[:space:]]$1\$"
+}
+
+stop_wifi_userspace() {
+  for svc in hostapd wpa_supplicant wificond; do
+    setprop ctl.stop "$svc" 2>/dev/null || stop "$svc" 2>/dev/null || true
+  done
+  sleep 1
+}
+
+start_wifi_userspace() {
+  for svc in wificond; do
+    setprop ctl.start "$svc" 2>/dev/null || start "$svc" 2>/dev/null || true
+  done
+}
+
+wait_for_process() {
+  name="$1"
+  retries="${2:-10}"
+
+  while [ "$retries" -gt 0 ]; do
+    if process_running "$name"; then
+      return 0
+    fi
+    sleep 1
+    retries=$((retries - 1))
+  done
+
+  return 1
+}
+
+wait_for_wifi_to_quiesce() {
+  retries=20
+
+  while [ "$retries" -gt 0 ]; do
+    if ! process_running wificond && \
+       ! process_running wpa_supplicant && \
+       ! process_running hostapd && \
+       ! is_loaded qca_cld3_peach_v2; then
+      return 0
+    fi
+    sleep 1
+    retries=$((retries - 1))
+  done
+
+  return 1
+}
+
 reload_module_stack() {
   wifi_was_enabled=0
+  scan_was_enabled=0
 
   if wifi_is_enabled; then
     wifi_was_enabled=1
     log_i "wifi is enabled, disabling before module switch"
-    set_wifi_disabled
-    sleep 3
+  else
+    log_i "forcing wifi disabled before module switch"
   fi
+
+  if wifi_scan_always_available; then
+    scan_was_enabled=1
+    log_i "disabling wifi scan always available before module switch"
+    set_wifi_scan_disabled
+  fi
+
+  set_wifi_disabled
+  stop_wifi_userspace
+  if ! wait_for_wifi_to_quiesce; then
+    log_e "wifi stack did not quiesce after disable request"
+  fi
+  sleep 2
 
   unload_module qca_cld3_peach_v2 || true
   unload_module zd1201 || true
@@ -168,9 +263,20 @@ reload_module_stack() {
   load_module rt2x00usb "$MODDIR/vendor_dlkm/lib/modules/rt2x00usb.ko" /vendor_dlkm/lib/modules/rt2x00usb.ko || true
   load_module rt2800usb "$MODDIR/vendor_dlkm/lib/modules/rt2800usb.ko" /vendor_dlkm/lib/modules/rt2800usb.ko || true
 
+  start_wifi_userspace
+  if ! wait_for_process wificond 10; then
+    log_e "wificond did not become ready after module switch"
+  fi
+
   if [ "$wifi_was_enabled" -eq 1 ]; then
+    sleep 2
     log_i "re-enabling wifi after module switch"
     set_wifi_enabled
+  fi
+
+  if [ "$scan_was_enabled" -eq 1 ]; then
+    log_i "restoring wifi scan always available"
+    set_wifi_scan_enabled
   fi
 
   return 0
