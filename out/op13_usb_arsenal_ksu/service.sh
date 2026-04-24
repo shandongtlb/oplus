@@ -2,6 +2,8 @@
 
 MODDIR=${0%/*}
 LOGTAG=op13_usb_arsenal
+STAGED_FW_DIR=/mnt/vendor/persist/copy
+STAGED_FW_FILE=$STAGED_FW_DIR/rt2870.bin
 
 log_i() {
   log -t "$LOGTAG" "$*"
@@ -11,37 +13,30 @@ log_e() {
   log -t "$LOGTAG" "E: $*"
 }
 
-configure_firmware_path() {
-  param=/sys/module/firmware_class/parameters/path
-  firmware_dir="$MODDIR/vendor/firmware"
+stage_usb_firmware() {
+  src="$MODDIR/vendor/firmware/rt2870.bin"
 
-  if [ ! -d "$firmware_dir" ]; then
-    log_i "no bundled firmware directory at $firmware_dir"
+  if [ ! -f "$src" ]; then
+    log_i "no bundled rt2870.bin at $src"
     return 0
   fi
 
-  if [ ! -e "$param" ]; then
-    log_i "firmware_class path parameter is unavailable"
+  if ! mkdir -p "$STAGED_FW_DIR" 2>/dev/null; then
+    log_e "failed to create firmware staging dir $STAGED_FW_DIR"
+    return 1
+  fi
+
+  if [ -f "$STAGED_FW_FILE" ] && cmp -s "$src" "$STAGED_FW_FILE" 2>/dev/null; then
+    log_i "rt2870.bin already staged at $STAGED_FW_FILE"
     return 0
   fi
 
-  current=$(cat "$param" 2>/dev/null)
-  if [ "$current" = "$firmware_dir" ]; then
-    log_i "firmware search path already set to $firmware_dir"
+  if install -m 0644 "$src" "$STAGED_FW_FILE" 2>/dev/null; then
+    log_i "staged rt2870.bin -> $STAGED_FW_FILE"
     return 0
   fi
 
-  if [ -n "$current" ]; then
-    log_i "preserving existing firmware search path: $current"
-    return 0
-  fi
-
-  if printf '%s' "$firmware_dir" >"$param" 2>/dev/null; then
-    log_i "firmware search path -> $firmware_dir"
-    return 0
-  fi
-
-  log_e "failed to set firmware search path -> $firmware_dir"
+  log_e "failed to stage rt2870.bin -> $STAGED_FW_FILE"
   return 1
 }
 
@@ -102,10 +97,87 @@ load_module() {
   return 1
 }
 
+unload_module() {
+  name="$1"
+
+  if ! is_loaded "$name"; then
+    return 0
+  fi
+
+  if rmmod "$name" 2>/dev/null; then
+    log_i "unloaded $name"
+    return 0
+  fi
+
+  log_e "failed to unload $name"
+  return 1
+}
+
+wifi_is_enabled() {
+  state=$(settings get global wifi_on 2>/dev/null || true)
+  if [ "$state" = "1" ]; then
+    return 0
+  fi
+
+  if cmd wifi status 2>/dev/null | grep -qi 'enabled'; then
+    return 0
+  fi
+
+  if dumpsys wifi 2>/dev/null | grep -q 'Wi-Fi is enabled'; then
+    return 0
+  fi
+
+  return 1
+}
+
+set_wifi_disabled() {
+  svc wifi disable 2>/dev/null || cmd wifi set-wifi-enabled disabled 2>/dev/null || true
+}
+
+set_wifi_enabled() {
+  svc wifi enable 2>/dev/null || cmd wifi set-wifi-enabled enabled 2>/dev/null || true
+}
+
+reload_module_stack() {
+  wifi_was_enabled=0
+
+  if wifi_is_enabled; then
+    wifi_was_enabled=1
+    log_i "wifi is enabled, disabling before module switch"
+    set_wifi_disabled
+    sleep 3
+  fi
+
+  unload_module qca_cld3_peach_v2 || true
+  unload_module zd1201 || true
+  unload_module rt2800usb || true
+  unload_module rt2800lib || true
+  unload_module rt2x00usb || true
+  unload_module rt2x00lib || true
+  unload_module mac80211 || true
+  unload_module cfg80211 || true
+
+  sleep 2
+
+  load_module cfg80211 "$MODDIR/vendor_dlkm/lib/modules/cfg80211.ko" /vendor_dlkm/lib/modules/cfg80211.ko || return 1
+  load_module mac80211 "$MODDIR/vendor_dlkm/lib/modules/mac80211.ko" /vendor_dlkm/lib/modules/mac80211.ko || return 1
+  load_module qca_cld3_peach_v2 "$MODDIR/vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko" /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko || return 1
+  load_module zd1201 "$MODDIR/vendor_dlkm/lib/modules/zd1201.ko" /vendor_dlkm/lib/modules/zd1201.ko || true
+  load_module rt2x00lib "$MODDIR/vendor_dlkm/lib/modules/rt2x00lib.ko" /vendor_dlkm/lib/modules/rt2x00lib.ko || true
+  load_module rt2800lib "$MODDIR/vendor_dlkm/lib/modules/rt2800lib.ko" /vendor_dlkm/lib/modules/rt2800lib.ko || true
+  load_module rt2x00usb "$MODDIR/vendor_dlkm/lib/modules/rt2x00usb.ko" /vendor_dlkm/lib/modules/rt2x00usb.ko || true
+  load_module rt2800usb "$MODDIR/vendor_dlkm/lib/modules/rt2800usb.ko" /vendor_dlkm/lib/modules/rt2800usb.ko || true
+
+  if [ "$wifi_was_enabled" -eq 1 ]; then
+    log_i "re-enabling wifi after module switch"
+    set_wifi_enabled
+  fi
+
+  return 0
+}
+
 for delay in 8 16; do
   sleep "$delay"
-
-  configure_firmware_path
 
   load_module rfkill /system_dlkm/lib/modules/rfkill.ko
   load_module libarc4 /system_dlkm/lib/modules/libarc4.ko
@@ -113,22 +185,15 @@ for delay in 8 16; do
 
   load_module cfg80211 "$MODDIR/vendor_dlkm/lib/modules/cfg80211.ko" /vendor_dlkm/lib/modules/cfg80211.ko
   load_module mac80211 "$MODDIR/vendor_dlkm/lib/modules/mac80211.ko" /vendor_dlkm/lib/modules/mac80211.ko
+  # Keep using the stock cnss platform stack; unloading/replacing cnss_* is not stable.
   load_module wlan_firmware_service "$MODDIR/vendor_dlkm/lib/modules/wlan_firmware_service.ko" /vendor_dlkm/lib/modules/wlan_firmware_service.ko
-  load_module cnss_prealloc "$MODDIR/vendor_dlkm/lib/modules/cnss_prealloc.ko" /vendor_dlkm/lib/modules/cnss_prealloc.ko
-  load_module cnss_utils "$MODDIR/vendor_dlkm/lib/modules/cnss_utils.ko" /vendor_dlkm/lib/modules/cnss_utils.ko
-  load_module cnss_plat_ipc_qmi_svc "$MODDIR/vendor_dlkm/lib/modules/cnss_plat_ipc_qmi_svc.ko" /vendor_dlkm/lib/modules/cnss_plat_ipc_qmi_svc.ko
-  load_module cnss_nl "$MODDIR/vendor_dlkm/lib/modules/cnss_nl.ko" /vendor_dlkm/lib/modules/cnss_nl.ko
-  load_module cnss2 "$MODDIR/vendor_dlkm/lib/modules/cnss2.ko" /vendor_dlkm/lib/modules/cnss2.ko
-  load_module icnss2 "$MODDIR/vendor_dlkm/lib/modules/icnss2.ko" /vendor_dlkm/lib/modules/icnss2.ko
+
+  stage_usb_firmware
 
   load_module ch341 "$MODDIR/system_dlkm/lib/modules/ch341.ko"
   load_module pl2303 "$MODDIR/system_dlkm/lib/modules/pl2303.ko"
-  load_module zd1201 "$MODDIR/vendor_dlkm/lib/modules/zd1201.ko" /vendor_dlkm/lib/modules/zd1201.ko
-  load_module rt2x00lib "$MODDIR/vendor_dlkm/lib/modules/rt2x00lib.ko" /vendor_dlkm/lib/modules/rt2x00lib.ko
-  load_module rt2800lib "$MODDIR/vendor_dlkm/lib/modules/rt2800lib.ko" /vendor_dlkm/lib/modules/rt2800lib.ko
-  load_module rt2x00usb "$MODDIR/vendor_dlkm/lib/modules/rt2x00usb.ko" /vendor_dlkm/lib/modules/rt2x00usb.ko
-  load_module rt2800usb "$MODDIR/vendor_dlkm/lib/modules/rt2800usb.ko" /vendor_dlkm/lib/modules/rt2800usb.ko
-  load_module qca_cld3_peach_v2 "$MODDIR/vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko" /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko
+
+  reload_module_stack || true
 
   if is_loaded ch341 && is_loaded pl2303 && is_loaded zd1201 && is_loaded rt2800usb && is_loaded qca_cld3_peach_v2; then
     log_i "all target modules are present"

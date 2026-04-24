@@ -9,21 +9,11 @@ Relevant remote commits:
 Post-processing:
 - Bundled .ko files were copied to /tmp/op13_usb_arsenal_strip on the NUC
 - Stripped with llvm-objcopy --strip-debug from clang-r510928
-- Strip reduces size substantially, especially qca_cld3_peach_v2.ko
+- Strip reduces size substantially, especially the bundled USB Wi-Fi modules
 
 Bundled modules:
 - system_dlkm/lib/modules/ch341.ko
 - system_dlkm/lib/modules/pl2303.ko
-- vendor_dlkm/lib/modules/cfg80211.ko
-- vendor_dlkm/lib/modules/mac80211.ko
-- vendor_dlkm/lib/modules/cnss2.ko
-- vendor_dlkm/lib/modules/icnss2.ko
-- vendor_dlkm/lib/modules/cnss_nl.ko
-- vendor_dlkm/lib/modules/cnss_prealloc.ko
-- vendor_dlkm/lib/modules/cnss_utils.ko
-- vendor_dlkm/lib/modules/cnss_plat_ipc_qmi_svc.ko
-- vendor_dlkm/lib/modules/wlan_firmware_service.ko
-- vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko
 - vendor_dlkm/lib/modules/zd1201.ko
 - vendor_dlkm/lib/modules/rt2x00lib.ko
 - vendor_dlkm/lib/modules/rt2x00usb.ko
@@ -34,4 +24,4 @@ Runtime dependency modules expected from the running ROM:
 - /system_dlkm/lib/modules/usbserial.ko
 - /system_dlkm/lib/modules/libarc4.ko
 - /system_dlkm/lib/modules/rfkill.ko
-- vendor side still depends on stock-exported base modules such as qmi_helpers, mhi, pinctrl-msm, smem, smem-mailbox, qcom_iommu_util, ipam, sched-walt, qcom_va_minidump
+- vendor side keeps using the stock WLAN/cnss stack and base modules such as qmi_helpers, mhi, pinctrl-msm, smem, smem-mailbox, qcom_iommu_util, ipam, sched-walt, qcom_va_minidump

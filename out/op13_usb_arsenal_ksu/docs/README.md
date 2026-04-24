@@ -9,14 +9,12 @@ Build markers:
 
 Included modules:
 - `system_dlkm`: `ch341.ko`, `pl2303.ko`
-- `vendor_dlkm`: `cfg80211.ko`, `mac80211.ko`
-- `vendor_dlkm`: `cnss2.ko`, `icnss2.ko`, `cnss_nl.ko`, `cnss_prealloc.ko`, `cnss_utils.ko`, `cnss_plat_ipc_qmi_svc.ko`, `wlan_firmware_service.ko`, `qca_cld3_peach_v2.ko`
 - `vendor_dlkm`: `zd1201.ko`, `rt2x00lib.ko`, `rt2x00usb.ko`, `rt2800lib.ko`, `rt2800usb.ko`
 
 Boot-time load flow:
 - Reuse stock low-level dependency modules when present: `usbserial`, `rfkill`, `libarc4`
-- Prefer bundled vendor WLAN modules from this module directory: `cfg80211/mac80211/cnss/qca_cld3`
-- If `firmware_class.path` is empty, set it to the module's bundled `vendor/firmware` directory before loading USB Wi-Fi drivers
+- Keep the stock `cnss*` platform stack and built-in WLAN stack in place
+- Stage `rt2870.bin` into `/mnt/vendor/persist/copy/` from the module's bundled `vendor/firmware`
 - Then load the bundled USB add-on drivers
 
 Runtime note:
