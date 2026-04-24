@@ -1,6 +1,6 @@
-id=op13_usb_arsenal
-name=OP13 USB Arsenal
+id=op13_coloros16_nethunter
+name=OnePlus 13 ColorOS16 NetHunter
 version=2026.04.15-r3
 versionCode=2026041503
-author=Codex
-description=OnePlus 13 KernelSU module with OP13-built USB add-on drivers: ch341, pl2303, zd1201, rt2x00/rt2800.
+author=shandongtlb
+description=OnePlus 13 ColorOS16 KernelSU NetHunter module with USB add-on drivers: ch341, pl2303, zd1201, rt2x00/rt2800.

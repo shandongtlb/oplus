@@ -5,10 +5,10 @@ LATESTARTSERVICE=true
 
 print_modname() {
   ui_print "*******************************"
-  ui_print "       OP13 USB Arsenal       "
+  ui_print " OnePlus 13 ColorOS16 NH Mod  "
   ui_print "*******************************"
-  ui_print "- Installs OP13-built USB add-on modules"
-  ui_print "- Loads serial and USB Wi-Fi drivers at boot"
+  ui_print "- Installs NetHunter USB add-on modules"
+  ui_print "- Reloads Wi-Fi stack after boot"
 }
 
 set_permissions() {

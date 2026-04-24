@@ -1,4 +1,4 @@
-# OP13 USB Arsenal KernelSU Module
+# OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
 This package is built from the NUC outputs described in `说明/op13_kernel_work_report_zh.md`.
 All bundled `.ko` files were processed with `llvm-objcopy --strip-debug`.
