@@ -1,18 +1,6 @@
 diff --git a/arch/arm64/configs/vendor/sun_perf.config b/arch/arm64/configs/vendor/sun_perf.config
 --- a/arch/arm64/configs/vendor/sun_perf.config
 +++ b/arch/arm64/configs/vendor/sun_perf.config
-@@ -101,8 +101,9 @@
- # CONFIG_MAC80211_LEDS is not set
- # CONFIG_MAC80211_MESH is not set
- # CONFIG_MAC80211_MESSAGE_TRACING is not set
--CONFIG_MAC80211_RC_DEFAULT=""
--# CONFIG_MAC80211_RC_MINSTREL is not set
-+CONFIG_MAC80211_RC_MINSTREL=y
-+CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
-+CONFIG_MAC80211_RC_DEFAULT="minstrel_ht"
- CONFIG_MAX31760_FAN_CONTROLLER=m
- CONFIG_MEM_SHARE_QMI_SERVICE=m
- CONFIG_MFD_I2C_PMIC=m
 @@ -410,8 +411,17 @@
  CONFIG_USB_REDRIVER_NB7VPQ904M=m
  CONFIG_USB_REPEATER=m

@@ -786,75 +786,6 @@ index 193bc68edd6598e13505daab23fa20c33f15d524..fe49266a3f1069f67446049504d8d26b
  	if (hdd_drop_tx_packet_on_ftm(skb))
  		return;
  
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_wext.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_wext.c
-index 0ffe5abea961b864fc7984d23dd604e5894b06a2..42cf2a47f8fb9001b1fe147170437fcaac8dc73f 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_wext.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_wext.c
-@@ -9830,12 +9830,62 @@ static const struct iw_priv_args we_private_args[] = {
- #endif /* WLAN_FEATURE_MOTION_DETECTION */
- };
- 
-+/**
-+ * hdd_wext_giwfreq() - SIOCGIWFREQ handler for monitor mode
-+ * @dev: net_device
-+ * @info: request info
-+ * @freq: output frequency
-+ * @extra: extra data (unused)
-+ *
-+ * Reports the current operating frequency so that tools like aireplay-ng
-+ * and mdk3 can determine the channel.  Reads adapter->mon_chan_freq first
-+ * (set by cfg80211 set_monitor_channel), falls back to ch_info.freq.
-+ *
-+ * Return: 0 on success, negative errno on failure.
-+ */
-+static int hdd_wext_giwfreq(struct net_device *dev,
-+			    struct iw_request_info *info,
-+			    struct iw_freq *freq, char *extra)
-+{
-+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-+	struct hdd_station_ctx *sta_ctx;
-+	uint32_t chan_freq;
-+
-+	if (!adapter)
-+		return -EINVAL;
-+
-+	chan_freq = adapter->mon_chan_freq;
-+
-+	if (!chan_freq) {
-+		sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-+		if (sta_ctx)
-+			chan_freq = sta_ctx->ch_info.freq;
-+	}
-+
-+	if (!chan_freq)
-+		return -EINVAL;
-+
-+	freq->m = chan_freq;
-+	freq->e = 6;
-+	return 0;
-+}
-+
-+/*
-+ * Standard wext handler table.  Only SIOCGIWFREQ is needed ‚Äî tools like
-+ * aireplay-ng use it to determine the current channel.  Without this, the
-+ * driver's we_handler_def (num_standard=0) prevents cfg80211's wext compat
-+ * layer from ever being reached, causing "channel -1".
-+ */
-+static const iw_handler we_standard[] = {
-+	[IW_IOCTL_IDX(SIOCGIWFREQ)] = (iw_handler)hdd_wext_giwfreq,
-+};
-+
- const struct iw_handler_def we_handler_def = {
--	.num_standard = 0,
-+	.num_standard = ARRAY_SIZE(we_standard),
- 	.num_private = QDF_ARRAY_SIZE(we_private),
- 	.num_private_args = QDF_ARRAY_SIZE(we_private_args),
- 
--	.standard = NULL,
-+	.standard = we_standard,
- 	.private = (iw_handler *) we_private,
- 	.private_args = we_private_args,
- 	.get_wireless_stats = NULL,
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
 index f604a1c685bf0ae7a775f6a8587d8ca473a1554d..1e780e0b0276c0dae4df5111f7f4c2dbf35b807b 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
@@ -4897,7 +4828,7 @@ index 0000000000000000000000000000000000000000..c06a45c0ac34e4c620a56876083ccfb1
 +	if (all_tests_passed) {
 +		hdd_comp_test_info("üéâ All comprehensive tests PASSED! Frame injection system is ready for production.");
 +	} else {
-+		hdd_comp_test_err("‚ùå Some comprehensive tests FAILED. Review failures before production deployment.");
++		hdd_comp_test_err("‚ù?Some comprehensive tests FAILED. Review failures before production deployment.");
 +	}
 +
 +	return all_tests_passed ? QDF_STATUS_SUCCESS : QDF_STATUS_E_FAILURE;
@@ -8875,7 +8806,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +/*
 + * Maximum age (in microseconds, QDF log-timestamp units) before an
 + * in-flight nbuf is considered abandoned by firmware and reaped.
-+ * 2 seconds is generous ‚Äî normal completions arrive in < 50 ms.
++ * 2 seconds is generous ‚Ä?normal completions arrive in < 50 ms.
 + */
 +#define WMA_INJECTION_NBUF_TIMEOUT_US      2000000ULL
 +
@@ -8971,8 +8902,8 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 + * The firmware's mgmt TX handler (FUN_b000fc10, _wlan_send_mgmt_to_host)
 + * unconditionally rejects management frames on MONITOR vdevs: the internal
 + * vdev-type switch only accepts AP(0), STA(1), IBSS(2), OCB(6) for the
-+ * normal peer-lookup ‚Üí WAL-TX path.  MONITOR(3) is shunted to a
-+ * beacon-only fallback (FUN_b01baa34) that always returns 5 ‚Üí DISCARD.
++ * normal peer-lookup ‚Ü?WAL-TX path.  MONITOR(3) is shunted to a
++ * beacon-only fallback (FUN_b01baa34) that always returns 5 ‚Ü?DISCARD.
 + *
 + * Work around this by creating a lightweight AP vdev on the same channel
 + * as the monitor interface and routing injected frames through it.  The AP
@@ -9065,14 +8996,14 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	if (g_inj_tx_vdev.created) {
 +		if (g_inj_tx_vdev.chanfreq == chanfreq)
 +			return QDF_STATUS_SUCCESS;
-+		/* Channel changed ‚Äì tear down and recreate */
++		/* Channel changed ‚Ä?tear down and recreate */
 +		wma_injection_destroy_tx_vdev(wma);
 +	}
 +
 +	/*
 +	 * Firmware vdev array supports IDs 0..(num_vdevs-1).  num_vdevs is
 +	 * at most CFG_TGT_NUM_VDEV (typically 4) and may be decremented by 1
-+	 * for NAN ‚Üí 3.  Use (CFG_TGT_NUM_VDEV - 2) as safe ceiling so we
++	 * for NAN ‚Ü?3.  Use (CFG_TGT_NUM_VDEV - 2) as safe ceiling so we
 +	 * never exceed the firmware's internal array.
 +	 */
 +	{
@@ -9095,7 +9026,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		return QDF_STATUS_E_RESOURCES;
 +	}
 +
-+	/* New vdev being created ‚Äî reset session state for a clean start */
++	/* New vdev being created ‚Ä?reset session state for a clean start */
 +	wma_injection_reset_session_state();
 +
 +	mon_mac = wlan_vdev_mlme_get_macaddr(
@@ -9112,7 +9043,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	 * Use STA, not AP.  AP vdevs trigger firmware beacon-TX-offload
 +	 * which crashes at _wlan_beacon_tx_offload_handle_beacon because
 +	 * no beacon template exists.  STA vdevs reach the same peer-lookup
-+	 * ‚Üí WAL-TX path in the firmware mgmt TX handler without beacons.
++	 * ‚Ü?WAL-TX path in the firmware mgmt TX handler without beacons.
 +	 */
 +	qdf_mem_zero(&vcreate, sizeof(vcreate));
 +	vcreate.vdev_id = vid;
@@ -9141,7 +9072,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	vstart.channel.mhz        = chanfreq;
 +	vstart.channel.cfreq1     = chanfreq;
 +	vstart.channel.cfreq2     = 0;
-+	/* 2.4 GHz ‚Üí MODE_11G(1), 5 GHz ‚Üí MODE_11A(0) */
++	/* 2.4 GHz ‚Ü?MODE_11G(1), 5 GHz ‚Ü?MODE_11A(0) */
 +	vstart.channel.phy_mode   = (chanfreq < 4000) ? 1 : 0;
 +	vstart.channel.maxregpower = 20;
 +	vstart.channel.maxpower    = 20;
@@ -9155,7 +9086,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	}
 +	msleep(150);
 +
-+	/* ---------- 3. PEER CREATE (self-peer ‚Üí fw vdev+0xc) ---------- */
++	/* ---------- 3. PEER CREATE (self-peer ‚Ü?fw vdev+0xc) ---------- */
 +	qdf_mem_zero(&pcreate, sizeof(pcreate));
 +	pcreate.peer_addr = inj_mac;
 +	pcreate.peer_type = WMI_PEER_TYPE_DEFAULT;
@@ -9170,7 +9101,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +
 +	/*
 +	 * Skip VDEV_UP.  For STA vdevs, firmware's wlan_vdev_up
-+	 * asserts unless a BSS peer (the AP) exists ‚Äî we only have
++	 * asserts unless a BSS peer (the AP) exists ‚Ä?we only have
 +	 * a self-peer.  The mgmt TX handler only needs the vdev in
 +	 * STARTED state with a valid peer at vdev+0xc.
 +	 */
@@ -9204,7 +9135,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +
 +	/*
 +	 * Proper teardown order (reverse of create):
-+	 *   PEER_DELETE ‚Üí VDEV_STOP ‚Üí VDEV_DELETE
++	 *   PEER_DELETE ‚Ü?VDEV_STOP ‚Ü?VDEV_DELETE
 +	 * Each step needs a sleep so firmware finishes processing
 +	 * before the next command arrives.  Without this, a
 +	 * subsequent VDEV_CREATE for the same slot races with the
@@ -9243,7 +9174,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 + * present when the monitor vdev is torn down.
 + *
 + * Proper teardown order (reverse of create):
-+ *   PEER_DELETE ‚Üí VDEV_STOP ‚Üí VDEV_DELETE
++ *   PEER_DELETE ‚Ü?VDEV_STOP ‚Ü?VDEV_DELETE
 + * with msleep() gaps so the firmware can process each command.
 + */
 +void wma_injection_pre_stop_cleanup(tp_wma_handle wma_handle)
@@ -9257,7 +9188,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		return;
 +
 +	if (!wma_handle->wmi_handle) {
-+		/* WMI already gone ‚Äì just clear host state */
++		/* WMI already gone ‚Ä?just clear host state */
 +		wma_warn("WMI down, clearing injection vdev state only");
 +		qdf_mem_zero(&g_inj_tx_vdev, sizeof(g_inj_tx_vdev));
 +		return;
@@ -10350,7 +10281,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	if (monitor_vdev) {
 +		/*
 +		 * FW _wlan_send_mgmt_to_host rejects MONITOR vdevs (falls
-+		 * to a beacon-only path ‚Üí DISCARD).  Route through a hidden
++		 * to a beacon-only path ‚Ü?DISCARD).  Route through a hidden
 +		 * AP vdev instead, which the FW accepts for mgmt TX.
 +		 */
 +		status = wma_injection_ensure_tx_vdev(wma_handle,
