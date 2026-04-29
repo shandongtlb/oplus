@@ -1,6 +1,17 @@
 #!/system/bin/sh
 
 MODDIR=${0%/*}
+BIND_FLAG=$MODDIR/.bind_mount_enabled
+STATE_FLAG=$MODDIR/.nethunter_enabled
+
+cleanup_binds() {
+  if [ -x "$MODDIR/bind_mount_control.sh" ]; then
+    "$MODDIR/bind_mount_control.sh" remove --quiet || true
+  fi
+  rm -f "$BIND_FLAG"
+  rm -f "$STATE_FLAG"
+  rm -f "$MODDIR/runtime_status.txt"
+}
 
 cleanup_fw() {
   src="$MODDIR/vendor/firmware/rt2870.bin"
@@ -19,4 +30,5 @@ cleanup_fw() {
   done
 }
 
+cleanup_binds
 cleanup_fw
