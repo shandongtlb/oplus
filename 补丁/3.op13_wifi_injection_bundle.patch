@@ -132,14 +132,21 @@ index 99be6f80224f..f3a231c58736 100644
 diff --git a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
 --- a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
 +++ b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
-@@ -97,12 +97,18 @@
- # CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS is not set
- CONFIG_CFG80211_CERTIFICATION_ONUS=y
+@@ -16,8 +16,8 @@ CONFIG_CFG80211=m
+ # CONFIG_CFG80211_DEBUGFS is not set
  CONFIG_CFG80211_DEFAULT_PS=y
+ # CONFIG_CFG80211_DEVELOPER_WARNINGS is not set
+ CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y
+ CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y
+-# CONFIG_CFG80211_WEXT is not set
 +CONFIG_CFG80211_WEXT=y
+ CONFIG_CHR_DEV_SG=m
+ CONFIG_CHR_DEV_SCH=m
+@@ -97,12 +97,17 @@ CONFIG_LEDS_AW210XX=m
+ CONFIG_MAC80211=m
  # CONFIG_MAC80211_DEBUGFS is not set
  # CONFIG_MAC80211_DEBUG_MENU is not set
- # CONFIG_MAC80211_HAS_RC is not set
+ # CONFIG_MAC80211_HWSIM is not set
  # CONFIG_MAC80211_LEDS is not set
  # CONFIG_MAC80211_MESH is not set
  # CONFIG_MAC80211_MESSAGE_TRACING is not set
