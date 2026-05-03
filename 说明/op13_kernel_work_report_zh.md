@@ -23,34 +23,10 @@
 - 主机：`39.99.33.163`
 - 端口：`7222`
 - 用户：`root`
-- 私钥文件：`.codex-temp-key2`
+- 私钥文件：`key2.pem`
 - 私钥口令：`wangyang19980416`
 
 ### 2.2 遇到的问题
-
-#### 问题 1：SSH 私钥权限过宽
-
-OpenSSH 报错：
-
-- `WARNING: UNPROTECTED PRIVATE KEY FILE!`
-- `Permissions ... are too open`
-- 私钥被拒绝加载
-
-#### 解决办法
-
-- 没有直接修改原始私钥。
-- 复制出一份临时副本 `key2.pem`。
-- 收紧权限。
-- 用 `ssh-keygen -p` 把副本去掉口令，便于后续自动化连接。
-
-#### 最终验证
-
-成功执行：
-
-- `hostname -> nuc`
-- `whoami -> root`
-- `pwd -> /root`
-
 ---
 
 ## 3. 源码树与编译链分析

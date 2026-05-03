@@ -33,3 +33,15 @@ index e6d7523a9c84..b4d6aa7b5b8b 100644
      "drivers/usb/serial/usbserial.ko",
      "drivers/virtio/virtio_balloon.ko",
      "drivers/virtio/virtio_pci.ko",
+diff --git a/sun.bzl b/sun.bzl
+--- a/sun.bzl
++++ b/sun.bzl
+@@ -306,6 +306,8 @@ def define_sun():
+         "drivers/usb/redriver/redriver.ko",
+         "drivers/usb/repeater/repeater.ko",
+         "drivers/usb/repeater/repeater-qti-pmic-eusb2.ko",
++        "drivers/usb/serial/ch341.ko",
++        "drivers/usb/serial/pl2303.ko",
+         "drivers/usb/typec/ucsi/ucsi_qti_glink.ko",
+         "drivers/virt/gunyah/gh_ctrl.ko",
+         "drivers/virt/gunyah/gh_dbl.ko",

@@ -34,3 +34,17 @@ index e6d7523a9c84..2220dc217549 100644
      "drivers/char/virtio_console.ko",
      "drivers/misc/vcpu_stall_detector.ko",
      "drivers/net/can/dev/can-dev.ko",
+diff --git a/sun.bzl b/sun.bzl
+--- a/sun.bzl
++++ b/sun.bzl
+@@ -12,6 +12,10 @@ def define_sun():
+         # keep sorted
+         "arch/arm64/gunyah/gh_arm_drv.ko",
+         "drivers/base/regmap/qti-regmap-debugfs.ko",
++        "drivers/bluetooth/btintel.ko",
++        "drivers/bluetooth/btrtl.ko",
++        "drivers/bluetooth/btusb.ko",
++        "drivers/bluetooth/hci_vhci.ko",
+         "drivers/bus/mhi/devices/mhi_dev_satellite.ko",
+         "drivers/bus/mhi/devices/mhi_dev_uci.ko",
+         "drivers/bus/mhi/host/mhi.ko",
