@@ -1,7 +1,7 @@
-diff --git a/arch/arm64/configs/gki_defconfig b/arch/arm64/configs/gki_defconfig
+diff --git a/kernel_platform/common/arch/arm64/configs/gki_defconfig b/kernel_platform/common/arch/arm64/configs/gki_defconfig
 index 4f756dca5e05..f3d69fff3e2c 100644
---- a/arch/arm64/configs/gki_defconfig
-+++ b/arch/arm64/configs/gki_defconfig
+--- a/kernel_platform/common/arch/arm64/configs/gki_defconfig
++++ b/kernel_platform/common/arch/arm64/configs/gki_defconfig
 @@ -539,14 +539,16 @@ CONFIG_USB_STORAGE=y
  CONFIG_USB_UAS=y
  CONFIG_USB_DWC3=y
@@ -19,10 +19,10 @@ index 4f756dca5e05..f3d69fff3e2c 100644
  CONFIG_USB_CONFIGFS_EEM=y
  CONFIG_USB_CONFIGFS_MASS_STORAGE=y
  CONFIG_USB_CONFIGFS_F_FS=y
-diff --git a/modules.bzl b/modules.bzl
+diff --git a/kernel_platform/common/modules.bzl b/kernel_platform/common/modules.bzl
 index e6d7523a9c84..b4d6aa7b5b8b 100644
---- a/modules.bzl
-+++ b/modules.bzl
+--- a/kernel_platform/common/modules.bzl
++++ b/kernel_platform/common/modules.bzl
 @@ -44,7 +44,9 @@ _COMMON_GKI_MODULES_LIST = [
      "drivers/ptp/ptp.ko",
      "drivers/usb/class/cdc-acm.ko",
@@ -33,15 +33,3 @@ index e6d7523a9c84..b4d6aa7b5b8b 100644
      "drivers/usb/serial/usbserial.ko",
      "drivers/virtio/virtio_balloon.ko",
      "drivers/virtio/virtio_pci.ko",
-diff --git a/sun.bzl b/sun.bzl
---- a/sun.bzl
-+++ b/sun.bzl
-@@ -306,6 +306,8 @@ def define_sun():
-         "drivers/usb/redriver/redriver.ko",
-         "drivers/usb/repeater/repeater.ko",
-         "drivers/usb/repeater/repeater-qti-pmic-eusb2.ko",
-+        "drivers/usb/serial/ch341.ko",
-+        "drivers/usb/serial/pl2303.ko",
-         "drivers/usb/typec/ucsi/ucsi_qti_glink.ko",
-         "drivers/virt/gunyah/gh_ctrl.ko",
-         "drivers/virt/gunyah/gh_dbl.ko",

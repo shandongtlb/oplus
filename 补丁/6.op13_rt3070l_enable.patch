@@ -1,6 +1,6 @@
-diff --git a/arch/arm64/configs/vendor/sun_perf.config b/arch/arm64/configs/vendor/sun_perf.config
---- a/arch/arm64/configs/vendor/sun_perf.config
-+++ b/arch/arm64/configs/vendor/sun_perf.config
+diff --git a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
+--- a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
++++ b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
 @@ -410,8 +411,17 @@
  CONFIG_USB_REDRIVER_NB7VPQ904M=m
  CONFIG_USB_REPEATER=m
@@ -19,9 +19,9 @@ diff --git a/arch/arm64/configs/vendor/sun_perf.config b/arch/arm64/configs/vend
  
  CONFIG_OPLUS_CAMERA_AW37004=m
  
-diff --git a/drivers/net/wireless/ralink/rt2x00/Kconfig b/drivers/net/wireless/ralink/rt2x00/Kconfig
---- a/drivers/net/wireless/ralink/rt2x00/Kconfig
-+++ b/drivers/net/wireless/ralink/rt2x00/Kconfig
+diff --git a/kernel_platform/msm-kernel/drivers/net/wireless/ralink/rt2x00/Kconfig b/kernel_platform/msm-kernel/drivers/net/wireless/ralink/rt2x00/Kconfig
+--- a/kernel_platform/msm-kernel/drivers/net/wireless/ralink/rt2x00/Kconfig
++++ b/kernel_platform/msm-kernel/drivers/net/wireless/ralink/rt2x00/Kconfig
 @@ -251,7 +251,7 @@
  
  config RT2X00_LIB_LEDS
@@ -31,9 +31,9 @@ diff --git a/drivers/net/wireless/ralink/rt2x00/Kconfig b/drivers/net/wireless/r
  
  config RT2X00_LIB_DEBUGFS
  	bool "Ralink debugfs support"
-diff --git a/sun.bzl b/sun.bzl
---- a/sun.bzl
-+++ b/sun.bzl
+diff --git a/kernel_platform/msm-kernel/sun.bzl b/kernel_platform/msm-kernel/sun.bzl
+--- a/kernel_platform/msm-kernel/sun.bzl
++++ b/kernel_platform/msm-kernel/sun.bzl
 @@ -140,6 +140,10 @@
          "drivers/power/reset/qcom-pon.ko",
          "drivers/power/reset/qcom-reboot-reason.ko",

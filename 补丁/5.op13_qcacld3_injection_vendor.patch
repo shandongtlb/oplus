@@ -1,5 +1,5 @@
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild b/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
-index 05eb992b2e7473837d619a76fbd5d87d6d1325d2..a53b133a3d49b24b8e6367919ec14169e998f55c 100755
+index 05eb992..a53b133 100755
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
 @@ -261,6 +261,12 @@ ifeq ($(CONFIG_FEATURE_MONITOR_MODE_SUPPORT), y)
@@ -39,7 +39,7 @@ index 05eb992b2e7473837d619a76fbd5d87d6d1325d2..a53b133a3d49b24b8e6367919ec14169
  ifneq (y,$(filter y,$(CONFIG_LITHIUM) $(CONFIG_BERYLLIUM) $(CONFIG_RHINE)))
  ccflags-y += -DWLAN_DP_LEGACY_OL_RX_THREAD
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig
-index 48af093a2eec3951d9aaafd098119ab5a40c7a32..27e78a995e5ed12e4d208ef4430ff4ddf991d6e0 100644
+index 48af093..27e78a9 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig
 @@ -418,6 +418,11 @@ config FEATURE_MONITOR_MODE_SUPPORT
@@ -52,22 +52,61 @@ index 48af093a2eec3951d9aaafd098119ab5a40c7a32..27e78a995e5ed12e4d208ef4430ff4dd
 +	default n
 +
  config FEATURE_ML_MONITOR_MODE_SUPPORT
-   	depends on FEATURE_MONITOR_MODE_SUPPORT
-   	bool "Enable FEATURE_ML_MONITOR_MODE_SUPPORT"
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
-@@ -951,6 +951,9 @@ static
-		if ((ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc) &&
-		     !is_rx_mon) ||
-		    (ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) &&
-		     is_rx_mon) ||
-+		    true ||
-		    ucfg_pkt_capture_get_mode(hdd_ctx->psoc) !=
- 						PACKET_CAPTURE_MODE_DISABLE) {
- 			ret = wlan_hdd_add_monitor_check(hdd_ctx,
+ 	depends on FEATURE_MONITOR_MODE_SUPPORT
+ 	bool "Enable FEATURE_ML_MONITOR_MODE_SUPPORT"
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c
+index 88b69aa..b74e736 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c
+@@ -1230,6 +1230,46 @@ policy_mgr_is_ch_width_downgrade_required(struct wlan_objmgr_psoc *psoc,
+ 	return false;
+ }
+ 
++/*
++ * Check if HW mode change is needed for channel switching,
++ * avoiding unnecessary transitions in monitor mode
++ */
++bool policy_mgr_is_hw_mode_change_required_for_channel_switch(
++	struct wlan_objmgr_psoc *psoc,
++	uint8_t vdev_id,
++	uint32_t chan_freq,
++	uint32_t reason)
++{
++	struct wlan_objmgr_vdev *vdev;
++	enum QDF_OPMODE opmode;
++	struct wlan_channel *chan;
++	uint32_t current_chan = 0;
++
++	if (!psoc) {
++		policy_mgr_err("psoc is NULL");
++		return false;
++	}
++
++	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
++					    WLAN_POLICY_MGR_ID);
++	if (!vdev) {
++		policy_mgr_err("vdev is NULL for vdev_id %d", vdev_id);
++		return false;
++	}
++
++	opmode = wlan_vdev_mlme_get_opmode(vdev);
++	chan = wlan_vdev_get_active_channel(vdev);
++	if (chan)
++		current_chan = chan->ch_freq;
++
++	wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
++
++	if (opmode == QDF_MONITOR_MODE && current_chan == chan_freq)
++		return false;
++
++	return true;
++}
++
+ static uint32_t
+ policy_mgr_check_for_hw_mode_change(struct wlan_objmgr_psoc *psoc,
+ 				    qdf_list_t *scan_list, uint8_t vdev_id)
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/anorak_gki_kiwi-v2_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/anorak_gki_kiwi-v2_defconfig
-index 18362c00b1de58d6eb377acf2334381faefc5f75..2bff856b88e23e7b98b101b9401b79cd195001c0 100644
+index 18362c0..2bff856 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/anorak_gki_kiwi-v2_defconfig
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/anorak_gki_kiwi-v2_defconfig
 @@ -79,6 +79,7 @@ CONFIG_FEATURE_HTC_CREDIT_HISTORY=y
@@ -79,7 +118,7 @@ index 18362c00b1de58d6eb377acf2334381faefc5f75..2bff856b88e23e7b98b101b9401b79cd
  CONFIG_FEATURE_NO_DBS_INTRABAND_MCC_SUPPORT=y
  CONFIG_FEATURE_OEM_DATA=y
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/default_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/default_defconfig
-index c633fba99c9b459b9e06f4308dc0cfed0349f1fd..e0b6478d1acaf64c1926dd3782482416f9d1ef92 100755
+index c633fba..e0b6478 100755
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/default_defconfig
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/default_defconfig
 @@ -948,6 +948,8 @@ ifeq ($(CONFIG_ARCH_QCS40X), y)
@@ -108,7 +147,7 @@ index c633fba99c9b459b9e06f4308dc0cfed0349f1fd..e0b6478d1acaf64c1926dd3782482416
  CONFIG_DCS := y
  CONFIG_FEATURE_WDS := y
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/niobe_gki_kiwi-v2_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/niobe_gki_kiwi-v2_defconfig
-index c1472e432526a623d4ec69b3a09a185a10c94b8a..bca10b74049a3d1385e130bcc7de06d4473876d9 100644
+index c1472e4..bca10b7 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/niobe_gki_kiwi-v2_defconfig
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/niobe_gki_kiwi-v2_defconfig
 @@ -81,6 +81,7 @@ CONFIG_FEATURE_HTC_CREDIT_HISTORY=y
@@ -120,7 +159,7 @@ index c1472e432526a623d4ec69b3a09a185a10c94b8a..bca10b74049a3d1385e130bcc7de06d4
  CONFIG_FEATURE_NO_DBS_INTRABAND_MCC_SUPPORT=y
  CONFIG_FEATURE_OEM_DATA=y
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/pineapple_gki_kiwi-v2_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/pineapple_gki_kiwi-v2_defconfig
-index 336d32f027d3d1244da96909a9bcbea20f40f276..0c61c8a1d6b71398ccd70fe7eb4d61d6aa25c1d2 100644
+index 336d32f..0c61c8a 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/pineapple_gki_kiwi-v2_defconfig
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/pineapple_gki_kiwi-v2_defconfig
 @@ -83,6 +83,7 @@ CONFIG_FEATURE_HTC_CREDIT_HISTORY=y
@@ -132,10 +171,10 @@ index 336d32f027d3d1244da96909a9bcbea20f40f276..0c61c8a1d6b71398ccd70fe7eb4d61d6
  CONFIG_FEATURE_NO_DBS_INTRABAND_MCC_SUPPORT=y
  CONFIG_FEATURE_OEM_DATA=y
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig
-index f4a39178633dbe2920fd9a499e9620d1dac79c47..9b749e05b58c27775eb9e3f2bd4210d406fb4f33 100644
+index 6da3180..55d354f 100755
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/sun_gki_peach-v2_defconfig
-@@ -86,6 +86,7 @@ CONFIG_FEATURE_HTC_CREDIT_HISTORY=y
+@@ -90,6 +90,7 @@ CONFIG_FEATURE_HTC_CREDIT_HISTORY=y
  CONFIG_FEATURE_INTEROP_ISSUES_AP=y
  CONFIG_FEATURE_MEMDUMP_ENABLE=y
  CONFIG_FEATURE_MONITOR_MODE_SUPPORT=y
@@ -144,7 +183,7 @@ index f4a39178633dbe2920fd9a499e9620d1dac79c47..9b749e05b58c27775eb9e3f2bd4210d4
  CONFIG_FEATURE_NO_DBS_INTRABAND_MCC_SUPPORT=y
  CONFIG_FEATURE_OEM_DATA=y
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/x1e80100_gki_kiwi-v2_defconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/x1e80100_gki_kiwi-v2_defconfig
-index 06212e81158a77ebe8d8b8d6b0689fb2639387f3..39814ad9956724dc9af8b489c51af9d56ebaa8e9 100644
+index 06212e8..39814ad 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/x1e80100_gki_kiwi-v2_defconfig
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/x1e80100_gki_kiwi-v2_defconfig
 @@ -83,6 +83,7 @@ CONFIG_FEATURE_HTC_CREDIT_HISTORY=y
@@ -156,7 +195,7 @@ index 06212e81158a77ebe8d8b8d6b0689fb2639387f3..39814ad9956724dc9af8b489c51af9d5
  CONFIG_FEATURE_NO_DBS_INTRABAND_MCC_SUPPORT=y
  CONFIG_FEATURE_OEM_DATA=y
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx.c
-index 9caeabc07854f2a2bc89d213a2bcee0b0ddedaa9..d5810b60a0c24a1bc213d8363190aaa6784d7fab 100644
+index 9caeabc..d5810b6 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx.c
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx.c
 @@ -182,11 +182,15 @@ ol_txrx_mgmt_send_ext(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
@@ -192,7 +231,7 @@ index 9caeabc07854f2a2bc89d213a2bcee0b0ddedaa9..d5810b60a0c24a1bc213d8363190aaa6
  	TXRX_STATS_MSDU_INCR(pdev, tx.mgmt, tx_mgmt_frm);
  	TXRX_ASSERT1(type < OL_TXRX_MGMT_NUM_TYPES);
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx_desc.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx_desc.c
-index 475d7099ac20539a42cf0a4367567a6a917a85a4..4a9e1f09de8171515914c59869f711eaccf32301 100644
+index 475d709..4a9e1f0 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx_desc.c
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_tx_desc.c
 @@ -345,10 +345,31 @@ ol_tx_desc_alloc_wrapper(struct ol_txrx_pdev_t *pdev,
@@ -232,7 +271,7 @@ index 475d7099ac20539a42cf0a4367567a6a917a85a4..4a9e1f09de8171515914c59869f711ea
  #else
  struct ol_tx_desc_t *
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx.c
-index 4e3579205319e5218fccbb186e7670a7033a59ff..940dc486f8e0a747f6cd8b591c344b037f275d98 100644
+index 4e35792..940dc48 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx.c
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx.c
 @@ -877,6 +877,12 @@ ol_txrx_pdev_attach(ol_txrx_soc_handle soc,
@@ -249,7 +288,7 @@ index 4e3579205319e5218fccbb186e7670a7033a59ff..940dc486f8e0a747f6cd8b591c344b03
  	/* init LL/HL cfg here */
  	pdev->cfg.is_high_latency = ol_cfg_is_high_latency(cfg_pdev);
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx_flow_control.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx_flow_control.c
-index 3a5d965be40ef0b395c30740bc15e2443016ad0a..cb389f5d10d477e049847df58e86dea841020ab2 100644
+index 3a5d965..cb389f5 100644
 --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx_flow_control.c
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/dp/txrx/ol_txrx_flow_control.c
 @@ -56,6 +56,9 @@
@@ -311,637 +350,9 @@ index 3a5d965be40ef0b395c30740bc15e2443016ad0a..cb389f5d10d477e049847df58e86dea8
  
  	soc = cds_get_context(QDF_MODULE_ID_SOC);
  
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
-index adcc3c507002ad9b8a35c32b8ad78df574afa296..b8ae8bbba12e68aa937b781b2cf480492e686693 100755
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
-@@ -97,6 +97,9 @@
- #include "wlan_hdd_oemdata.h"
- #endif
- #include "wlan_hdd_he.h"
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+#include "wlan_hdd_frame_inject.h"
-+#endif
- 
- #include <net/neighbour.h>
- #include <net/netevent.h>
-@@ -1038,6 +1041,7 @@ struct rcpi_info {
- };
- 
- struct hdd_context;
-+struct hdd_injection_ctx;
- 
- #ifdef MULTI_CLIENT_LL_SUPPORT
- /* Max host clients which can request the FW arbiter with the latency level */
-@@ -1483,7 +1487,10 @@ struct hdd_adapter {
- #endif
- #ifdef FEATURE_MONITOR_MODE_SUPPORT
- 	bool monitor_mode_vdev_up_in_progress;
-+	uint32_t mon_chan_freq;
-+	enum phy_ch_width mon_bandwidth;
- #endif
-+	struct hdd_injection_ctx *injection_ctx;
- 
- 	struct rcpi_info rcpi;
- 	bool send_mode_change;
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
-index 048b62913c18b869626a5863fb7cc45ef335949d..5e700a6c404ab09c9ad5a380bd94ae7ebed30067 100755
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
-@@ -30,6 +30,8 @@
- #include <linux/init.h>
- #include <linux/etherdevice.h>
- #include <linux/wireless.h>
-+#include <linux/cred.h>
-+#include <linux/uidgid.h>
- #include "osif_sync.h"
- #include <wlan_hdd_includes.h>
- #include <net/arp.h>
-@@ -161,6 +163,9 @@
- #include "os_if_nan.h"
- #include "wlan_hdd_apf.h"
- #include "wlan_hdd_cfr.h"
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+#include "wlan_hdd_frame_inject.h"
-+#endif
- #include "wlan_hdd_ioctl.h"
- #include "wlan_cm_roam_ucfg_api.h"
- #include "hif.h"
-@@ -8827,6 +8832,24 @@ void hdd_send_roam_scan_ch_list_event(struct hdd_context *hdd_ctx,
- 	 (((data_snr_weight) & 0xff) << 8) | \
- 	 ((ack_snr_weight) & 0xff))
- 
-+#define ANT_DIV_SET_PROBE_THRESHOLD(wlan_probe_thre, bt_probe_thre) \
-+	((1 << 30) | \
-+	 (((wlan_probe_thre) & 0x1fff) << 13) | \
-+	 ((bt_probe_thre) & 0x1fff))
-+
-+#define ANT_DIV_SET_PROBE_CNT(wlan_probe_cnt, bt_probe_cnt) \
-+	((1 << 31) | \
-+	 (((wlan_probe_cnt) & 0x1fff) << 13) | \
-+	 ((bt_probe_cnt) & 0x1fff))
-+
-+#define ANT_DIV_SET_RSSI_DIFF(wlan_rssi_diff, bt_rssi_diff) \
-+	((1 << 27) | \
-+	 (((wlan_rssi_diff) & 0x1fff) << 13) | \
-+	 ((bt_rssi_diff) & 0x1fff))
-+
-+#define ANT_DIV_PROBE_WLAN_RSSI_THRESHOLD \
-+#define ANT_DIV_PROBE_BT_RSSI_THRESHOLD \
-+
- #define RX_REORDER_TIMEOUT_VOICE \
- 	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_REORDER_TIMEOUT_VOICE
- #define RX_REORDER_TIMEOUT_VIDEO \
-@@ -23894,6 +23917,9 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] = {
- 	FEATURE_DISA_VENDOR_COMMANDS
- 	FEATURE_TDLS_VENDOR_COMMANDS
- 	FEATURE_SAR_LIMITS_VENDOR_COMMANDS
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	FEATURE_FRAME_INJECTION_VENDOR_COMMANDS,
-+#endif
- 	BCN_RECV_FEATURE_VENDOR_COMMANDS
- 	FEATURE_VENDOR_SUBCMD_SET_TRACE_LEVEL
- 	FEATURE_AP_ASSIST_P2P_DFS_GROUP
-@@ -26518,6 +26544,32 @@ static int __wlan_hdd_cfg80211_change_iface(struct wiphy *wiphy,
- 		  qdf_opmode_str(adapter->device_mode),
- 		  qdf_opmode_str(new_mode));
- 
-+	if (adapter->device_mode == QDF_MONITOR_MODE &&
-+	    new_mode == QDF_MONITOR_MODE) {
-+		ndev->ieee80211_ptr->iftype = type;
-+		hdd_exit();
-+		return 0;
-+	}
-+
-+	/*
-+	 * Android framework daemons can race monitor mode by forcing station
-+	 * iftype transitions right after monitor enable. Reject non-root
-+	 * monitor->non-monitor requests while monitor global mode is active.
-+	 *
-+	 * Return an error instead of success so cfg80211 doesn't WARN on
-+	 * iftype mismatch (it expects iftype to match @type when callback
-+	 * returns success).
-+	 */
-+	if ((adapter->device_mode == QDF_MONITOR_MODE ||
-+	     hdd_get_conparam() == QDF_GLOBAL_MONITOR_MODE) &&
-+	    new_mode != QDF_MONITOR_MODE &&
-+	    !uid_eq(current_euid(), GLOBAL_ROOT_UID)) {
-+		hdd_warn_rl("rejecting monitor->%s iface change from %s",
-+			    qdf_opmode_str(new_mode), current->comm);
-+		hdd_exit();
-+		return -EOPNOTSUPP;
-+	}
-+
- 	errno = hdd_trigger_psoc_idle_restart(hdd_ctx);
- 	if (errno) {
- 		hdd_err("Failed to restart psoc; errno:%d", errno);
-@@ -31465,6 +31517,9 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
- 		return qdf_status_to_os_return(status);
- 	}
- 
-+	adapter->mon_chan_freq = chandef->chan->center_freq;
-+	adapter->mon_bandwidth = ch_width;
-+
- 	hdd_exit();
- 
- 	return 0;
-@@ -32877,6 +32932,43 @@ wlan_hdd_cfg80211_get_channel_sta(struct wiphy *wiphy,
- 	return ret;
- }
- 
-+static int wlan_hdd_cfg80211_get_channel_monitor(struct wiphy *wiphy,
-+				      struct cfg80211_chan_def *chandef,
-+				      struct hdd_adapter *adapter)
-+{
-+	struct ieee80211_channel *chan;
-+	uint32_t freq;
-+
-+	if (!adapter)
-+		return -ENODATA;
-+
-+	freq = adapter->mon_chan_freq;
-+	if (!freq)
-+		freq = adapter->deflink->session.monitor.freq;
-+	if (!freq)
-+		return -ENODATA;
-+
-+	chan = ieee80211_get_channel(wiphy, freq);
-+	if (!chan)
-+		return -ENODATA;
-+
-+	cfg80211_chandef_create(chandef, chan, NL80211_CHAN_NO_HT);
-+	switch (adapter->mon_bandwidth) {
-+	case CH_WIDTH_40MHZ:
-+		chandef->width = NL80211_CHAN_WIDTH_40;
-+		break;
-+	case CH_WIDTH_80MHZ:
-+		chandef->width = NL80211_CHAN_WIDTH_80;
-+		break;
-+	case CH_WIDTH_160MHZ:
-+		chandef->width = NL80211_CHAN_WIDTH_160;
-+		break;
-+	default:
-+		break;
-+	}
-+	return 0;
-+}
-+
- static int __wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
- 					   struct wireless_dev *wdev,
- 					   struct cfg80211_chan_def *chandef,
-@@ -32905,6 +32997,11 @@ static int __wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
- 		ret = wlan_hdd_cfg80211_get_channel_sap(wiphy, chandef,
- 							adapter, link_id);
- 		break;
-+#ifdef FEATURE_MONITOR_MODE_SUPPORT
-+	case QDF_MONITOR_MODE:
-+		ret = wlan_hdd_cfg80211_get_channel_monitor(wiphy, chandef, adapter);
-+		break;
-+#endif
- 	case QDF_STA_MODE:
- 	case QDF_P2P_CLIENT_MODE:
- 		ret = wlan_hdd_cfg80211_get_channel_sta(wiphy, chandef, hdd_ctx,
-@@ -34343,6 +34440,7 @@ static struct cfg80211_ops wlan_hdd_cfg80211_ops = {
- #endif
- #ifdef FEATURE_MONITOR_MODE_SUPPORT
- 	.set_monitor_channel = wlan_hdd_cfg80211_set_mon_ch,
-+	.get_channel = wlan_hdd_cfg80211_get_channel,
- #endif
- #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)) || \
- 	defined(CFG80211_ABORT_SCAN)
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c
-index 594a700eb3d6b7812994fd98c36f4239c9c668f5..e34ef41d970c69561adf4d0afd2b6c1040f4d0d2 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c
-@@ -27,6 +27,9 @@
- #include "wlan_hdd_trace.h"
- #include "wlan_hdd_ioctl.h"
- #include "wlan_hdd_power.h"
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+#include "wlan_hdd_frame_inject.h"
-+#endif
- #include "wlan_hdd_regulatory.h"
- #include "wlan_osif_request_manager.h"
- #include "wlan_hdd_driver_ops.h"
-@@ -7779,6 +7782,11 @@ static int __hdd_ioctl(struct net_device *dev, void __user *data, int cmd)
- 		else
- 			ret = hdd_driver_ioctl(adapter->deflink, data);
- 		break;
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	case SIOCDEVPRIVATE_FRAME_INJECT:
-+		ret = hdd_frame_inject_ioctl(dev, data, cmd);
-+		break;
-+#endif
- 	default:
- 		hdd_warn("unknown ioctl %d", cmd);
- 		ret = -EINVAL;
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
-index dcdaf2f6474a436db7d5c929c729eea0275d73d8..8edfd962dd7f583590a06225d0ab33b482d6d823 100755
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
-@@ -34,6 +34,8 @@
- #include <linux/etherdevice.h>
- #include <linux/firmware.h>
- #include <linux/kernel.h>
-+#include <linux/cred.h>
-+#include <linux/uidgid.h>
- #include <wlan_hdd_tx_rx.h>
- #include <wni_api.h>
- #include <wlan_hdd_cfg.h>
-@@ -142,6 +144,9 @@
- #include "wlan_hdd_afc.h"
- #include "wlan_dfs_ucfg_api.h"
- #include "wlan_hdd_rx_monitor.h"
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+#include "wlan_hdd_frame_inject.h"
-+#endif
- #include "sme_power_save_api.h"
- #include "enet.h"
- #include <cdp_txrx_cmn_struct.h>
-@@ -7310,6 +7315,7 @@ static const struct net_device_ops wlan_drv_ops = {
- static const struct net_device_ops wlan_mon_drv_ops = {
- 	.ndo_open = hdd_mon_open,
- 	.ndo_stop = hdd_stop,
-+	.ndo_start_xmit = hdd_hard_start_xmit,
- 	.ndo_get_stats = hdd_get_stats,
- };
- 
-@@ -9940,6 +9946,11 @@ struct hdd_adapter *hdd_open_adapter(struct hdd_context *hdd_ctx,
- 	if (adapter->device_mode == QDF_STA_MODE)
- 		wlan_hdd_debugfs_csr_init(adapter);
- 
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	if (QDF_STATUS_SUCCESS != hdd_init_frame_injection(adapter))
-+		hdd_err(Failed to initialize frame injection for adapter);
-+#endif
-+
- 	return adapter;
- 
- err_destroy_adapter_features_update_work:
-@@ -9983,6 +9994,9 @@ static void __hdd_close_adapter(struct hdd_context *hdd_ctx,
- 	policy_mgr_clear_concurrency_mode(hdd_ctx->psoc, adapter->device_mode);
- 	qdf_event_destroy(&adapter->peer_cleanup_done);
- 	hdd_adapter_feature_update_work_deinit(adapter);
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	hdd_deinit_frame_injection(adapter);
-+#endif
- 	hdd_cleanup_adapter(hdd_ctx, adapter, rtnl_held);
- 	ucfg_dp_destroy_intf(hdd_ctx->psoc, &adapter_mac);
- }
-@@ -11450,8 +11464,7 @@ static inline void hdd_delete_sta(struct hdd_adapter *adapter)
- static void hdd_stop_p2p_go(struct hdd_adapter *adapter)
- {
- 	hdd_debug("[SSR] send stop iface ap to supplicant");
--	cfg80211_stop_iface(adapter->hdd_ctx->wiphy, &adapter->wdev,
--			    GFP_KERNEL);
-+	cfg80211_stop_iface(adapter->hdd_ctx->wiphy, &adapter->wdev, GFP_KERNEL);
- }
- 
- /**
-@@ -12653,7 +12666,6 @@ void hdd_wlan_exit(struct hdd_context *hdd_ctx)
- 	hdd_wlan_stop_modules(hdd_ctx, false);
- 
- 	hdd_driver_memdump_deinit();
--
- 	qdf_nbuf_deinit_replenish_timer();
- 
- 	if (QDF_GLOBAL_MONITOR_MODE ==  hdd_get_conparam()) {
-@@ -20190,6 +20202,9 @@ int hdd_init(void)
- 	hdd_register_debug_callback();
- 	wlan_roam_debug_init();
- 
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+#endif
-+
- 	return 0;
- 
- err:
-@@ -20210,6 +20225,10 @@ void hdd_deinit(void)
- {
- 	wlan_roam_debug_deinit();
- 
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	/* Cleanup frame injection debug interfaces */
-+#endif
-+
- #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
- 	wlan_logging_sock_deinit_svc();
- #endif
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
-index 58ef1333f862db29fd6b454004d67183bd9e5ac0..df5ec82124c35541f2263ffec15d20e44d71a586 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
-@@ -26,12 +26,19 @@
- #include <cds_utils.h>
- #include "wlan_hdd_rx_monitor.h"
- #include "ol_txrx.h"
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+#include "wlan_hdd_frame_inject.h"
-+#endif
- #include "cdp_txrx_mon.h"
- 
- int hdd_enable_monitor_mode(struct net_device *dev)
- {
- 	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
- 	uint8_t vdev_id;
-+	int ret;
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-+#endif
- 
- 	hdd_enter_dev(dev);
- 
-@@ -39,12 +46,29 @@ int hdd_enable_monitor_mode(struct net_device *dev)
- 	if (vdev_id < 0)
- 		return -EINVAL;
- 
--	return cdp_set_monitor_mode(soc, vdev_id, false);
-+	ret = cdp_set_monitor_mode(soc, vdev_id, false);
-+
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	/* Enable frame injection when monitor mode is enabled */
-+	if (ret == 0 && adapter) {
-+		if (QDF_IS_STATUS_ERROR(hdd_frame_inject_enable(adapter))) {
-+			hdd_warn("Failed to enable frame injection");
-+			/* Continue without frame injection */
-+		}
-+	}
-+#endif
-+
-+	return ret;
- }
- 
- int hdd_disable_monitor_mode(void)
- {
- 	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
--
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-+	struct hdd_adapter *adapter = hdd_ctx ? hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE) : NULL;
-+	if (adapter)
-+		hdd_frame_inject_disable(adapter);
-+#endif
- 	return cdp_reset_monitor_mode(soc, OL_TXRX_PDEV_ID, false);
- }
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
-index 193bc68edd6598e13505daab23fa20c33f15d524..fe49266a3f1069f67446049504d8d26bd1c9e9f1 100755
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
-@@ -49,6 +49,9 @@
- #include "wlan_hdd_cfg80211.h"
- #include <wlan_hdd_tsf.h>
- #include <net/tcp.h>
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+#include "wlan_hdd_frame_inject.h"
-+#endif
- 
- #include <ol_defines.h>
- #include "cfg_ucfg_api.h"
-@@ -490,6 +493,86 @@ hdd_drop_tx_packet_on_ftm(struct sk_buff *skb)
- }
- #endif
- 
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+static bool hdd_is_monitor_tx_dev(struct hdd_adapter *adapter,
-+			  struct net_device *dev)
-+{
-+	if (!adapter || !dev)
-+		return false;
-+	if (adapter->device_mode == QDF_MONITOR_MODE)
-+		return true;
-+	if (dev->type == ARPHRD_IEEE80211_RADIOTAP)
-+		return true;
-+	if (dev->ieee80211_ptr && dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
-+		return true;
-+	return false;
-+}
-+
-+static void hdd_monitor_mode_tx_inject(struct hdd_adapter *adapter,
-+			       struct net_device *dev,
-+			       struct sk_buff *skb)
-+{
-+	struct ieee80211_radiotap_header *rthdr;
-+	struct inject_frame_req *req;
-+	uint8_t *frame_data;
-+	uint16_t rtap_len;
-+	uint32_t frame_len;
-+	uint64_t now;
-+	QDF_STATUS status;
-+	bool has_radiotap = false;
-+
-+	if (!adapter || !adapter->injection_ctx || !skb)
-+		goto drop;
-+	if (!adapter->injection_ctx->is_monitor_mode)
-+		adapter->injection_ctx->is_monitor_mode = true;
-+	if (skb->len >= sizeof(*rthdr)) {
-+		rthdr = (struct ieee80211_radiotap_header *)skb->data;
-+		if (rthdr->it_version == 0) {
-+			rtap_len = ieee80211_get_radiotap_len(skb->data);
-+			if (rtap_len >= sizeof(*rthdr) && rtap_len < skb->len)
-+				has_radiotap = true;
-+		}
-+	}
-+	if (has_radiotap) {
-+		frame_data = skb->data + rtap_len;
-+		frame_len = skb->len - rtap_len;
-+	} else {
-+		frame_data = skb->data;
-+		frame_len = skb->len;
-+	}
-+	if (!frame_len || frame_len > HDD_FRAME_INJECT_MAX_SIZE)
-+		goto drop;
-+	req = qdf_mem_malloc(sizeof(*req));
-+	if (!req)
-+		goto drop;
-+	req->frame_data = qdf_mem_malloc(frame_len);
-+	if (!req->frame_data) {
-+		qdf_mem_free(req);
-+		goto drop;
-+	}
-+	qdf_mem_copy(req->frame_data, frame_data, frame_len);
-+	now = qdf_get_log_timestamp();
-+	req->frame_len = frame_len;
-+	req->tx_flags = 0;
-+	req->retry_count = 0;
-+	req->tx_rate = 0;
-+	req->timestamp = now;
-+	req->session_id = (uint32_t)now;
-+	req->submit_time = now;
-+	req->queue_time = 0;
-+	req->process_time = 0;
-+	req->complete_time = 0;
-+	status = hdd_process_frame_injection(adapter, req);
-+	if (QDF_IS_STATUS_ERROR(status)) {
-+		qdf_mem_free(req->frame_data);
-+		qdf_mem_free(req);
-+	}
-+
-+drop:
-+	dev_kfree_skb_any(skb);
-+}
-+#endif
-+
- /**
-  * __hdd_hard_start_xmit() - Transmit a frame
-  * @skb: pointer to OS packet (sk_buff)
-@@ -516,6 +599,13 @@ static void __hdd_hard_start_xmit(struct sk_buff *skb,
- 	enum sme_qos_wmmuptype up;
- 	QDF_STATUS status;
- 
-+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
-+	if (hdd_is_monitor_tx_dev(adapter, dev)) {
-+		hdd_monitor_mode_tx_inject(adapter, dev, skb);
-+		return;
-+	}
-+#endif
-+
- 	if (hdd_drop_tx_packet_on_ftm(skb))
- 		return;
- 
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
-index f604a1c685bf0ae7a775f6a8587d8ca473a1554d..1e780e0b0276c0dae4df5111f7f4c2dbf35b807b 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
-@@ -4405,6 +4405,8 @@ static uint8_t sme_get_nss_chain_shift(enum QDF_OPMODE device_mode)
- 	switch (device_mode) {
- 	case QDF_STA_MODE:
- 		return STA_NSS_CHAINS_SHIFT;
-+	case QDF_MONITOR_MODE:
-+		return STA_NSS_CHAINS_SHIFT;
- 	case QDF_SAP_MODE:
- 		return SAP_NSS_CHAINS_SHIFT;
- 	case QDF_P2P_GO_MODE:
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
-index f3e9834254ef40be5b264508ac8a4c6f3153e194..39d0c9c45bb29569a5c29f852492a53523555ea4 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
-@@ -6359,6 +6359,10 @@ void csr_get_vdev_type_nss(enum QDF_OPMODE dev_mode, uint8_t *nss_2g,
- 		*nss_2g = mac_ctx->vdev_type_nss_2g.sta;
- 		*nss_5g = mac_ctx->vdev_type_nss_5g.sta;
- 		break;
-+	case QDF_MONITOR_MODE:
-+		*nss_2g = mac_ctx->vdev_type_nss_2g.sta;
-+		*nss_5g = mac_ctx->vdev_type_nss_5g.sta;
-+		break;
- 	case QDF_SAP_MODE:
- 		*nss_2g = mac_ctx->vdev_type_nss_2g.sap;
- 		*nss_5g = mac_ctx->vdev_type_nss_5g.sap;
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c
-index 62b558748661ab29726727876a742404a2f60954..da66b64737750c09a9122bc96983cc68ede82212 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c
-@@ -60,6 +60,7 @@
- #include "ol_fw.h"
- 
- #include "wma_internal.h"
-+#include "wma_frame_inject.h"
- #include "cdp_txrx_flow_ctrl_legacy.h"
- #include "cdp_txrx_cmn.h"
- #include "cdp_txrx_misc.h"
-@@ -1366,6 +1367,21 @@ wma_mgmt_tx_ack_comp_hdlr(void *wma_context, qdf_nbuf_t netbuf, int32_t status)
- 	uint8_t vdev_id;
- 
- 	desc_id = QDF_NBUF_CB_MGMT_TXRX_DESC_ID(netbuf);
-+	if (WMA_IS_INJECTION_DESC_ID(desc_id)) {
-+		uint32_t mapped_status;
-+
-+		mapped_status = status ?
-+			WMI_MGMT_TX_COMP_TYPE_DISCARD :
-+			WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK;
-+
-+		wma_info("MGMT TX completion (legacy injection): desc_id=%u raw_status=%d mapped_status=%u",
-+			 desc_id, status, mapped_status);
-+		wma_handle_injection_fw_response(wma_handle, desc_id,
-+						 mapped_status);
-+		qdf_nbuf_free(netbuf);
-+		return;
-+	}
-+
- 	vdev_id = mgmt_txrx_get_vdev_id(pdev, desc_id);
- 
- 	mgmt_params.vdev_id = vdev_id;
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c
-index f10747eb48f6077ee4c88a84086a29479e3410bb..cf9354ae6beff3d378dd1d3b88adf5ccbf14e7f2 100755
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c
-@@ -104,6 +104,7 @@
- #include "wma_coex.h"
- #include "wma_twt.h"
- #include "target_if_vdev_mgr_rx_ops.h"
-+#include "wma_frame_inject.h"
- #include "wlan_tdls_cfg_api.h"
- #include "wlan_policy_mgr_i.h"
- #include "target_if_psoc_timer_tx_ops.h"
-@@ -4124,6 +4125,9 @@ QDF_STATUS wma_open(struct wlan_objmgr_psoc *psoc,
- 	wma_register_wlm_stats_events(wma_handle);
- 	wma_register_wlm_latency_level_event(wma_handle);
- 	wma_register_mws_coex_events(wma_handle);
-+	qdf_status = wma_init_injection_queue(wma_handle);
-+	if (qdf_status != QDF_STATUS_SUCCESS)
-+			wma_err("%s: Failed to initialize injection queue: %d", __func__, qdf_status);
- 	wma_trace_init();
- 	wma_set_exclude_selftx_from_cca_busy_time(
- 			cds_cfg->exclude_selftx_from_cca_busy,
-@@ -5196,6 +5200,13 @@ QDF_STATUS wma_close(void)
- 	pmo_unregister_get_pause_bitmap(wma_handle->psoc);
- 	pmo_unregister_pause_bitmap_notifier(wma_handle->psoc);
- 
-+	/* Deinitialize frame injection queue */
-+	qdf_status = wma_deinit_injection_queue(wma_handle);
-+	if (qdf_status != QDF_STATUS_SUCCESS) {
-+		wma_err("%s: Failed to deinitialize injection queue: %d",
-+			 __func__, qdf_status);
-+	}
-+
- 	tgt_psoc_info = wlan_psoc_get_tgt_if_handle(wma_handle->psoc);
- 	init_deinit_free_num_units(wma_handle->psoc, tgt_psoc_info);
- 	target_if_free_psoc_tgt_info(wma_handle->psoc);
-diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
-index 2cd2f6608b25a1efb2e3d83aab47c266988ea1e2..d41190daab5320a70b5eaac5245a811524eca441 100644
---- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
-+++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
-@@ -73,6 +73,7 @@
- #include "wma_eht.h"
- #include <qdf_crypto.h>
- #include "wma_twt.h"
-+#include "wma_frame_inject.h"
- #include "wlan_p2p_cfg_api.h"
- #include "cfg_ucfg_api.h"
- #include "cfg_mlme_sta.h"
-@@ -3168,6 +3169,14 @@ static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
- 	wma_debug("status: %s wmi_desc_id: %d",
- 		  wma_get_status_str(status), desc_id);
- 
-+	if (desc_id == 0 || WMA_IS_INJECTION_DESC_ID(desc_id)) {
-+		uint32_t norm_status = status;
-+		if (status >= WMI_MGMT_TX_COMP_TYPE_MAX)
-+			norm_status = status & 0x3;
-+		wma_handle_injection_fw_response(wma_handle, desc_id, norm_status);
-+		return 0;
-+	}
-+
- 	pdev = wma_handle->pdev;
- 	if (!pdev) {
- 		wma_err("psoc ptr is NULL");
-@@ -3175,10 +3184,12 @@ static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
- 	}
- 
- 	buf = mgmt_txrx_get_nbuf(pdev, desc_id);
-+	if (!buf) {
-+		wma_err("%s: no mgmt desc for id %u status %u", __func__, desc_id, status);
-+		return -EINVAL;
-+	}
- 
--
--	if (buf)
--		wma_mgmt_unmap_buf(wma_handle, buf);
-+	wma_mgmt_unmap_buf(wma_handle, buf);
- 
- 	if (vdev_id == INVALID_VDEV_ID)
- 		mgmt_params.vdev_id = mgmt_txrx_get_vdev_id(pdev, desc_id);
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6943f1cae76e9f330f154dd0a1406ee3b80f0172
+index 0000000..a3781b8
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject.h
 @@ -0,0 +1,721 @@
@@ -1044,21 +455,24 @@ index 0000000000000000000000000000000000000000..6943f1cae76e9f330f154dd0a1406ee3
 +	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
 +		 WIPHY_VENDOR_CMD_NEED_NETDEV | \
 +		 WIPHY_VENDOR_CMD_NEED_RUNNING, \
-+	.doit = hdd_frame_inject_netlink \
++	.doit = hdd_frame_inject_netlink, \
++	vendor_command_policy(VENDOR_CMD_RAW_DATA, 0) \
 +}, \
 +{ \
 +	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
 +	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_FRAME_INJECT_STATS, \
 +	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
 +		 WIPHY_VENDOR_CMD_NEED_NETDEV, \
-+	.doit = hdd_get_injection_stats_netlink \
++	.doit = hdd_get_injection_stats_netlink, \
++	vendor_command_policy(VENDOR_CMD_RAW_DATA, 0) \
 +}, \
 +{ \
 +	.info.vendor_id = QCA_NL80211_VENDOR_ID, \
 +	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_FRAME_INJECT_RESET, \
 +	.flags = WIPHY_VENDOR_CMD_NEED_WDEV | \
 +		 WIPHY_VENDOR_CMD_NEED_NETDEV, \
-+	.doit = hdd_reset_injection_stats_netlink \
++	.doit = hdd_reset_injection_stats_netlink, \
++	vendor_command_policy(VENDOR_CMD_RAW_DATA, 0) \
 +}
 +
 +/**
@@ -1663,13 +1077,9 @@ index 0000000000000000000000000000000000000000..6943f1cae76e9f330f154dd0a1406ee3
 +	return QDF_STATUS_E_NOSUPPORT;
 +}
 +
-+#endif /* FEATURE_FRAME_INJECTION_SUPPORT */
-+
-+#endif /* __WLAN_HDD_FRAME_INJECT_H */
-\ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_integration.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_integration.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6612c5d008c4a68b0a668d3b57c333f2a16a8efb
+index 0000000..6612c5d
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_integration.h
 @@ -0,0 +1,122 @@
@@ -1798,7 +1208,7 @@ index 0000000000000000000000000000000000000000..6612c5d008c4a68b0a668d3b57c333f2
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_security_test.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_security_test.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..66148b547b4d7a22adfe542780abcbe100d6072b
+index 0000000..66148b5
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_security_test.h
 @@ -0,0 +1,104 @@
@@ -1909,7 +1319,7 @@ index 0000000000000000000000000000000000000000..66148b547b4d7a22adfe542780abcbe1
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_test.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_test.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..42811c02776595738dc855b7aafbc6ea70e8fe91
+index 0000000..42811c0
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_inject_test.h
 @@ -0,0 +1,96 @@
@@ -2012,7 +1422,7 @@ index 0000000000000000000000000000000000000000..42811c02776595738dc855b7aafbc6ea
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_validate.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_validate.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..fc76dad2fa4191f94b05e18e7d8035a4d69f5643
+index 0000000..fc76dad
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_validate.h
 @@ -0,0 +1,89 @@
@@ -2108,7 +1518,7 @@ index 0000000000000000000000000000000000000000..fc76dad2fa4191f94b05e18e7d8035a4
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_validate_test.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_validate_test.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..edc3ddc196cff005a0a44c6845534c442a26e535
+index 0000000..edc3ddc
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_frame_validate_test.h
 @@ -0,0 +1,51 @@
@@ -2166,7 +1576,7 @@ index 0000000000000000000000000000000000000000..edc3ddc196cff005a0a44c6845534c44
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_inject_security.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_inject_security.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..635bfa314e00242ddf689b64f1ac5f69d2cce706
+index 0000000..635bfa3
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_inject_security.h
 @@ -0,0 +1,178 @@
@@ -2349,9 +1759,103 @@ index 0000000000000000000000000000000000000000..635bfa314e00242ddf689b64f1ac5f69
 +
 +#endif /* __WLAN_HDD_INJECT_SECURITY_H */
 \ No newline at end of file
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+index adcc3c5..b8ae8bb 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+@@ -97,6 +97,9 @@
+ #include "wlan_hdd_oemdata.h"
+ #endif
+ #include "wlan_hdd_he.h"
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++#include "wlan_hdd_frame_inject.h"
++#endif
+ 
+ #include <net/neighbour.h>
+ #include <net/netevent.h>
+@@ -1038,6 +1041,7 @@ struct rcpi_info {
+ };
+ 
+ struct hdd_context;
++struct hdd_injection_ctx;
+ 
+ #ifdef MULTI_CLIENT_LL_SUPPORT
+ /* Max host clients which can request the FW arbiter with the latency level */
+@@ -1483,7 +1487,10 @@ struct hdd_adapter {
+ #endif
+ #ifdef FEATURE_MONITOR_MODE_SUPPORT
+ 	bool monitor_mode_vdev_up_in_progress;
++	uint32_t mon_chan_freq;
++	enum phy_ch_width mon_bandwidth;
+ #endif
++	struct hdd_injection_ctx *injection_ctx;
+ 
+ 	struct rcpi_info rcpi;
+ 	bool send_mode_change;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 048b629..61c0411 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31465,6 +31465,9 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 		return qdf_status_to_os_return(status);
+ 	}
+ 
++	adapter->mon_chan_freq = chandef->chan->center_freq;
++	adapter->mon_bandwidth = ch_width;
++
+ 	hdd_exit();
+ 
+ 	return 0;
+@@ -32905,6 +32908,38 @@ static int __wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
+ 		ret = wlan_hdd_cfg80211_get_channel_sap(wiphy, chandef,
+ 							adapter, link_id);
+ 		break;
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++	case QDF_MONITOR_MODE: {
++		struct ieee80211_channel *chan;
++		uint32_t freq = adapter->mon_chan_freq;
++
++		if (!freq)
++			freq = adapter->deflink->session.monitor.freq;
++		if (!freq)
++			return -ENODATA;
++
++		chan = ieee80211_get_channel(wiphy, freq);
++		if (!chan)
++			return -ENODATA;
++
++		cfg80211_chandef_create(chandef, chan, NL80211_CHAN_NO_HT);
++		switch (adapter->mon_bandwidth) {
++		case CH_WIDTH_40MHZ:
++			chandef->width = NL80211_CHAN_WIDTH_40;
++			break;
++		case CH_WIDTH_80MHZ:
++			chandef->width = NL80211_CHAN_WIDTH_80;
++			break;
++		case CH_WIDTH_160MHZ:
++			chandef->width = NL80211_CHAN_WIDTH_160;
++			break;
++		default:
++			break;
++		}
++		ret = 0;
++		break;
++	}
++#endif
+ 	case QDF_STA_MODE:
+ 	case QDF_P2P_CLIENT_MODE:
+ 		ret = wlan_hdd_cfg80211_get_channel_sta(wiphy, chandef, hdd_ctx,
+@@ -34367,7 +34402,6 @@ static struct cfg80211_ops wlan_hdd_cfg80211_ops = {
+ #endif
+ 	.set_antenna = wlan_hdd_cfg80211_set_chainmask,
+ 	.get_antenna = wlan_hdd_cfg80211_get_chainmask,
+-	.get_channel = wlan_hdd_cfg80211_get_channel,
+ 	.set_bitrate_mask = wlan_hdd_cfg80211_set_bitrate_mask,
+ 	.tx_control_port = wlan_hdd_cfg80211_tx_control_port,
+ #ifdef CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..a0dd550306943a06e5831195ca41a4b7c4523e1b
+index 0000000..a0dd550
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject.c
 @@ -0,0 +1,1812 @@
@@ -4169,7 +3673,7 @@ index 0000000000000000000000000000000000000000..a0dd550306943a06e5831195ca41a4b7
 +#endif /* FEATURE_FRAME_INJECTION_SUPPORT */
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_comprehensive_test.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_comprehensive_test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..c06a45c0ac34e4c620a56876083ccfb15b4fceb0
+index 0000000..b720ade
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_comprehensive_test.c
 @@ -0,0 +1,674 @@
@@ -4838,9 +4342,9 @@ index 0000000000000000000000000000000000000000..c06a45c0ac34e4c620a56876083ccfb1
 +			  all_tests_passed ? "PASSED" : "FAILED");
 +
 +	if (all_tests_passed) {
-+		hdd_comp_test_info("🎉 All comprehensive tests PASSED! Frame injection system is ready for production.");
++		hdd_comp_test_info("All comprehensive tests PASSED! Frame injection system is ready for production.");
 +	} else {
-+		hdd_comp_test_err("�?Some comprehensive tests FAILED. Review failures before production deployment.");
++		hdd_comp_test_err("Some comprehensive tests FAILED. Review failures before production deployment.");
 +	}
 +
 +	return all_tests_passed ? QDF_STATUS_SUCCESS : QDF_STATUS_E_FAILURE;
@@ -4850,7 +4354,7 @@ index 0000000000000000000000000000000000000000..c06a45c0ac34e4c620a56876083ccfb1
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_integration.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_integration.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..3af2706a6943d6ebcf6ffa91aced55b39ecb66ea
+index 0000000..3af2706
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_integration.c
 @@ -0,0 +1,528 @@
@@ -5385,7 +4889,7 @@ index 0000000000000000000000000000000000000000..3af2706a6943d6ebcf6ffa91aced55b3
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_security_test.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_security_test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..c5c52b20bac6ad5d90b5a42a8569f67a652d757b
+index 0000000..c5c52b2
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_security_test.c
 @@ -0,0 +1,714 @@
@@ -6106,7 +5610,7 @@ index 0000000000000000000000000000000000000000..c5c52b20bac6ad5d90b5a42a8569f67a
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_test.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..01c971e76c858f8b4363a59c223f29d20d9f24d7
+index 0000000..01c971e
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_inject_test.c
 @@ -0,0 +1,541 @@
@@ -6654,7 +6158,7 @@ index 0000000000000000000000000000000000000000..01c971e76c858f8b4363a59c223f29d2
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_validate.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_validate.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..810a8a243acf8decd0dd13c04e1e0b94c1cdb4b9
+index 0000000..810a8a2
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_validate.c
 @@ -0,0 +1,686 @@
@@ -7346,7 +6850,7 @@ index 0000000000000000000000000000000000000000..810a8a243acf8decd0dd13c04e1e0b94
 +#endif /* FEATURE_FRAME_INJECTION_SUPPORT */
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_validate_test.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_validate_test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..91cd2030fa00bc15e0a1f5b8a4f693c1cf8a92ca
+index 0000000..91cd203
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_frame_validate_test.c
 @@ -0,0 +1,492 @@
@@ -7845,7 +7349,7 @@ index 0000000000000000000000000000000000000000..91cd2030fa00bc15e0a1f5b8a4f693c1
 \ No newline at end of file
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_inject_security.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_inject_security.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..1c84bde2818791dac63def00a75f3ffc697a7a47
+index 0000000..1c84bde
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_inject_security.c
 @@ -0,0 +1,470 @@
@@ -8319,12 +7823,303 @@ index 0000000000000000000000000000000000000000..1c84bde2818791dac63def00a75f3ffc
 +}
 +
 +#endif /* FEATURE_FRAME_INJECTION_SUPPORT */
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c
+index 594a700..e34ef41 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_ioctl.c
+@@ -27,6 +27,9 @@
+ #include "wlan_hdd_trace.h"
+ #include "wlan_hdd_ioctl.h"
+ #include "wlan_hdd_power.h"
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++#include "wlan_hdd_frame_inject.h"
++#endif
+ #include "wlan_hdd_regulatory.h"
+ #include "wlan_osif_request_manager.h"
+ #include "wlan_hdd_driver_ops.h"
+@@ -7779,6 +7782,11 @@ static int __hdd_ioctl(struct net_device *dev, void __user *data, int cmd)
+ 		else
+ 			ret = hdd_driver_ioctl(adapter->deflink, data);
+ 		break;
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++	case SIOCDEVPRIVATE_FRAME_INJECT:
++		ret = hdd_frame_inject_ioctl(dev, data, cmd);
++		break;
++#endif
+ 	default:
+ 		hdd_warn("unknown ioctl %d", cmd);
+ 		ret = -EINVAL;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index dcdaf2f..002fc18 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -34,6 +34,8 @@
+ #include <linux/etherdevice.h>
+ #include <linux/firmware.h>
+ #include <linux/kernel.h>
++#include <linux/cred.h>
++#include <linux/uidgid.h>
+ #include <wlan_hdd_tx_rx.h>
+ #include <wni_api.h>
+ #include <wlan_hdd_cfg.h>
+@@ -142,6 +144,9 @@
+ #include "wlan_hdd_afc.h"
+ #include "wlan_dfs_ucfg_api.h"
+ #include "wlan_hdd_rx_monitor.h"
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++#include "wlan_hdd_frame_inject.h"
++#endif
+ #include "sme_power_save_api.h"
+ #include "enet.h"
+ #include <cdp_txrx_cmn_struct.h>
+@@ -7310,6 +7315,7 @@ static const struct net_device_ops wlan_drv_ops = {
+ static const struct net_device_ops wlan_mon_drv_ops = {
+ 	.ndo_open = hdd_mon_open,
+ 	.ndo_stop = hdd_stop,
++	.ndo_start_xmit = hdd_hard_start_xmit,
+ 	.ndo_get_stats = hdd_get_stats,
+ };
+ 
+@@ -9940,6 +9946,11 @@ struct hdd_adapter *hdd_open_adapter(struct hdd_context *hdd_ctx,
+ 	if (adapter->device_mode == QDF_STA_MODE)
+ 		wlan_hdd_debugfs_csr_init(adapter);
+ 
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++	if (QDF_STATUS_SUCCESS != hdd_init_frame_injection(adapter))
++		hdd_err(Failed to initialize frame injection for adapter);
++#endif
++
+ 	return adapter;
+ 
+ err_destroy_adapter_features_update_work:
+@@ -9983,6 +9994,9 @@ static void __hdd_close_adapter(struct hdd_context *hdd_ctx,
+ 	policy_mgr_clear_concurrency_mode(hdd_ctx->psoc, adapter->device_mode);
+ 	qdf_event_destroy(&adapter->peer_cleanup_done);
+ 	hdd_adapter_feature_update_work_deinit(adapter);
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++	hdd_deinit_frame_injection(adapter);
++#endif
+ 	hdd_cleanup_adapter(hdd_ctx, adapter, rtnl_held);
+ 	ucfg_dp_destroy_intf(hdd_ctx->psoc, &adapter_mac);
+ }
+@@ -10535,7 +10549,7 @@ static int hdd_stop_mon_adapter(struct hdd_adapter *adapter)
+ 	}
+ 
+ 	hdd_adapter_deregister_fc(adapter);
+-	status = hdd_disable_monitor_mode();
++	status = hdd_disable_monitor_mode(adapter->dev);
+ 	if (QDF_IS_STATUS_ERROR(status))
+ 		hdd_err_rl("datapath reset failed for montior mode");
+ 
+@@ -11450,8 +11464,7 @@ static inline void hdd_delete_sta(struct hdd_adapter *adapter)
+ static void hdd_stop_p2p_go(struct hdd_adapter *adapter)
+ {
+ 	hdd_debug("[SSR] send stop iface ap to supplicant");
+-	cfg80211_stop_iface(adapter->hdd_ctx->wiphy, &adapter->wdev,
+-			    GFP_KERNEL);
++	cfg80211_stop_iface(adapter->hdd_ctx->wiphy, &adapter->wdev, GFP_KERNEL);
+ }
+ 
+ /**
+@@ -12653,7 +12666,6 @@ void hdd_wlan_exit(struct hdd_context *hdd_ctx)
+ 	hdd_wlan_stop_modules(hdd_ctx, false);
+ 
+ 	hdd_driver_memdump_deinit();
+-
+ 	qdf_nbuf_deinit_replenish_timer();
+ 
+ 	if (QDF_GLOBAL_MONITOR_MODE ==  hdd_get_conparam()) {
+@@ -20190,6 +20202,9 @@ int hdd_init(void)
+ 	hdd_register_debug_callback();
+ 	wlan_roam_debug_init();
+ 
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++#endif
++
+ 	return 0;
+ 
+ err:
+@@ -20210,6 +20225,10 @@ void hdd_deinit(void)
+ {
+ 	wlan_roam_debug_deinit();
+ 
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++	/* Cleanup frame injection debug interfaces */
++#endif
++
+ #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
+ 	wlan_logging_sock_deinit_svc();
+ #endif
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h
+index b449a2e..6e3d216 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h
+@@ -34,14 +34,14 @@ int hdd_enable_monitor_mode(struct net_device *dev);
+  *
+  * Return: 0 for success; non-zero for failure
+  */
+-int hdd_disable_monitor_mode(void);
++int hdd_disable_monitor_mode(struct net_device *dev);
+ #else
+ static inline int hdd_enable_monitor_mode(struct net_device *dev)
+ {
+ 	return 0;
+ }
+ 
+-static inline int hdd_disable_monitor_mode(void)
++static inline int hdd_disable_monitor_mode(struct net_device *dev)
+ {
+ 	return 0;
+ }
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
+index 193bc68..fe49266 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
+@@ -49,6 +49,9 @@
+ #include "wlan_hdd_cfg80211.h"
+ #include <wlan_hdd_tsf.h>
+ #include <net/tcp.h>
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++#include "wlan_hdd_frame_inject.h"
++#endif
+ 
+ #include <ol_defines.h>
+ #include "cfg_ucfg_api.h"
+@@ -490,6 +493,86 @@ hdd_drop_tx_packet_on_ftm(struct sk_buff *skb)
+ }
+ #endif
+ 
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++static bool hdd_is_monitor_tx_dev(struct hdd_adapter *adapter,
++			  struct net_device *dev)
++{
++	if (!adapter || !dev)
++		return false;
++	if (adapter->device_mode == QDF_MONITOR_MODE)
++		return true;
++	if (dev->type == ARPHRD_IEEE80211_RADIOTAP)
++		return true;
++	if (dev->ieee80211_ptr && dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
++		return true;
++	return false;
++}
++
++static void hdd_monitor_mode_tx_inject(struct hdd_adapter *adapter,
++			       struct net_device *dev,
++			       struct sk_buff *skb)
++{
++	struct ieee80211_radiotap_header *rthdr;
++	struct inject_frame_req *req;
++	uint8_t *frame_data;
++	uint16_t rtap_len;
++	uint32_t frame_len;
++	uint64_t now;
++	QDF_STATUS status;
++	bool has_radiotap = false;
++
++	if (!adapter || !adapter->injection_ctx || !skb)
++		goto drop;
++	if (!adapter->injection_ctx->is_monitor_mode)
++		adapter->injection_ctx->is_monitor_mode = true;
++	if (skb->len >= sizeof(*rthdr)) {
++		rthdr = (struct ieee80211_radiotap_header *)skb->data;
++		if (rthdr->it_version == 0) {
++			rtap_len = ieee80211_get_radiotap_len(skb->data);
++			if (rtap_len >= sizeof(*rthdr) && rtap_len < skb->len)
++				has_radiotap = true;
++		}
++	}
++	if (has_radiotap) {
++		frame_data = skb->data + rtap_len;
++		frame_len = skb->len - rtap_len;
++	} else {
++		frame_data = skb->data;
++		frame_len = skb->len;
++	}
++	if (!frame_len || frame_len > HDD_FRAME_INJECT_MAX_SIZE)
++		goto drop;
++	req = qdf_mem_malloc(sizeof(*req));
++	if (!req)
++		goto drop;
++	req->frame_data = qdf_mem_malloc(frame_len);
++	if (!req->frame_data) {
++		qdf_mem_free(req);
++		goto drop;
++	}
++	qdf_mem_copy(req->frame_data, frame_data, frame_len);
++	now = qdf_get_log_timestamp();
++	req->frame_len = frame_len;
++	req->tx_flags = 0;
++	req->retry_count = 0;
++	req->tx_rate = 0;
++	req->timestamp = now;
++	req->session_id = (uint32_t)now;
++	req->submit_time = now;
++	req->queue_time = 0;
++	req->process_time = 0;
++	req->complete_time = 0;
++	status = hdd_process_frame_injection(adapter, req);
++	if (QDF_IS_STATUS_ERROR(status)) {
++		qdf_mem_free(req->frame_data);
++		qdf_mem_free(req);
++	}
++
++drop:
++	dev_kfree_skb_any(skb);
++}
++#endif
++
+ /**
+  * __hdd_hard_start_xmit() - Transmit a frame
+  * @skb: pointer to OS packet (sk_buff)
+@@ -516,6 +599,13 @@ static void __hdd_hard_start_xmit(struct sk_buff *skb,
+ 	enum sme_qos_wmmuptype up;
+ 	QDF_STATUS status;
+ 
++#ifdef FEATURE_FRAME_INJECTION_SUPPORT
++	if (hdd_is_monitor_tx_dev(adapter, dev)) {
++		hdd_monitor_mode_tx_inject(adapter, dev, skb);
++		return;
++	}
++#endif
++
+ 	if (hdd_drop_tx_packet_on_ftm(skb))
+ 		return;
+ 
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
+index f604a1c..1e780e0 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
+@@ -4405,6 +4405,8 @@ static uint8_t sme_get_nss_chain_shift(enum QDF_OPMODE device_mode)
+ 	switch (device_mode) {
+ 	case QDF_STA_MODE:
+ 		return STA_NSS_CHAINS_SHIFT;
++	case QDF_MONITOR_MODE:
++		return STA_NSS_CHAINS_SHIFT;
+ 	case QDF_SAP_MODE:
+ 		return SAP_NSS_CHAINS_SHIFT;
+ 	case QDF_P2P_GO_MODE:
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
+index f3e9834..39d0c9c 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
+@@ -6359,6 +6359,10 @@ void csr_get_vdev_type_nss(enum QDF_OPMODE dev_mode, uint8_t *nss_2g,
+ 		*nss_2g = mac_ctx->vdev_type_nss_2g.sta;
+ 		*nss_5g = mac_ctx->vdev_type_nss_5g.sta;
+ 		break;
++	case QDF_MONITOR_MODE:
++		*nss_2g = mac_ctx->vdev_type_nss_2g.sta;
++		*nss_5g = mac_ctx->vdev_type_nss_5g.sta;
++		break;
+ 	case QDF_SAP_MODE:
+ 		*nss_2g = mac_ctx->vdev_type_nss_2g.sap;
+ 		*nss_5g = mac_ctx->vdev_type_nss_5g.sap;
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_frame_inject.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_frame_inject.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..892ea049a136b98ad3f7645b9ae660ebe32f964a
+index 0000000..d3fc52e
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_frame_inject.h
-@@ -0,0 +1,398 @@
+@@ -0,0 +1,397 @@
 +/*
 + * Copyright (c) 2024 The Linux Foundation. All rights reserved.
 + *
@@ -8411,7 +8206,6 @@ index 0000000000000000000000000000000000000000..892ea049a136b98ad3f7645b9ae660eb
 + * @recovery_attempted: Whether recovery was attempted
 + */
 +struct wma_injection_fw_error_info {
-+	enum wma_injection_fw_error_type error_type;
 +	uint32_t fw_error_code;
 +	uint64_t timestamp;
 +	uint8_t vdev_id;
@@ -8723,9 +8517,43 @@ index 0000000000000000000000000000000000000000..892ea049a136b98ad3f7645b9ae660eb
 +#endif /* FEATURE_FRAME_INJECTION_SUPPORT */
 +
 +#endif /* __WMA_FRAME_INJECT_H */
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c
+index 62b5587..da66b64 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_data.c
+@@ -60,6 +60,7 @@
+ #include "ol_fw.h"
+ 
+ #include "wma_internal.h"
++#include "wma_frame_inject.h"
+ #include "cdp_txrx_flow_ctrl_legacy.h"
+ #include "cdp_txrx_cmn.h"
+ #include "cdp_txrx_misc.h"
+@@ -1366,6 +1367,21 @@ wma_mgmt_tx_ack_comp_hdlr(void *wma_context, qdf_nbuf_t netbuf, int32_t status)
+ 	uint8_t vdev_id;
+ 
+ 	desc_id = QDF_NBUF_CB_MGMT_TXRX_DESC_ID(netbuf);
++	if (WMA_IS_INJECTION_DESC_ID(desc_id)) {
++		uint32_t mapped_status;
++
++		mapped_status = status ?
++			WMI_MGMT_TX_COMP_TYPE_DISCARD :
++			WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK;
++
++		wma_info("MGMT TX completion (legacy injection): desc_id=%u raw_status=%d mapped_status=%u",
++			 desc_id, status, mapped_status);
++		wma_handle_injection_fw_response(wma_handle, desc_id,
++						 mapped_status);
++		qdf_nbuf_free(netbuf);
++		return;
++	}
++
+ 	vdev_id = mgmt_txrx_get_vdev_id(pdev, desc_id);
+ 
+ 	mgmt_params.vdev_id = vdev_id;
 diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_frame_inject.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_frame_inject.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22bfcc30321
+index 0000000..391240d
 --- /dev/null
 +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_frame_inject.c
 @@ -0,0 +1,2118 @@
@@ -8770,6 +8598,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +#include "qdf_nbuf.h"
 +#include "qdf_delayed_work.h"
 +#include "qdf_time.h"
++#include "qdf_threads.h"
 +#include "cds_api.h"
 +#include "cdp_txrx_cmn.h"
 +#include <wlan_vdev_mgr_tgt_if_tx_defs.h>
@@ -8818,7 +8647,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +/*
 + * Maximum age (in microseconds, QDF log-timestamp units) before an
 + * in-flight nbuf is considered abandoned by firmware and reaped.
-+ * 2 seconds is generous �?normal completions arrive in < 50 ms.
++ * 2 seconds is generous - normal completions arrive in < 50 ms.
 + */
 +#define WMA_INJECTION_NBUF_TIMEOUT_US      2000000ULL
 +
@@ -8914,8 +8743,8 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 + * The firmware's mgmt TX handler (FUN_b000fc10, _wlan_send_mgmt_to_host)
 + * unconditionally rejects management frames on MONITOR vdevs: the internal
 + * vdev-type switch only accepts AP(0), STA(1), IBSS(2), OCB(6) for the
-+ * normal peer-lookup �?WAL-TX path.  MONITOR(3) is shunted to a
-+ * beacon-only fallback (FUN_b01baa34) that always returns 5 �?DISCARD.
++ * normal peer-lookup / WAL-TX path.  MONITOR(3) is shunted to a
++ * beacon-only fallback (FUN_b01baa34) that always returns 5 / DISCARD.
 + *
 + * Work around this by creating a lightweight AP vdev on the same channel
 + * as the monitor interface and routing injected frames through it.  The AP
@@ -9008,14 +8837,47 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	if (g_inj_tx_vdev.created) {
 +		if (g_inj_tx_vdev.chanfreq == chanfreq)
 +			return QDF_STATUS_SUCCESS;
-+		/* Channel changed �?tear down and recreate */
++		qdf_mem_zero(&vstart, sizeof(vstart));
++		vstart.vdev_id             = g_inj_tx_vdev.vdev_id;
++		vstart.channel.mhz         = chanfreq;
++		vstart.channel.cfreq1      = chanfreq;
++		vstart.channel.cfreq2      = 0;
++		vstart.channel.phy_mode    = (chanfreq < 4000) ?
++					     WMI_HOST_MODE_11G :
++					     WMI_HOST_MODE_11A;
++		vstart.channel.maxregpower = 20;
++		vstart.channel.maxpower    = 20;
++		vstart.is_restart          = true;
++
++		status = wmi_unified_vdev_start_send(wma->wmi_handle, &vstart);
++		if (QDF_IS_STATUS_SUCCESS(status)) {
++			struct vdev_set_params vp = {0};
++
++			vp.vdev_id = g_inj_tx_vdev.vdev_id;
++			vp.param_id = 0x64; /* WMI_VDEV_PARAM_RX_FILTER */
++			vp.param_value = 0xFFFFFFFF;
++			wmi_unified_vdev_set_param_send(wma->wmi_handle, &vp);
++
++			vp.param_id = WMI_VDEV_PARAM_FIXED_RATE;
++			vp.param_value = 0x1;
++			wmi_unified_vdev_set_param_send(wma->wmi_handle, &vp);
++
++			vp.param_id = WMI_VDEV_PARAM_DTIM_PERIOD;
++			vp.param_value = 1;
++			wmi_unified_vdev_set_param_send(wma->wmi_handle, &vp);
++
++			g_inj_tx_vdev.chanfreq = chanfreq;
++			qdf_sleep(15);
++			return QDF_STATUS_SUCCESS;
++		}
++		/* Channel changed - tear down and recreate */
 +		wma_injection_destroy_tx_vdev(wma);
 +	}
 +
 +	/*
 +	 * Firmware vdev array supports IDs 0..(num_vdevs-1).  num_vdevs is
 +	 * at most CFG_TGT_NUM_VDEV (typically 4) and may be decremented by 1
-+	 * for NAN �?3.  Use (CFG_TGT_NUM_VDEV - 2) as safe ceiling so we
++	 * for NAN - 3.  Use (CFG_TGT_NUM_VDEV - 2) as safe ceiling so we
 +	 * never exceed the firmware's internal array.
 +	 */
 +	{
@@ -9038,9 +8900,13 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		return QDF_STATUS_E_RESOURCES;
 +	}
 +
-+	/* New vdev being created �?reset session state for a clean start */
++	/* New vdev being created - reset session state for a clean start */
 +	wma_injection_reset_session_state();
 +
++	if (!wma->interfaces[mon_vdev_id].vdev) {
++		wma_err("Injection: monitor vdev invalid");
++		return QDF_STATUS_E_FAILURE;
++	}
 +	mon_mac = wlan_vdev_mlme_get_macaddr(
 +			wma->interfaces[mon_vdev_id].vdev);
 +	if (!mon_mac) {
@@ -9048,6 +8914,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		return QDF_STATUS_E_FAILURE;
 +	}
 +	qdf_mem_copy(inj_mac, mon_mac, QDF_MAC_ADDR_SIZE);
++	inj_mac[0] &= 0xFE;
 +	inj_mac[0] |= 0x02; /* locally-administered */
 +
 +	/* ---------- 1. VDEV CREATE (STA type) ---------- */
@@ -9055,7 +8922,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	 * Use STA, not AP.  AP vdevs trigger firmware beacon-TX-offload
 +	 * which crashes at _wlan_beacon_tx_offload_handle_beacon because
 +	 * no beacon template exists.  STA vdevs reach the same peer-lookup
-+	 * �?WAL-TX path in the firmware mgmt TX handler without beacons.
++	 * / WAL-TX path in the firmware mgmt TX handler without beacons.
 +	 */
 +	qdf_mem_zero(&vcreate, sizeof(vcreate));
 +	vcreate.vdev_id = vid;
@@ -9076,7 +8943,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	 * Without these sleeps the mgmt-TX arrives before VDEV_CREATE is
 +	 * done and firmware asserts in wlan_vdev_find_vdev.
 +	 */
-+	msleep(150);
++	qdf_sleep(15);
 +
 +	/* ---------- 2. VDEV START (20 MHz basic mode) ---------- */
 +	qdf_mem_zero(&vstart, sizeof(vstart));
@@ -9084,8 +8951,10 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	vstart.channel.mhz        = chanfreq;
 +	vstart.channel.cfreq1     = chanfreq;
 +	vstart.channel.cfreq2     = 0;
-+	/* 2.4 GHz �?MODE_11G(1), 5 GHz �?MODE_11A(0) */
-+	vstart.channel.phy_mode   = (chanfreq < 4000) ? 1 : 0;
++	/* 2.4 GHz - MODE_11G(1), 5 GHz - MODE_11A(0) */
++	vstart.channel.phy_mode   = (chanfreq < 4000) ?
++				    WMI_HOST_MODE_11G :
++				    WMI_HOST_MODE_11A;
 +	vstart.channel.maxregpower = 20;
 +	vstart.channel.maxpower    = 20;
 +	vstart.beacon_interval    = 0;
@@ -9096,9 +8965,9 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		wma_err("Injection TX vdev start failed: %d", status);
 +		goto err_stop;
 +	}
-+	msleep(150);
++	qdf_sleep(15);
 +
-+	/* ---------- 3. PEER CREATE (self-peer �?fw vdev+0xc) ---------- */
++	/* ---------- 3. PEER CREATE (self-peer -> fw vdev+0xc) ---------- */
 +	qdf_mem_zero(&pcreate, sizeof(pcreate));
 +	pcreate.peer_addr = inj_mac;
 +	pcreate.peer_type = WMI_PEER_TYPE_DEFAULT;
@@ -9109,11 +8978,11 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		wma_err("Injection TX vdev peer create failed: %d", status);
 +		goto err_stop;
 +	}
-+	msleep(100);
++	qdf_sleep(10);
 +
 +	/*
 +	 * Skip VDEV_UP.  For STA vdevs, firmware's wlan_vdev_up
-+	 * asserts unless a BSS peer (the AP) exists �?we only have
++	 * asserts unless a BSS peer (the AP) exists - we only have
 +	 * a self-peer.  The mgmt TX handler only needs the vdev in
 +	 * STARTED state with a valid peer at vdev+0xc.
 +	 */
@@ -9147,7 +9016,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +
 +	/*
 +	 * Proper teardown order (reverse of create):
-+	 *   PEER_DELETE �?VDEV_STOP �?VDEV_DELETE
++	 *   PEER_DELETE -> VDEV_STOP -> VDEV_DELETE
 +	 * Each step needs a sleep so firmware finishes processing
 +	 * before the next command arrives.  Without this, a
 +	 * subsequent VDEV_CREATE for the same slot races with the
@@ -9186,7 +9055,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 + * present when the monitor vdev is torn down.
 + *
 + * Proper teardown order (reverse of create):
-+ *   PEER_DELETE �?VDEV_STOP �?VDEV_DELETE
++ *   PEER_DELETE -> VDEV_STOP -> VDEV_DELETE
 + * with msleep() gaps so the firmware can process each command.
 + */
 +void wma_injection_pre_stop_cleanup(tp_wma_handle wma_handle)
@@ -9200,7 +9069,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		return;
 +
 +	if (!wma_handle->wmi_handle) {
-+		/* WMI already gone �?just clear host state */
++		/* WMI already gone - just clear host state */
 +		wma_warn("WMI down, clearing injection vdev state only");
 +		qdf_mem_zero(&g_inj_tx_vdev, sizeof(g_inj_tx_vdev));
 +		return;
@@ -10146,8 +10015,9 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		return QDF_STATUS_E_AGAIN;
 +	}
 +
-+	if (wma_handle->interfaces[vdev_id].mhz)
-+		tx_chanfreq = wma_handle->interfaces[vdev_id].mhz;
++	if (wma_handle->interfaces[vdev_id].vdev->vdev_mlme.des_chan->ch_freq)
++		tx_chanfreq =
++			wma_handle->interfaces[vdev_id].vdev->vdev_mlme.des_chan->ch_freq;
 +
 +	if (req->frame_len)
 +		fc0 = req->frame_data[0];
@@ -10293,7 +10163,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	if (monitor_vdev) {
 +		/*
 +		 * FW _wlan_send_mgmt_to_host rejects MONITOR vdevs (falls
-+		 * to a beacon-only path �?DISCARD).  Route through a hidden
++		 * to a beacon-only path / DISCARD).  Route through a hidden
 +		 * AP vdev instead, which the FW accepts for mgmt TX.
 +		 */
 +		status = wma_injection_ensure_tx_vdev(wma_handle,
@@ -10492,27 +10362,26 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +					     uint32_t status)
 +{
 +	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
-+	enum wma_injection_fw_error_type error_type;
 +
-+	WMA_LOGD("Handling firmware injection response: desc_id=%u, status=0x%x", desc_id, status);
++	wma_debug("Handling firmware injection response: desc_id=%u, status=0x%x", desc_id, status);
 +
 +	if (!wma_handle) {
-+		WMA_LOGE("Invalid WMA handle");
++		wma_err("Invalid WMA handle");
 +		return QDF_STATUS_E_INVAL;
 +	}
 +
 +	/* Check if this is an error response */
 +	if (status != 0) {
-+		WMA_LOGW("Firmware injection failed: desc_id=%u, status=0x%x", desc_id, status);
++		wma_warn("Firmware injection failed: desc_id=%u, status=0x%x", desc_id, status);
 +		
 +		/* Handle the firmware error */
 +		qdf_status = wma_handle_firmware_injection_error(wma_handle, status, 0, NULL);
 +		if (QDF_IS_STATUS_ERROR(qdf_status) && qdf_status != QDF_STATUS_E_PENDING) {
-+			WMA_LOGE("Failed to handle firmware injection error: %d", qdf_status);
++			wma_err("Failed to handle firmware injection error: %d", qdf_status);
 +			return qdf_status;
 +		}
 +	} else {
-+		WMA_LOGD("Firmware injection completed successfully: desc_id=%u", desc_id);
++		wma_debug("Firmware injection completed successfully: desc_id=%u", desc_id);
 +	}
 +
 +	/* Update statistics would go here in a full implementation */
@@ -10578,9 +10447,8 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 + */
 +enum wma_injection_fw_error_type wma_translate_fw_injection_error(uint32_t fw_error_code)
 +{
-+	enum wma_injection_fw_error_type error_type;
 +
-+	WMA_LOGD("Translating firmware error code: 0x%x", fw_error_code);
++	wma_debug("Translating firmware error code: 0x%x", fw_error_code);
 +
 +	switch (fw_error_code) {
 +	case 0x0: /* Success */
@@ -10615,7 +10483,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +		break;
 +	}
 +
-+	WMA_LOGD("Translated firmware error 0x%x to type %d", fw_error_code, error_type);
++	wma_debug("Translated firmware error 0x%x to type %d", fw_error_code, error_type);
 +	return error_type;
 +}
 +
@@ -10637,16 +10505,14 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +						uint8_t vdev_id,
 +						struct inject_frame_req *req)
 +{
-+	enum wma_injection_fw_error_type error_type;
-+	struct wma_injection_fw_error_info *error_info;
 +	QDF_STATUS status = QDF_STATUS_SUCCESS;
 +	bool should_retry = false;
 +	uint32_t retry_delay_ms = 0;
 +
-+	WMA_LOGD("Handling firmware injection error: code=0x%x, vdev_id=%u", error_code, vdev_id);
++	wma_debug("Handling firmware injection error: code=0x%x, vdev_id=%u", error_code, vdev_id);
 +
 +	if (!wma_handle) {
-+		WMA_LOGE("Invalid WMA handle");
++		wma_err("Invalid WMA handle");
 +		return QDF_STATUS_E_INVAL;
 +	}
 +
@@ -10655,7 +10521,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +
 +	/* Update error statistics - this would be part of a larger injection context */
 +	/* For now, we'll log the error information */
-+	WMA_LOGW("Firmware injection error: type=%d, code=0x%x, vdev_id=%u",
++	wma_warn("Firmware injection error: type=%d, code=0x%x, vdev_id=%u",
 +		 error_type, error_code, vdev_id);
 +
 +	/* Determine if we should retry based on error type */
@@ -10709,7 +10575,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	if (should_retry && req) {
 +		/* Check retry count to avoid infinite loops */
 +		if (req->retry_count < 3) { /* Maximum 3 retries */
-+			WMA_LOGI("Retrying injection after %u ms delay (attempt %u)",
++			wma_info("Retrying injection after %u ms delay (attempt %u)",
 +				 retry_delay_ms, req->retry_count + 1);
 +			
 +			/* Schedule retry with delay */
@@ -10718,16 +10584,16 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +				return QDF_STATUS_E_PENDING; /* Retry scheduled */
 +			}
 +		} else {
-+			WMA_LOGW("Maximum retry attempts reached for injection request");
++			wma_warn("Maximum retry attempts reached for injection request");
 +			status = QDF_STATUS_E_FAILURE;
 +		}
 +	}
 +
 +	/* If we reach here, either no retry was needed or retry failed */
 +	if (QDF_IS_STATUS_ERROR(status)) {
-+		WMA_LOGE("Firmware injection error handling failed: %d", status);
++		wma_err("Firmware injection error handling failed: %d", status);
 +	} else {
-+		WMA_LOGI("Firmware injection error handled successfully");
++		wma_info("Firmware injection error handled successfully");
 +	}
 +
 +	return status;
@@ -10753,11 +10619,11 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	QDF_STATUS status;
 +	uint32_t delay_ms;
 +
-+	WMA_LOGD("Retrying injection frame: vdev_id=%u, error_type=%d, retry_count=%u",
++	wma_debug("Retrying injection frame: vdev_id=%u, error_type=%d, retry_count=%u",
 +		 vdev_id, error_type, req->retry_count);
 +
 +	if (!wma_handle || !req) {
-+		WMA_LOGE("Invalid parameters for retry");
++		wma_err("Invalid parameters for retry");
 +		return QDF_STATUS_E_INVAL;
 +	}
 +
@@ -10773,7 +10639,7 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	/* Add some jitter to avoid thundering herd */
 +	delay_ms += (qdf_get_log_timestamp() % 50); /* Add 0-49ms jitter */
 +
-+	WMA_LOGI("Scheduling injection retry in %u ms (attempt %u)",
++	wma_info("Scheduling injection retry in %u ms (attempt %u)",
 +		 delay_ms, req->retry_count);
 +
 +	/* For now, we'll simulate the retry by calling the send function again */
@@ -10783,11 +10649,11 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +	/* Attempt to send the frame again */
 +	status = wma_send_injection_frame_to_fw(wma_handle, req, vdev_id);
 +	if (QDF_IS_STATUS_ERROR(status)) {
-+		WMA_LOGW("Injection retry failed: %d", status);
++		wma_warn("Injection retry failed: %d", status);
 +		return status;
 +	}
 +
-+	WMA_LOGI("Injection retry initiated successfully");
++	wma_info("Injection retry initiated successfully");
 +	return QDF_STATUS_SUCCESS;
 +}
 +
@@ -10806,44 +10672,85 @@ index 0000000000000000000000000000000000000000..0f32770e96e632ef3ea85f71ab77e22b
 +{
 +	QDF_STATUS status = QDF_STATUS_SUCCESS;
 +
-+	WMA_LOGD("Synchronizing firmware injection state for vdev_id=%u", vdev_id);
++	wma_debug("Synchronizing firmware injection state for vdev_id=%u", vdev_id);
 +
 +	if (!wma_handle) {
-+		WMA_LOGE("Invalid WMA handle");
-+		return QDF_STATUS_E_INVAL;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c
+index f10747e..cf9354a 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c
+@@ -104,6 +104,7 @@
+ #include "wma_coex.h"
+ #include "wma_twt.h"
+ #include "target_if_vdev_mgr_rx_ops.h"
++#include "wma_frame_inject.h"
+ #include "wlan_tdls_cfg_api.h"
+ #include "wlan_policy_mgr_i.h"
+ #include "target_if_psoc_timer_tx_ops.h"
+@@ -4124,6 +4125,9 @@ QDF_STATUS wma_open(struct wlan_objmgr_psoc *psoc,
+ 	wma_register_wlm_stats_events(wma_handle);
+ 	wma_register_wlm_latency_level_event(wma_handle);
+ 	wma_register_mws_coex_events(wma_handle);
++	qdf_status = wma_init_injection_queue(wma_handle);
++	if (qdf_status != QDF_STATUS_SUCCESS)
++			wma_err("%s: Failed to initialize injection queue: %d", __func__, qdf_status);
+ 	wma_trace_init();
+ 	wma_set_exclude_selftx_from_cca_busy_time(
+ 			cds_cfg->exclude_selftx_from_cca_busy,
+@@ -5196,6 +5200,13 @@ QDF_STATUS wma_close(void)
+ 	pmo_unregister_get_pause_bitmap(wma_handle->psoc);
+ 	pmo_unregister_pause_bitmap_notifier(wma_handle->psoc);
+ 
++	/* Deinitialize frame injection queue */
++	qdf_status = wma_deinit_injection_queue(wma_handle);
++	if (qdf_status != QDF_STATUS_SUCCESS) {
++		wma_err("%s: Failed to deinitialize injection queue: %d",
++			 __func__, qdf_status);
 +	}
 +
-+	/* Check if VDEV is valid and active */
-+	if (vdev_id >= wma_handle->max_bssid) {
-+		WMA_LOGE("Invalid VDEV ID: %u", vdev_id);
-+		return QDF_STATUS_E_INVAL;
+ 	tgt_psoc_info = wlan_psoc_get_tgt_if_handle(wma_handle->psoc);
+ 	init_deinit_free_num_units(wma_handle->psoc, tgt_psoc_info);
+ 	target_if_free_psoc_tgt_info(wma_handle->psoc);
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index 2cd2f66..d41190d 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -73,6 +73,7 @@
+ #include "wma_eht.h"
+ #include <qdf_crypto.h>
+ #include "wma_twt.h"
++#include "wma_frame_inject.h"
+ #include "wlan_p2p_cfg_api.h"
+ #include "cfg_ucfg_api.h"
+ #include "cfg_mlme_sta.h"
+@@ -3168,6 +3169,14 @@ static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
+ 	wma_debug("status: %s wmi_desc_id: %d",
+ 		  wma_get_status_str(status), desc_id);
+ 
++	if (desc_id == 0 || WMA_IS_INJECTION_DESC_ID(desc_id)) {
++		uint32_t norm_status = status;
++		if (status >= WMI_MGMT_TX_COMP_TYPE_MAX)
++			norm_status = status & 0x3;
++		wma_handle_injection_fw_response(wma_handle, desc_id, norm_status);
++		return 0;
 +	}
 +
-+	/* Verify VDEV state */
-+	if (!wma_handle->interfaces[vdev_id].handle) {
-+		WMA_LOGW("VDEV %u is not active", vdev_id);
-+		return QDF_STATUS_E_INVAL;
+ 	pdev = wma_handle->pdev;
+ 	if (!pdev) {
+ 		wma_err("psoc ptr is NULL");
+@@ -3175,10 +3184,12 @@ static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
+ 	}
+ 
+ 	buf = mgmt_txrx_get_nbuf(pdev, desc_id);
++	if (!buf) {
++		wma_err("%s: no mgmt desc for id %u status %u", __func__, desc_id, status);
++		return -EINVAL;
 +	}
-+
-+	/* Check interface type - injection typically requires monitor mode */
-+	if (wma_handle->interfaces[vdev_id].type != WMI_VDEV_TYPE_MONITOR) {
-+		WMA_LOGW("VDEV %u is not in monitor mode (type=%d)",
-+			 vdev_id, wma_handle->interfaces[vdev_id].type);
-+		/* This might not be an error depending on implementation */
-+	}
-+
-+	/* Flush any pending injection frames for this VDEV */
-+	/* This would be implemented as part of the queue management */
-+	WMA_LOGI("Flushing pending injection frames for vdev_id=%u", vdev_id);
-+
-+	/* Send a sync command to firmware if needed */
-+	/* This would involve sending a WMI command to query/reset injection state */
-+	WMA_LOGD("Sending injection state sync command to firmware");
-+
-+	/* For now, we'll just log that synchronization is complete */
-+	WMA_LOGI("Firmware injection state synchronized for vdev_id=%u", vdev_id);
-+
-+	return status;
-+}
-+
-+#endif /* FEATURE_FRAME_INJECTION_SUPPORT */
+ 
+-
+-	if (buf)
+-		wma_mgmt_unmap_buf(wma_handle, buf);
++	wma_mgmt_unmap_buf(wma_handle, buf);
+ 
+ 	if (vdev_id == INVALID_VDEV_ID)
+ 		mgmt_params.vdev_id = mgmt_txrx_get_vdev_id(pdev, desc_id);

@@ -1,7 +1,7 @@
-diff --git a/arch/arm64/configs/gki_defconfig b/arch/arm64/configs/gki_defconfig
+diff --git a/kernel_platform/common/arch/arm64/configs/gki_defconfig b/kernel_platform/common/arch/arm64/configs/gki_defconfig
 index 4f756dca5e05..2b5a60a8c676 100644
---- a/arch/arm64/configs/gki_defconfig
-+++ b/arch/arm64/configs/gki_defconfig
+--- a/kernel_platform/common/arch/arm64/configs/gki_defconfig
++++ b/kernel_platform/common/arch/arm64/configs/gki_defconfig
 @@ -298,11 +298,13 @@ CONFIG_BT=m
  CONFIG_BT_RFCOMM=m
  CONFIG_BT_RFCOMM_TTY=y
@@ -16,10 +16,10 @@ index 4f756dca5e05..2b5a60a8c676 100644
  CONFIG_RFKILL=m
  CONFIG_NET_9P=m
  CONFIG_NFC=m
-diff --git a/modules.bzl b/modules.bzl
+diff --git a/kernel_platform/common/modules.bzl b/kernel_platform/common/modules.bzl
 index e6d7523a9c84..2220dc217549 100644
---- a/modules.bzl
-+++ b/modules.bzl
+--- a/kernel_platform/common/modules.bzl
++++ b/kernel_platform/common/modules.bzl
 @@ -12,9 +12,13 @@ _COMMON_GKI_MODULES_LIST = [
      "drivers/block/virtio_blk.ko",
      "drivers/block/zram/zram.ko",
@@ -34,17 +34,3 @@ index e6d7523a9c84..2220dc217549 100644
      "drivers/char/virtio_console.ko",
      "drivers/misc/vcpu_stall_detector.ko",
      "drivers/net/can/dev/can-dev.ko",
-diff --git a/sun.bzl b/sun.bzl
---- a/sun.bzl
-+++ b/sun.bzl
-@@ -12,6 +12,10 @@ def define_sun():
-         # keep sorted
-         "arch/arm64/gunyah/gh_arm_drv.ko",
-         "drivers/base/regmap/qti-regmap-debugfs.ko",
-+        "drivers/bluetooth/btintel.ko",
-+        "drivers/bluetooth/btrtl.ko",
-+        "drivers/bluetooth/btusb.ko",
-+        "drivers/bluetooth/hci_vhci.ko",
-         "drivers/bus/mhi/devices/mhi_dev_satellite.ko",
-         "drivers/bus/mhi/devices/mhi_dev_uci.ko",
-         "drivers/bus/mhi/host/mhi.ko",
