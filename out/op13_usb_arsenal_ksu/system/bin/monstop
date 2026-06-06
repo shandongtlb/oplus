@@ -1,0 +1,3 @@
+#!/system/bin/sh
+# monstop — leave monitor, restore normal WiFi
+exec sh /data/adb/modules/op13_coloros16_nethunter/monitor_control.sh off

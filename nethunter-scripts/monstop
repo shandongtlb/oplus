@@ -1,0 +1,17 @@
+#!/system/bin/sh
+# monstop — tear down monitor, restore normal WiFi.
+# The driver: (1) forces a psoc idle shutdown to rebuild the DP RX path so STA
+# data works again (no module reload), and (2) destroys the injection helper
+# vdev. Timing matters:
+#  - sleep 5 after deleting wlan0mon lets the forced shutdown finish before
+#    svc wifi enable would otherwise cancel it;
+#  - scan-always stays OFF until svc wifi enable brings STA back, else the
+#    framework opens an iface inside the shutdown window and aborts it.
+ip link set wlan0mon down 2>/dev/null || true
+iw dev wlan0mon del 2>/dev/null || true
+sleep 5
+svc wifi enable
+sleep 12
+settings put global wifi_scan_always_enabled 1
+cmd wifi set-scan-always-available enabled >/dev/null 2>&1 || true
+echo "[monstop] done. wifi restored."

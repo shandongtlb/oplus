@@ -19,9 +19,16 @@ Boot-time behavior:
 
 Manual controls:
 - `action.sh`
-  - one-click toggle for the module UI
+  - KSU Action button: one-click toggle between stock ↔ nethunter WLAN stack
   - if current mode is stock: enable bind mounts, then switch to the NetHunter WLAN stack
   - if current mode is NetHunter: restore the stock WLAN stack and remove bind mounts
+- **Monitor mode + injection** (requires nethunter stack active)
+  - `monstart [freq_MHz]` — enter monitor mode
+    - no freq: capture/scan only (airodump can hop all channels)
+    - with freq (e.g. `monstart 5745`): locks channel + builds injection helper vdev
+  - `monstop` — leave monitor, restore normal WiFi
+  - See `docs/QUICK_MONITOR_GUIDE.md` for usage + injection notes
+  - **Note**: OnePlus 13's qcacld FullMAC requires a locked channel for injection (FW rejects TX on monitor vdev); the patched driver auto-creates a hidden STA helper vdev when freq is set
 - `runtime_status.txt`
   - generated runtime snapshot in the installed module directory
 - `show_status.sh`

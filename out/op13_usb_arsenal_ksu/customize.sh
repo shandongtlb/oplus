@@ -43,4 +43,13 @@ set_permissions() {
   if [ -f "$MODPATH/uninstall.sh" ]; then
     set_perm "$MODPATH/uninstall.sh" 0 0 0755
   fi
+  if [ -f "$MODPATH/monitor_control.sh" ]; then
+    set_perm "$MODPATH/monitor_control.sh" 0 0 0755
+  fi
+  if [ -f "$MODPATH/system/bin/monstart" ]; then
+    set_perm "$MODPATH/system/bin/monstart" 0 0 0755
+  fi
+  if [ -f "$MODPATH/system/bin/monstop" ]; then
+    set_perm "$MODPATH/system/bin/monstop" 0 0 0755
+  fi
 }
