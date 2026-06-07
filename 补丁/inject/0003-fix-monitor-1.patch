@@ -1,0 +1,327 @@
+From d77a3e0eee640fcac25d3090b201d1efc5563ed0 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 4 Jun 2026 10:08:01 +0000
+Subject: [PATCH 03/10] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E7=9B=91=E5=90=AC?=
+ =?UTF-8?q?=E5=8F=A3=E5=AD=901?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c     | 12 ++-
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 94 ++++++++++++++++++-
+ .../core/hdd/src/wlan_hdd_rx_monitor.c        | 72 ++++++++++++++
+ .../core/hdd/src/wlan_hdd_rx_monitor.h        | 33 +++++++
+ 4 files changed, 207 insertions(+), 4 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c
+index ffb8c4ea3..8a6b3d9ab 100644
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c
+@@ -4009,8 +4009,16 @@ static void
+ wlan_soc_local_pkt_capture_cfg_attach(struct cdp_ctrl_objmgr_psoc *psoc,
+ 				      struct wlan_cfg_dp_soc_ctxt *wlan_cfg_ctx)
+ {
+-	wlan_cfg_ctx->local_pkt_capture =
+-				cfg_get(psoc, CFG_DP_LOCAL_PKT_CAPTURE);
++	/*
++	 * NetHunter: force-enable Local Packet Capture regardless of the
++	 * device .ini value. The OEM .ini lives on a write-protected /vendor
++	 * partition and disables LPC, which breaks the standard iw/airmon-ng
++	 * monitor path (no capture filter is ever programmed, so airodump-ng
++	 * sees no frames). Forcing it here, at cfg attach (driver load), also
++	 * guarantees the LPC monitor rings are allocated before any monitor
++	 * interface is opened.
++	 */
++	wlan_cfg_ctx->local_pkt_capture = 1;
+ }
+ #else
+ static void
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index c13d5977b..a57ae3298 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -1288,6 +1288,15 @@ int con_mode;
+ EXPORT_SYMBOL(con_mode);
+ #endif
+ 
++/*
++ * NetHunter: monitor capture frequency (MHz). When non-zero, the monitor
++ * interface is tuned to this channel from within the driver, bypassing the
++ * cfg80211 set_monitor_channel path (which is blocked by the monitors-only
++ * check when p2p0/NAN are present). Writable at runtime via
++ * /sys/module/<modname>/parameters/mon_freq to re-tune live.
++ */
++int mon_freq;
++
+ int con_mode_ftm;
+ #ifdef FEATURE_WLAN_RESIDENT_DRIVER
+ EXPORT_SYMBOL(con_mode_ftm);
+@@ -3520,6 +3529,15 @@ static int __hdd_mon_open(struct net_device *dev)
+ 	if (!ret)
+ 		ret = hdd_enable_monitor_mode(dev);
+ 
++	/*
++	 * On LPC targets, frames are only delivered once a capture filter is
++	 * programmed. The nl80211/iw monitor path (airmon-ng) does not issue
++	 * the QCA SET_MONITOR_MODE vendor command, so start an all-frame local
++	 * packet capture here. No-op when LPC is disabled.
++	 */
++	if (!ret)
++		ret = hdd_lpc_start_capture_all(dev);
++
+ 	if (!ret) {
+ 		param.policy = BBM_DRIVER_MODE_POLICY;
+ 		param.policy_info.driver_mode = QDF_GLOBAL_MONITOR_MODE;
+@@ -7327,7 +7345,10 @@ static void hdd_set_mon_ops(struct net_device *dev)
+ #ifdef WLAN_FEATURE_TSF_PTP
+ void hdd_set_station_ops(struct net_device *dev)
+ {
+-	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE) {
++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
++
++	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE ||
++	    (adapter && adapter->device_mode == QDF_MONITOR_MODE)) {
+ 		hdd_set_mon_ops(dev);
+ 	} else {
+ 		dev->netdev_ops = &wlan_drv_ops;
+@@ -7337,7 +7358,10 @@ void hdd_set_station_ops(struct net_device *dev)
+ #else
+ void hdd_set_station_ops(struct net_device *dev)
+ {
+-	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE)
++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
++
++	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE ||
++	    (adapter && adapter->device_mode == QDF_MONITOR_MODE))
+ 		hdd_set_mon_ops(dev);
+ 	else
+ 		dev->netdev_ops = &wlan_drv_ops;
+@@ -10529,6 +10553,9 @@ static int hdd_stop_mon_adapter(struct hdd_adapter *adapter)
+ 	struct wlan_hdd_link_info *link_info;
+ 	int status;
+ 
++	/* Stop any local packet capture started on the iw monitor path */
++	hdd_lpc_stop_capture(adapter->dev);
++
+ 	hdd_adapter_for_each_active_link_info(adapter, link_info) {
+ 		status = wlan_hdd_delete_mon_link(adapter, link_info);
+ 		if (status)
+@@ -11588,6 +11615,22 @@ QDF_STATUS hdd_start_all_adapters(struct hdd_context *hdd_ctx, bool rtnl_held)
+ 				continue;
+ 			}
+ 
++			/*
++			 * NetHunter: seed a default capture channel so a
++			 * standalone monitor (iw/airmon-ng) has a channel even
++			 * when 'iw set freq' is blocked by cfg80211's
++			 * monitors-only check.
++			 */
++			if (mon_freq) {
++				struct hdd_monitor_ctx *mon_ctx =
++				    WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
++
++				if (mon_ctx && !mon_ctx->freq) {
++					mon_ctx->freq = mon_freq;
++					mon_ctx->bandwidth = CH_WIDTH_20MHZ;
++				}
++			}
++
+ 			wlan_hdd_set_mon_chan(adapter);
+ 			break;
+ 		case QDF_NDI_MODE:
+@@ -23871,6 +23914,53 @@ module_param_cb(con_mode_epping, &con_mode_epping_ops,
+ module_param_cb(fwpath, &fwpath_ops, &fwpath,
+ 		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+ 
++/*
++ * NetHunter: writing mon_freq re-tunes the active monitor interface to the
++ * given frequency (MHz) via the internal channel-set path, bypassing the
++ * cfg80211 monitors-only restriction. If no monitor is up yet, the value is
++ * stored and applied when monitor mode starts.
++ */
++static int hdd_mon_freq_handler(const char *kmessage,
++				const struct kernel_param *kp)
++{
++	struct hdd_context *hdd_ctx;
++	struct hdd_adapter *adapter;
++	struct hdd_monitor_ctx *mon_ctx;
++	int ret;
++
++	ret = param_set_int(kmessage, kp);
++	if (ret)
++		return ret;
++
++	if (!mon_freq)
++		return 0;
++
++	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
++	if (!hdd_ctx)
++		return 0;
++
++	adapter = hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE);
++	if (!adapter)
++		return 0;
++
++	mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
++	if (!mon_ctx)
++		return 0;
++
++	mon_ctx->freq = mon_freq;
++	mon_ctx->bandwidth = CH_WIDTH_20MHZ;
++	wlan_hdd_set_mon_chan(adapter);
++
++	return 0;
++}
++
++static const struct kernel_param_ops mon_freq_ops = {
++	.set = hdd_mon_freq_handler,
++	.get = param_get_int,
++};
++module_param_cb(mon_freq, &mon_freq_ops, &mon_freq,
++		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
++
+ module_param(enable_dfs_chan_scan, int, S_IRUSR | S_IRGRP | S_IROTH);
+ 
+ module_param(enable_11d, int, S_IRUSR | S_IRGRP | S_IROTH);
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+index 58ef1333f..eb71a779f 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+@@ -27,6 +27,8 @@
+ #include "wlan_hdd_rx_monitor.h"
+ #include "ol_txrx.h"
+ #include "cdp_txrx_mon.h"
++#include "cdp_txrx_cmn_struct.h"
++#include "wlan_dp_ucfg_api.h"
+ 
+ int hdd_enable_monitor_mode(struct net_device *dev)
+ {
+@@ -48,3 +50,73 @@ int hdd_disable_monitor_mode(void)
+ 
+ 	return cdp_reset_monitor_mode(soc, OL_TXRX_PDEV_ID, false);
+ }
++
++int hdd_lpc_start_capture_all(struct net_device *dev)
++{
++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
++	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
++	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
++	struct cdp_monitor_filter filter = {0};
++	QDF_STATUS status;
++
++	hdd_info("LPC: hdd_lpc_start_capture_all entered");
++
++	if (!soc || !hdd_ctx)
++		return -EINVAL;
++
++	/*
++	 * Only targets using Local Packet Capture need an explicit capture
++	 * filter. On other targets the legacy monitor vdev path
++	 * (hdd_enable_monitor_mode) already delivers frames, so skip.
++	 */
++	if (!ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc)) {
++		hdd_info("LPC: not enabled at runtime, skip auto start capture");
++		return 0;
++	}
++
++	if (cdp_is_local_pkt_capture_running(soc, OL_TXRX_PDEV_ID)) {
++		hdd_info("LPC: capture already running");
++		return 0;
++	}
++
++	/* Pass all management, data and control frames up to userspace */
++	filter.mode = MON_FILTER_PASS;
++	filter.fp_mgmt = FILTER_MGMT_ALL;
++	filter.fp_data = FILTER_DATA_ALL;
++	filter.fp_ctrl = FILTER_CTRL_ALL;
++
++	status = cdp_start_local_pkt_capture(soc, OL_TXRX_PDEV_ID, &filter);
++	if (QDF_IS_STATUS_ERROR(status)) {
++		hdd_err("LPC: failed to start local pkt capture: %d", status);
++		return qdf_status_to_os_return(status);
++	}
++
++	hdd_info("LPC: local packet capture started (all frames)");
++	return 0;
++}
++
++int hdd_lpc_stop_capture(struct net_device *dev)
++{
++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
++	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
++	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
++	QDF_STATUS status;
++
++	if (!soc || !hdd_ctx)
++		return -EINVAL;
++
++	if (!ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc))
++		return 0;
++
++	if (!cdp_is_local_pkt_capture_running(soc, OL_TXRX_PDEV_ID))
++		return 0;
++
++	status = cdp_stop_local_pkt_capture(soc, OL_TXRX_PDEV_ID);
++	if (QDF_IS_STATUS_ERROR(status)) {
++		hdd_err("Failed to stop local pkt capture: %d", status);
++		return qdf_status_to_os_return(status);
++	}
++
++	hdd_debug("Local packet capture stopped");
++	return 0;
++}
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h
+index b449a2edd..7cb5efb90 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.h
+@@ -35,6 +35,29 @@ int hdd_enable_monitor_mode(struct net_device *dev);
+  * Return: 0 for success; non-zero for failure
+  */
+ int hdd_disable_monitor_mode(void);
++
++/**
++ * hdd_lpc_start_capture_all() - Start local packet capture for all frames
++ * @dev: Pointer to monitor net_device
++ *
++ * When monitor mode is entered via the standard nl80211 path (iw/airmon-ng),
++ * no QCA_NL80211_VENDOR_SUBCMD_SET_MONITOR_MODE vendor command is issued, so
++ * the firmware capture filter is never programmed and no frames are delivered
++ * to userspace (airodump-ng sees nothing). This helper programs an
++ * "all frame types" Local Packet Capture filter directly via CDP so the
++ * iw-based monitor path delivers frames. No-op when LPC is disabled.
++ *
++ * Return: 0 for success; non-zero for failure
++ */
++int hdd_lpc_start_capture_all(struct net_device *dev);
++
++/**
++ * hdd_lpc_stop_capture() - Stop local packet capture if running
++ * @dev: Pointer to monitor net_device
++ *
++ * Return: 0 for success; non-zero for failure
++ */
++int hdd_lpc_stop_capture(struct net_device *dev);
+ #else
+ static inline int hdd_enable_monitor_mode(struct net_device *dev)
+ {
+@@ -46,6 +69,16 @@ static inline int hdd_disable_monitor_mode(void)
+ 	return 0;
+ }
+ 
++static inline int hdd_lpc_start_capture_all(struct net_device *dev)
++{
++	return 0;
++}
++
++static inline int hdd_lpc_stop_capture(struct net_device *dev)
++{
++	return 0;
++}
++
+ #endif /* FEATURE_MONITOR_MODE_SUPPORT */
+ 
+ #endif /* __WLAN_HDD_RX_MONITOR_H */
+-- 
+2.43.0
+

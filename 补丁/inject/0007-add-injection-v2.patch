@@ -1,0 +1,373 @@
+From bf7d3869528f57ef5d4989e6fdfb8dcf8f37151b Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Sat, 6 Jun 2026 13:57:15 +0000
+Subject: [PATCH 07/10] =?UTF-8?q?=E6=B7=BB=E5=8A=A0=E6=B3=A8=E5=85=A5?=
+ =?UTF-8?q?=E5=8A=9F=E8=83=BDv2?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../core/hdd/src/wlan_hdd_cfg80211.c          |  12 +
+ .../core/hdd/src/wlan_hdd_rx_monitor.c        |  11 +-
+ .../wlan/qcacld-3.0/core/wma/inc/wma_api.h    |  23 ++
+ .../wlan/qcacld-3.0/core/wma/src/wma_mgmt.c   | 207 +++++++++++++++++-
+ 4 files changed, 245 insertions(+), 8 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 0cc6cf5aa..bc67cbac7 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31510,6 +31510,18 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 		return qdf_status_to_os_return(status);
+ 	}
+ 
++	/*
++	 * NETHUNTER Phase 2b: the monitor vdev is now up on this channel, so
++	 * (re)create the hidden STA helper vdev bound to it for packet
++	 * injection (FW DISCARDs mgmt TX on the monitor vdev itself). This is a
++	 * sleepable cfg80211 op context, required by the helper's WMI bring-up.
++	 * Non-fatal: monitor capture works regardless; only injection needs it.
++	 */
++	if (wma_inject_ensure_tx_vdev(adapter->deflink->vdev_id,
++				      chandef->chan->center_freq) !=
++	    QDF_STATUS_SUCCESS)
++		hdd_info("NETHUNTER-INJ: TX helper vdev not ready; injection unavailable on this channel");
++
+ 	hdd_exit();
+ 
+ 	return 0;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+index 1407807d9..07457ab27 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+@@ -29,6 +29,7 @@
+ #include "cdp_txrx_mon.h"
+ #include "cdp_txrx_cmn_struct.h"
+ #include "wlan_dp_ucfg_api.h"
++#include "wma_api.h"	/* NETHUNTER Phase 2b: wma_inject_destroy_tx_vdev */
+ 
+ int hdd_enable_monitor_mode(struct net_device *dev)
+ {
+@@ -42,7 +43,7 @@ int hdd_enable_monitor_mode(struct net_device *dev)
+ 	 * info level (not err) so it is greppable for version checks without
+ 	 * spamming the error log on every monitor start.
+ 	 */
+-	hdd_info("NETHUNTER-MON: enable_monitor_mode build=mon-inject-probe-r6");
++	hdd_info("NETHUNTER-MON: enable_monitor_mode build=mon-inject-probe-r7");
+ 
+ 	vdev_id = cdp_get_mon_vdev_from_pdev(soc, OL_TXRX_PDEV_ID);
+ 	if (vdev_id < 0)
+@@ -55,6 +56,14 @@ int hdd_disable_monitor_mode(void)
+ {
+ 	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
+ 
++	/*
++	 * NETHUNTER Phase 2b: destroy the hidden injection helper vdev BEFORE
++	 * the monitor teardown / psoc idle shutdown. An orphaned helper vdev
++	 * would either keep firmware state inconsistent or get torn down at an
++	 * uncontrolled time. Sleepable context (monitor stop path).
++	 */
++	wma_inject_destroy_tx_vdev();
++
+ 	return cdp_reset_monitor_mode(soc, OL_TXRX_PDEV_ID, false);
+ }
+ 
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
+index 1b9150e31..20a18f854 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
+@@ -1016,4 +1016,27 @@ wma_get_fw_active_apf_mode(enum active_apf_mode mode)
+  */
+ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 				uint32_t frame_len);
++
++/**
++ * wma_inject_ensure_tx_vdev() - create the hidden STA helper vdev for injection
++ * @mon_vdev_id: monitor vdev id (to derive MAC + skip its slot)
++ * @chanfreq: monitor channel in MHz to bind the helper vdev to
++ *
++ * NETHUNTER Phase 2b. peach_v2 FW DISCARDs mgmt TX on a monitor vdev, so a
++ * firmware-only STA vdev on the same channel is used as the TX endpoint.
++ * MUST be called from a sleepable context (it sleeps between async WMI
++ * commands) - e.g. the cfg80211 set_monitor_channel handler. Idempotent for
++ * the same channel; recreates on channel change.
++ *
++ * Return: QDF_STATUS_SUCCESS when the helper vdev is ready.
++ */
++QDF_STATUS wma_inject_ensure_tx_vdev(uint8_t mon_vdev_id, uint32_t chanfreq);
++
++/**
++ * wma_inject_destroy_tx_vdev() - tear down the injection helper vdev
++ *
++ * MUST be called (sleepable context) on monitor teardown BEFORE the psoc idle
++ * shutdown, so an orphaned helper vdev cannot abort the clean round-trip.
++ */
++void wma_inject_destroy_tx_vdev(void);
+ #endif /* WMA_API_H */
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index 29365e800..696f6c50a 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -72,6 +72,10 @@
+ #include "wma_he.h"
+ #include "wma_eht.h"
+ #include <qdf_crypto.h>
++/* NETHUNTER Phase 2b: raw WMI vdev/peer bring-up for the injection TX helper */
++#include "wlan_vdev_mgr_tgt_if_tx_defs.h"
++#include "qdf_threads.h"
++#include "wlan_tgt_def_config.h"	/* CFG_TGT_NUM_VDEV */
+ #include "wma_twt.h"
+ #include "wlan_p2p_cfg_api.h"
+ #include "cfg_ucfg_api.h"
+@@ -3248,6 +3252,187 @@ static void wma_inject_handle_completion(tp_wma_handle wma, uint32_t desc_id,
+ 			 g_wma_inj.completed, g_wma_inj.reclaimed);
+ }
+ 
++/*
++ * NETHUNTER Phase 2b: hidden STA helper vdev for injection.
++ *
++ * peach_v2 firmware DISCARDs mgmt TX issued on a MONITOR vdev (confirmed
++ * on-device: every completion returned WMI_MGMT_TX_COMP_TYPE_DISCARD). So we
++ * create a firmware-only STA-type vdev bound to the monitor channel and route
++ * injected frames through it - the FW mgmt-TX path accepts an STA vdev
++ * (peer-lookup -> WAL-TX) without beacons (an AP vdev would crash FW beacon
++ * offload). Brought up in a SLEEPABLE context (cfg80211 set_monitor_channel)
++ * because the async WMI bring-up sleeps between commands; the per-frame TX path
++ * (softirq) then just reuses the helper vdev_id with no sleeping.
++ */
++#define WMA_INJ_VDEV_SETTLE_MS   150
++#define WMA_INJ_PEER_SETTLE_MS   100
++
++static struct wma_inj_tx_vdev {
++	bool created;
++	uint8_t vdev_id;
++	uint8_t mon_vdev_id;
++	uint32_t chanfreq;
++	uint8_t mac_addr[QDF_MAC_ADDR_SIZE];
++} g_inj_tx_vdev;
++
++void wma_inject_destroy_tx_vdev(void)
++{
++	tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
++	struct vdev_stop_params vstop = {0};
++	struct peer_delete_cmd_params pdel = {0};
++
++	if (!g_inj_tx_vdev.created)
++		return;
++
++	if (wma_validate_handle(wma) || !wma->wmi_handle) {
++		/* WMI already gone (e.g. module stop) - just forget it */
++		qdf_mem_zero(&g_inj_tx_vdev, sizeof(g_inj_tx_vdev));
++		return;
++	}
++
++	wma_info("NETHUNTER-INJ: destroying TX helper vdev=%u",
++		 g_inj_tx_vdev.vdev_id);
++
++	/* reverse of create: peer_delete -> vdev_stop -> vdev_delete, with a
++	 * settle between each so FW finishes before the next command.
++	 */
++	pdel.vdev_id = g_inj_tx_vdev.vdev_id;
++	wmi_unified_peer_delete_send(wma->wmi_handle, g_inj_tx_vdev.mac_addr,
++				     &pdel);
++	qdf_sleep(WMA_INJ_PEER_SETTLE_MS);
++
++	vstop.vdev_id = g_inj_tx_vdev.vdev_id;
++	wmi_unified_vdev_stop_send(wma->wmi_handle, &vstop);
++	qdf_sleep(WMA_INJ_PEER_SETTLE_MS);
++
++	wmi_unified_vdev_delete_send(wma->wmi_handle, g_inj_tx_vdev.vdev_id);
++	qdf_sleep(WMA_INJ_PEER_SETTLE_MS);
++
++	qdf_mem_zero(&g_inj_tx_vdev, sizeof(g_inj_tx_vdev));
++	wma_info("NETHUNTER-INJ: TX helper vdev destroyed");
++}
++
++QDF_STATUS wma_inject_ensure_tx_vdev(uint8_t mon_vdev_id, uint32_t chanfreq)
++{
++	tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
++	struct vdev_create_params vcreate = {0};
++	struct vdev_start_params vstart = {0};
++	struct peer_create_params pcreate = {0};
++	uint8_t *mon_mac;
++	uint8_t inj_mac[QDF_MAC_ADDR_SIZE];
++	uint8_t vid = 0;
++	int i, fw_max_vid;
++	bool found = false;
++	QDF_STATUS status;
++
++	if (wma_validate_handle(wma) || !wma->wmi_handle)
++		return QDF_STATUS_E_INVAL;
++	if (mon_vdev_id >= wma->max_bssid || !chanfreq)
++		return QDF_STATUS_E_INVAL;
++	if (!wma->interfaces[mon_vdev_id].vdev)
++		return QDF_STATUS_E_INVAL;
++
++	if (g_inj_tx_vdev.created) {
++		if (g_inj_tx_vdev.chanfreq == chanfreq)
++			return QDF_STATUS_SUCCESS;
++		wma_inject_destroy_tx_vdev();	/* channel changed -> recreate */
++	}
++
++	/*
++	 * Find an unused vdev slot, skipping the monitor vdev. Ceiling is
++	 * CFG_TGT_NUM_VDEV-2 so we never exceed the FW vdev array.
++	 */
++	fw_max_vid = CFG_TGT_NUM_VDEV - 2;
++	if (fw_max_vid >= (int)wma->max_bssid)
++		fw_max_vid = (int)wma->max_bssid - 1;
++	for (i = fw_max_vid; i >= 0; i--) {
++		if ((uint8_t)i == mon_vdev_id)
++			continue;
++		if (!wma->interfaces[i].vdev) {
++			vid = (uint8_t)i;
++			found = true;
++			break;
++		}
++	}
++	if (!found) {
++		wma_err("NETHUNTER-INJ: no free vdev slot for TX helper");
++		return QDF_STATUS_E_RESOURCES;
++	}
++
++	mon_mac = wlan_vdev_mlme_get_macaddr(wma->interfaces[mon_vdev_id].vdev);
++	if (!mon_mac) {
++		wma_err("NETHUNTER-INJ: cannot read monitor vdev MAC");
++		return QDF_STATUS_E_FAILURE;
++	}
++	qdf_mem_copy(inj_mac, mon_mac, QDF_MAC_ADDR_SIZE);
++	inj_mac[0] |= 0x02;	/* locally-administered, distinct from monitor */
++
++	/* 1. VDEV CREATE (STA - AP type crashes FW beacon-tx-offload) */
++	vcreate.vdev_id = vid;
++	vcreate.type    = WMI_VDEV_TYPE_STA;
++	vcreate.subtype = 0;
++	vcreate.nss_2g  = 1;
++	vcreate.nss_5g  = 1;
++	vcreate.pdev_id = 0;
++	status = wmi_unified_vdev_create_send(wma->wmi_handle, inj_mac, &vcreate);
++	if (QDF_IS_STATUS_ERROR(status)) {
++		wma_err("NETHUNTER-INJ: helper vdev create failed %d", status);
++		return status;
++	}
++	qdf_sleep(WMA_INJ_VDEV_SETTLE_MS);
++
++	/* 2. VDEV START on the monitor channel (legacy 20 MHz) */
++	vstart.vdev_id           = vid;
++	vstart.beacon_interval   = 0;
++	vstart.dtim_period       = 0;
++	vstart.channel.mhz       = chanfreq;
++	vstart.channel.cfreq1    = chanfreq;
++	vstart.channel.cfreq2    = 0;
++	/*
++	 * channel.phy_mode carries the FW phymode here (copy_channel_info feeds
++	 * it straight to WMI_SET_CHANNEL_MODE). wmi_host_to_fw_phymode() returns
++	 * WMI_HOST_WLAN_PHY_MODE; the explicit cast silences -Wenum-conversion.
++	 */
++	vstart.channel.phy_mode  = (enum wlan_phymode)wmi_host_to_fw_phymode(
++			(chanfreq < 4000) ? WLAN_PHYMODE_11G : WLAN_PHYMODE_11A);
++	vstart.channel.maxpower    = 20;
++	vstart.channel.maxregpower = 20;
++	status = wmi_unified_vdev_start_send(wma->wmi_handle, &vstart);
++	if (QDF_IS_STATUS_ERROR(status)) {
++		wma_err("NETHUNTER-INJ: helper vdev start failed %d", status);
++		goto err_delete;
++	}
++	qdf_sleep(WMA_INJ_VDEV_SETTLE_MS);
++
++	/* 3. PEER CREATE (self-peer; FW mgmt TX needs a peer on the vdev) */
++	pcreate.peer_addr = inj_mac;
++	pcreate.peer_type = WMI_PEER_TYPE_DEFAULT;
++	pcreate.vdev_id   = vid;
++	status = wmi_unified_peer_create_send(wma->wmi_handle, &pcreate);
++	if (QDF_IS_STATUS_ERROR(status)) {
++		wma_err("NETHUNTER-INJ: helper peer create failed %d", status);
++		goto err_delete;
++	}
++	qdf_sleep(WMA_INJ_PEER_SETTLE_MS);
++
++	/* Skip VDEV_UP: a STA vdev_up asserts in FW without a BSS peer; the
++	 * mgmt-TX path only needs the vdev STARTED with a valid self-peer.
++	 */
++	g_inj_tx_vdev.created     = true;
++	g_inj_tx_vdev.vdev_id     = vid;
++	g_inj_tx_vdev.mon_vdev_id = mon_vdev_id;
++	g_inj_tx_vdev.chanfreq    = chanfreq;
++	qdf_mem_copy(g_inj_tx_vdev.mac_addr, inj_mac, QDF_MAC_ADDR_SIZE);
++
++	wma_info("NETHUNTER-INJ: TX helper vdev ready vdev=%u mac=%pM freq=%u (mon vdev=%u)",
++		 vid, inj_mac, chanfreq, mon_vdev_id);
++	return QDF_STATUS_SUCCESS;
++
++err_delete:
++	wmi_unified_vdev_delete_send(wma->wmi_handle, vid);
++	return status;
++}
++
+ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 				uint32_t frame_len)
+ {
+@@ -3258,6 +3443,7 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 	qdf_nbuf_t nbuf, old = NULL;
+ 	uint8_t *data;
+ 	uint16_t chanfreq;
++	uint8_t tx_vdev_id;
+ 	uint32_t slot, desc_id;
+ 	QDF_STATUS status;
+ 
+@@ -3293,6 +3479,13 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 		return QDF_STATUS_E_INVAL;
+ 	}
+ 
++	/*
++	 * FW DISCARDs mgmt TX on the monitor vdev itself, so route through the
++	 * hidden STA helper vdev when it is up (created at set_monitor_channel).
++	 * Frame still goes out on the monitor channel via mgmt_params.chanfreq.
++	 */
++	tx_vdev_id = g_inj_tx_vdev.created ? g_inj_tx_vdev.vdev_id : vdev_id;
++
+ 	wma_inject_init_once();
+ 
+ 	nbuf = qdf_nbuf_alloc(NULL, frame_len, 0, 4, false);
+@@ -3335,15 +3528,15 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 
+ 	mgmt_params.tx_frame = nbuf;
+ 	mgmt_params.frm_len = frame_len;
+-	mgmt_params.vdev_id = vdev_id;
++	mgmt_params.vdev_id = tx_vdev_id;
+ 	mgmt_params.chanfreq = chanfreq;
+ 	mgmt_params.desc_id = desc_id;
+ 	mgmt_params.pdata = data;
+ 	mgmt_params.qdf_ctx = qdf_ctx;
+ 
+ 	if (!g_wma_inj.banner) {
+-		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-probe-r6 vdev=%u chan=%u iface_type=%u",
+-			 vdev_id, chanfreq, iface->type);
++		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-probe-r7 mon_vdev=%u tx_vdev=%u helper=%u chan=%u",
++			 vdev_id, tx_vdev_id, g_inj_tx_vdev.created, chanfreq);
+ 		g_wma_inj.banner = true;
+ 	}
+ 
+@@ -3379,14 +3572,14 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 		uint8_t fc0 = frame[0];
+ 
+ 		if (frame_len >= 24)
+-			wma_info("NETHUNTER-INJ: [submit] #%u vdev=%u desc=%u chan=%u len=%u fc=0x%02x(type=%u sub=%u) a1=%pM a2=%pM a3=%pM",
+-				 g_wma_inj.submitted, vdev_id, desc_id, chanfreq,
++			wma_info("NETHUNTER-INJ: [submit] #%u tx_vdev=%u desc=%u chan=%u len=%u fc=0x%02x(type=%u sub=%u) a1=%pM a2=%pM a3=%pM",
++				 g_wma_inj.submitted, tx_vdev_id, desc_id, chanfreq,
+ 				 frame_len, fc0, (fc0 >> 2) & 0x3,
+ 				 (fc0 >> 4) & 0xf, frame + 4, frame + 10,
+ 				 frame + 16);
+ 		else
+-			wma_info("NETHUNTER-INJ: [submit] #%u vdev=%u desc=%u chan=%u len=%u fc=0x%02x(type=%u sub=%u) (short frame)",
+-				 g_wma_inj.submitted, vdev_id, desc_id, chanfreq,
++			wma_info("NETHUNTER-INJ: [submit] #%u tx_vdev=%u desc=%u chan=%u len=%u fc=0x%02x(type=%u sub=%u) (short frame)",
++				 g_wma_inj.submitted, tx_vdev_id, desc_id, chanfreq,
+ 				 frame_len, fc0, (fc0 >> 2) & 0x3,
+ 				 (fc0 >> 4) & 0xf);
+ 	}
+-- 
+2.43.0
+

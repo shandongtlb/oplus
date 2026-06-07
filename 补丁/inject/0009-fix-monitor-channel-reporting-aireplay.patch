@@ -1,0 +1,37 @@
+From bcff639183153a6510d1f1a279ea53743747541c Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Sun, 7 Jun 2026 08:02:10 +0000
+Subject: [PATCH 09/10] qcacld: fix monitor channel reporting for aireplay-ng
+
+Update mon_ctx->freq and mon_ctx->bandwidth after successful channel
+set in __wlan_hdd_cfg80211_set_mon_ch(). Without this, get_channel()
+returns -ENODATA and aireplay-ng shows 'channel -1'.
+
+Fixes: aireplay-ng unable to read monitor interface channel
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ .../wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c       | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index be3eb4301..bc38a8e6d 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31538,6 +31538,13 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 				    WLAN_CONTROL_PATH);
+ 	hdd_info("NETHUNTER-INJ: monitor Tx queues re-started after channel set");
+ 
++	/*
++	 * Update mon_ctx so that cfg80211_get_channel() can report the active
++	 * monitor channel to nl80211/wext clients (aireplay-ng, iwconfig, etc).
++	 */
++	mon_ctx->freq = chandef->chan->center_freq;
++	mon_ctx->bandwidth = ch_width;
++
+ 	hdd_exit();
+ 
+ 	return 0;
+-- 
+2.43.0
+

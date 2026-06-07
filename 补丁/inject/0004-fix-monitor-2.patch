@@ -1,0 +1,397 @@
+From 16e337fc581ae1aa541fcc41e1db7868b67697d6 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Fri, 5 Jun 2026 09:41:24 +0000
+Subject: [PATCH 04/10] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E7=9B=91=E5=90=AC?=
+ =?UTF-8?q?=E5=8F=A3=E5=AD=902?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../arch/arm64/configs/vendor/sun_perf.config |  5 +-
+ .../wireless/realtek/rtl818x/rtl8187/dev.c    |  7 +-
+ .../net/wireless/zydas/zd1211rw/zd_mac.c      | 18 ++--
+ kernel_platform/msm-kernel/net/mac80211/cfg.c |  7 +-
+ kernel_platform/msm-kernel/net/mac80211/tx.c  | 14 ++-
+ .../msm-kernel/net/wireless/chan.c            |  3 +-
+ .../qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c     | 12 +--
+ .../core/hdd/src/wlan_hdd_cfg80211.c          | 17 ++++
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 90 +------------------
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c    |  3 +-
+ .../core/hdd/src/wlan_hdd_rx_monitor.c        |  5 ++
+ 11 files changed, 63 insertions(+), 118 deletions(-)
+
+diff --git a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
+index 463a0888f..0847eecfe 100644
+--- a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
++++ b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
+@@ -101,8 +101,9 @@ CONFIG_MAC80211=m
+ # CONFIG_MAC80211_LEDS is not set
+ # CONFIG_MAC80211_MESH is not set
+ # CONFIG_MAC80211_MESSAGE_TRACING is not set
+-CONFIG_MAC80211_RC_DEFAULT=""
+-# CONFIG_MAC80211_RC_MINSTREL is not set
++CONFIG_MAC80211_RC_MINSTREL=y
++CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
++CONFIG_MAC80211_RC_DEFAULT="minstrel_ht"
+ CONFIG_MAX31760_FAN_CONTROLLER=m
+ CONFIG_MEM_SHARE_QMI_SERVICE=m
+ CONFIG_MFD_I2C_PMIC=m
+diff --git a/kernel_platform/msm-kernel/drivers/net/wireless/realtek/rtl818x/rtl8187/dev.c b/kernel_platform/msm-kernel/drivers/net/wireless/realtek/rtl818x/rtl8187/dev.c
+index 04945f905..ffa94731c 100644
+--- a/kernel_platform/msm-kernel/drivers/net/wireless/realtek/rtl818x/rtl8187/dev.c
++++ b/kernel_platform/msm-kernel/drivers/net/wireless/realtek/rtl818x/rtl8187/dev.c
+@@ -248,8 +248,11 @@ static void rtl8187_tx(struct ieee80211_hw *dev,
+ 	flags |= RTL818X_TX_DESC_FLAG_NO_ENC;
+ 
+ 	flags |= ieee80211_get_tx_rate(dev, info)->hw_value << 24;
+-	if (ieee80211_has_morefrags(tx_hdr->frame_control))
+-		flags |= RTL818X_TX_DESC_FLAG_MOREFRAG;
++	if (ieee80211_has_morefrags(tx_hdr->frame_control)) {
++		if (likely(info->control.vif != NULL &&
++			   info->control.vif->type != NL80211_IFTYPE_MONITOR))
++			flags |= RTL818X_TX_DESC_FLAG_MOREFRAG;
++	}
+ 
+ 	/* HW will perform RTS-CTS when only RTS flags is set.
+ 	 * HW will perform CTS-to-self when both RTS and CTS flags are set.
+diff --git a/kernel_platform/msm-kernel/drivers/net/wireless/zydas/zd1211rw/zd_mac.c b/kernel_platform/msm-kernel/drivers/net/wireless/zydas/zd1211rw/zd_mac.c
+index 5d534e15a..a84fbfa27 100644
+--- a/kernel_platform/msm-kernel/drivers/net/wireless/zydas/zd1211rw/zd_mac.c
++++ b/kernel_platform/msm-kernel/drivers/net/wireless/zydas/zd1211rw/zd_mac.c
+@@ -229,14 +229,19 @@ void zd_mac_clear(struct zd_mac *mac)
+ static int set_rx_filter(struct zd_mac *mac)
+ {
+ 	unsigned long flags;
+-	u32 filter = STA_RX_FILTER;
++	struct zd_ioreq32 ioreqs[] = {
++		{ CR_RX_FILTER, STA_RX_FILTER },
++		{ CR_SNIFFER_ON, 0U },
++	};
+ 
+ 	spin_lock_irqsave(&mac->lock, flags);
+-	if (mac->pass_ctrl)
+-		filter |= RX_FILTER_CTRL;
++	if (mac->pass_ctrl) {
++		ioreqs[0].value |= 0xFFFFFFFF;
++		ioreqs[1].value = 0x1;
++	}
+ 	spin_unlock_irqrestore(&mac->lock, flags);
+ 
+-	return zd_iowrite32(&mac->chip, CR_RX_FILTER, filter);
++	return zd_iowrite32a(&mac->chip, ioreqs, ARRAY_SIZE(ioreqs));
+ }
+ 
+ static int set_mac_and_bssid(struct zd_mac *mac)
+@@ -1042,7 +1047,8 @@ int zd_mac_rx(struct ieee80211_hw *hw, const u8 *buffer, unsigned int length)
+ 	/* Caller has to ensure that length >= sizeof(struct rx_status). */
+ 	status = (struct rx_status *)
+ 		(buffer + (length - sizeof(struct rx_status)));
+-	if (status->frame_status & ZD_RX_ERROR) {
++	if ((status->frame_status & ZD_RX_ERROR) ||
++		(status->frame_status & ~0x21)) {
+ 		if (mac->pass_failed_fcs &&
+ 				(status->frame_status & ZD_RX_CRC32_ERROR)) {
+ 			stats.flag |= RX_FLAG_FAILED_FCS_CRC;
+@@ -1387,7 +1393,7 @@ struct ieee80211_hw *zd_mac_alloc_hw(struct usb_interface *intf)
+ 	ieee80211_hw_set(hw, MFP_CAPABLE);
+ 	ieee80211_hw_set(hw, HOST_BROADCAST_PS_BUFFERING);
+ 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
+-	ieee80211_hw_set(hw, SIGNAL_UNSPEC);
++	ieee80211_hw_set(hw, SIGNAL_DBM);
+ 
+ 	hw->wiphy->interface_modes =
+ 		BIT(NL80211_IFTYPE_MESH_POINT) |
+diff --git a/kernel_platform/msm-kernel/net/mac80211/cfg.c b/kernel_platform/msm-kernel/net/mac80211/cfg.c
+index a3c5d4d99..5f3bab598 100644
+--- a/kernel_platform/msm-kernel/net/mac80211/cfg.c
++++ b/kernel_platform/msm-kernel/net/mac80211/cfg.c
+@@ -931,10 +931,9 @@ static int ieee80211_set_monitor_channel(struct wiphy *wiphy,
+ 		}
+ 	} else {
+ 		mutex_lock(&local->mtx);
+-		if (local->open_count == local->monitors) {
+-			local->_oper_chandef = *chandef;
+-			ieee80211_hw_config(local, 0);
+-		}
++		/* Allow monitor channel changes even when normal virtual interfaces exist. */
++		local->_oper_chandef = *chandef;
++		ieee80211_hw_config(local, 0);
+ 		mutex_unlock(&local->mtx);
+ 	}
+ 
+diff --git a/kernel_platform/msm-kernel/net/mac80211/tx.c b/kernel_platform/msm-kernel/net/mac80211/tx.c
+index 45a093d3f..f827933b7 100644
+--- a/kernel_platform/msm-kernel/net/mac80211/tx.c
++++ b/kernel_platform/msm-kernel/net/mac80211/tx.c
+@@ -831,11 +831,16 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
+ 
+ 	/*
+ 	 * Packet injection may want to control the sequence
+-	 * number, if we have no matching interface then we
+-	 * neither assign one ourselves nor ask the driver to.
++	 * number, so if an injected frame is found, do not
++	 * renumber it here. Also mark it NO_ACK when appropriate
++	 * to avoid monitor-mode retry behaviour.
+ 	 */
+-	if (unlikely(info->control.vif->type == NL80211_IFTYPE_MONITOR))
++	if (unlikely((info->flags & IEEE80211_TX_CTL_INJECTED) &&
++		     !(tx->sdata->u.mntr.flags & MONITOR_FLAG_COOK_FRAMES))) {
++		if (!ieee80211_has_morefrags(hdr->frame_control))
++			info->flags |= IEEE80211_TX_CTL_NO_ACK;
+ 		return TX_CONTINUE;
++	}
+ 
+ 	if (unlikely(ieee80211_is_ctl(hdr->frame_control)))
+ 		return TX_CONTINUE;
+@@ -2065,7 +2070,8 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
+ 		}
+ 	}
+ 
+-	ieee80211_set_qos_hdr(sdata, skb);
++	if (likely(info->control.vif->type != NL80211_IFTYPE_MONITOR))
++		ieee80211_set_qos_hdr(sdata, skb);
+ 	ieee80211_tx(sdata, sta, skb, false);
+ }
+ 
+diff --git a/kernel_platform/msm-kernel/net/wireless/chan.c b/kernel_platform/msm-kernel/net/wireless/chan.c
+index 99be6f802..f3a231c58 100644
+--- a/kernel_platform/msm-kernel/net/wireless/chan.c
++++ b/kernel_platform/msm-kernel/net/wireless/chan.c
+@@ -1473,8 +1473,7 @@ int cfg80211_set_monitor_channel(struct cfg80211_registered_device *rdev,
+ {
+ 	if (!rdev->ops->set_monitor_channel)
+ 		return -EOPNOTSUPP;
+-	if (!cfg80211_has_monitors_only(rdev))
+-		return -EBUSY;
++	/* Allow monitor channel changes even if another virtual interface is active. */
+ 
+ 	return rdev_set_monitor_channel(rdev, chandef);
+ }
+diff --git a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c
+index 8a6b3d9ab..d535c2f35 100644
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wlan_cfg/wlan_cfg.c
+@@ -4009,16 +4009,8 @@ static void
+ wlan_soc_local_pkt_capture_cfg_attach(struct cdp_ctrl_objmgr_psoc *psoc,
+ 				      struct wlan_cfg_dp_soc_ctxt *wlan_cfg_ctx)
+ {
+-	/*
+-	 * NetHunter: force-enable Local Packet Capture regardless of the
+-	 * device .ini value. The OEM .ini lives on a write-protected /vendor
+-	 * partition and disables LPC, which breaks the standard iw/airmon-ng
+-	 * monitor path (no capture filter is ever programmed, so airodump-ng
+-	 * sees no frames). Forcing it here, at cfg attach (driver load), also
+-	 * guarantees the LPC monitor rings are allocated before any monitor
+-	 * interface is opened.
+-	 */
+-	wlan_cfg_ctx->local_pkt_capture = 1;
++	wlan_cfg_ctx->local_pkt_capture =
++		cfg_get(psoc, CFG_DP_LOCAL_PKT_CAPTURE);
+ }
+ #else
+ static void
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 8ebf88103..0cc6cf5aa 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -26308,6 +26308,23 @@ static int hdd_change_adapter_mode(struct hdd_adapter *adapter,
+ 	adapter->device_mode = new_mode;
+ 	hdd_set_station_ops(netdev);
+ 
++	/*
++	 * NetHunter: when dynamically switching to monitor mode (iw set type
++	 * monitor), the adapter was originally allocated as a station, so the
++	 * monitor vdev up/stop completion events were never created (that only
++	 * happens in hdd_open_adapter for session_type == QDF_MONITOR_MODE).
++	 * Without them, __wlan_hdd_cfg80211_set_mon_ch()'s qdf_event_reset()
++	 * fails with "failed to reinit monitor mode vdev up event" (-EINVAL),
++	 * so 'iw set freq' can never tune the monitor channel. Create them here
++	 * to mirror the global-monitor path. Safe to re-create on repeat
++	 * switches (qdf_event_create just re-initialises the event).
++	 */
++	if (new_mode == QDF_MONITOR_MODE) {
++		status = hdd_monitor_mode_qdf_create_event(adapter, new_mode);
++		if (QDF_IS_STATUS_ERROR(status))
++			hdd_err("Failed to create monitor mode vdev events");
++	}
++
+ 	hdd_exit();
+ 
+ 	return qdf_status_to_os_return(status);
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index a57ae3298..6db6cbca9 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -1288,15 +1288,6 @@ int con_mode;
+ EXPORT_SYMBOL(con_mode);
+ #endif
+ 
+-/*
+- * NetHunter: monitor capture frequency (MHz). When non-zero, the monitor
+- * interface is tuned to this channel from within the driver, bypassing the
+- * cfg80211 set_monitor_channel path (which is blocked by the monitors-only
+- * check when p2p0/NAN are present). Writable at runtime via
+- * /sys/module/<modname>/parameters/mon_freq to re-tune live.
+- */
+-int mon_freq;
+-
+ int con_mode_ftm;
+ #ifdef FEATURE_WLAN_RESIDENT_DRIVER
+ EXPORT_SYMBOL(con_mode_ftm);
+@@ -3489,7 +3480,8 @@ static int __hdd_mon_open(struct net_device *dev)
+ 
+ 	if (con_mode == QDF_GLOBAL_MONITOR_MODE ||
+ 	    ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) ||
+-	    ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc)) {
++	    ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc) ||
++	    (adapter && adapter->device_mode == QDF_MONITOR_MODE)) {
+ 		ret = hdd_trigger_psoc_idle_restart(hdd_ctx);
+ 		if (ret) {
+ 			hdd_err("Failed to start WLAN modules return");
+@@ -3529,15 +3521,6 @@ static int __hdd_mon_open(struct net_device *dev)
+ 	if (!ret)
+ 		ret = hdd_enable_monitor_mode(dev);
+ 
+-	/*
+-	 * On LPC targets, frames are only delivered once a capture filter is
+-	 * programmed. The nl80211/iw monitor path (airmon-ng) does not issue
+-	 * the QCA SET_MONITOR_MODE vendor command, so start an all-frame local
+-	 * packet capture here. No-op when LPC is disabled.
+-	 */
+-	if (!ret)
+-		ret = hdd_lpc_start_capture_all(dev);
+-
+ 	if (!ret) {
+ 		param.policy = BBM_DRIVER_MODE_POLICY;
+ 		param.policy_info.driver_mode = QDF_GLOBAL_MONITOR_MODE;
+@@ -7506,7 +7489,8 @@ hdd_alloc_station_adapter(struct hdd_context *hdd_ctx, tSirMacAddr mac_addr,
+ 						PACKET_CAPTURE_MODE_DISABLE)
+ 			hdd_set_pktcapture_ops(adapter->dev);
+ 		if (ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) ||
+-		    ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc))
++		    ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc) ||
++		    wlan_hdd_is_session_type_monitor(session_type))
+ 			hdd_set_mon_ops(adapter->dev);
+ 	} else {
+ 		hdd_set_station_ops(adapter->dev);
+@@ -10553,9 +10537,6 @@ static int hdd_stop_mon_adapter(struct hdd_adapter *adapter)
+ 	struct wlan_hdd_link_info *link_info;
+ 	int status;
+ 
+-	/* Stop any local packet capture started on the iw monitor path */
+-	hdd_lpc_stop_capture(adapter->dev);
+-
+ 	hdd_adapter_for_each_active_link_info(adapter, link_info) {
+ 		status = wlan_hdd_delete_mon_link(adapter, link_info);
+ 		if (status)
+@@ -11615,22 +11596,6 @@ QDF_STATUS hdd_start_all_adapters(struct hdd_context *hdd_ctx, bool rtnl_held)
+ 				continue;
+ 			}
+ 
+-			/*
+-			 * NetHunter: seed a default capture channel so a
+-			 * standalone monitor (iw/airmon-ng) has a channel even
+-			 * when 'iw set freq' is blocked by cfg80211's
+-			 * monitors-only check.
+-			 */
+-			if (mon_freq) {
+-				struct hdd_monitor_ctx *mon_ctx =
+-				    WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
+-
+-				if (mon_ctx && !mon_ctx->freq) {
+-					mon_ctx->freq = mon_freq;
+-					mon_ctx->bandwidth = CH_WIDTH_20MHZ;
+-				}
+-			}
+-
+ 			wlan_hdd_set_mon_chan(adapter);
+ 			break;
+ 		case QDF_NDI_MODE:
+@@ -23914,53 +23879,6 @@ module_param_cb(con_mode_epping, &con_mode_epping_ops,
+ module_param_cb(fwpath, &fwpath_ops, &fwpath,
+ 		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+ 
+-/*
+- * NetHunter: writing mon_freq re-tunes the active monitor interface to the
+- * given frequency (MHz) via the internal channel-set path, bypassing the
+- * cfg80211 monitors-only restriction. If no monitor is up yet, the value is
+- * stored and applied when monitor mode starts.
+- */
+-static int hdd_mon_freq_handler(const char *kmessage,
+-				const struct kernel_param *kp)
+-{
+-	struct hdd_context *hdd_ctx;
+-	struct hdd_adapter *adapter;
+-	struct hdd_monitor_ctx *mon_ctx;
+-	int ret;
+-
+-	ret = param_set_int(kmessage, kp);
+-	if (ret)
+-		return ret;
+-
+-	if (!mon_freq)
+-		return 0;
+-
+-	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+-	if (!hdd_ctx)
+-		return 0;
+-
+-	adapter = hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE);
+-	if (!adapter)
+-		return 0;
+-
+-	mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
+-	if (!mon_ctx)
+-		return 0;
+-
+-	mon_ctx->freq = mon_freq;
+-	mon_ctx->bandwidth = CH_WIDTH_20MHZ;
+-	wlan_hdd_set_mon_chan(adapter);
+-
+-	return 0;
+-}
+-
+-static const struct kernel_param_ops mon_freq_ops = {
+-	.set = hdd_mon_freq_handler,
+-	.get = param_get_int,
+-};
+-module_param_cb(mon_freq, &mon_freq_ops, &mon_freq,
+-		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+-
+ module_param(enable_dfs_chan_scan, int, S_IRUSR | S_IRGRP | S_IROTH);
+ 
+ module_param(enable_11d, int, S_IRUSR | S_IRGRP | S_IROTH);
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
+index d909397a7..7baed59b8 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
+@@ -948,8 +948,7 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
+ 		 * interface flag STA+MON concurrency is not supported
+ 		 * reject the request.
+ 		 **/
+-		if ((ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc) &&
+-		     !is_rx_mon) ||
++		if (!is_rx_mon ||
+ 		    (ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) &&
+ 		     is_rx_mon) ||
+ 		    ucfg_pkt_capture_get_mode(hdd_ctx->psoc) !=
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+index eb71a779f..381fdf303 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+@@ -37,6 +37,11 @@ int hdd_enable_monitor_mode(struct net_device *dev)
+ 
+ 	hdd_enter_dev(dev);
+ 
++	/* NETHUNTER build marker: grep dmesg for this to confirm the freshly
++	 * built ko is the one actually running (bump the tag on each rebuild).
++	 */
++	hdd_err("NETHUNTER-MON: enable_monitor_mode build=lpc-off-gates-r2");
++
+ 	vdev_id = cdp_get_mon_vdev_from_pdev(soc, OL_TXRX_PDEV_ID);
+ 	if (vdev_id < 0)
+ 		return -EINVAL;
+-- 
+2.43.0
+

@@ -1,0 +1,71 @@
+From 08094d7732f2469f571251ba33cd658849400c73 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Sat, 6 Jun 2026 16:23:28 +0000
+Subject: [PATCH 08/10] =?UTF-8?q?=E6=B7=BB=E5=8A=A0=E6=B3=A8=E5=85=A5?=
+ =?UTF-8?q?=E5=8A=9F=E8=83=BDv3?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c  | 16 ++++++++++++++++
+ .../core/hdd/src/wlan_hdd_rx_monitor.c           |  2 +-
+ .../wlan/qcacld-3.0/core/wma/src/wma_mgmt.c      |  2 +-
+ 3 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index bc67cbac7..be3eb4301 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31522,6 +31522,22 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 	    QDF_STATUS_SUCCESS)
+ 		hdd_info("NETHUNTER-INJ: TX helper vdev not ready; injection unavailable on this channel");
+ 
++	/*
++	 * NETHUNTER injection: the monitor channel change above restarts the
++	 * vdev and leaves the netdev Tx queues stopped / carrier off again
++	 * (only STA/SAP connect paths re-enable them). __hdd_mon_open started
++	 * them earlier, but that was BEFORE this channel change + helper-vdev
++	 * bring-up - so re-start them HERE as the very last step, otherwise
++	 * injected frames sit in the qdisc and never reach
++	 * hdd_mon_hard_start_xmit. netif_carrier_on in this action is
++	 * unconditional; this is the same call that brought TX up in the first
++	 * successful r7 run, now guaranteed to be the final queue operation.
++	 */
++	wlan_hdd_netif_queue_control(adapter,
++				    WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
++				    WLAN_CONTROL_PATH);
++	hdd_info("NETHUNTER-INJ: monitor Tx queues re-started after channel set");
++
+ 	hdd_exit();
+ 
+ 	return 0;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+index 07457ab27..99fe9d4be 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+@@ -43,7 +43,7 @@ int hdd_enable_monitor_mode(struct net_device *dev)
+ 	 * info level (not err) so it is greppable for version checks without
+ 	 * spamming the error log on every monitor start.
+ 	 */
+-	hdd_info("NETHUNTER-MON: enable_monitor_mode build=mon-inject-probe-r7");
++	hdd_info("NETHUNTER-MON: enable_monitor_mode build=mon-inject-probe-r8");
+ 
+ 	vdev_id = cdp_get_mon_vdev_from_pdev(soc, OL_TXRX_PDEV_ID);
+ 	if (vdev_id < 0)
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index 696f6c50a..de78ab954 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -3535,7 +3535,7 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 	mgmt_params.qdf_ctx = qdf_ctx;
+ 
+ 	if (!g_wma_inj.banner) {
+-		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-probe-r7 mon_vdev=%u tx_vdev=%u helper=%u chan=%u",
++		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-probe-r8 mon_vdev=%u tx_vdev=%u helper=%u chan=%u",
+ 			 vdev_id, tx_vdev_id, g_inj_tx_vdev.created, chanfreq);
+ 		g_wma_inj.banner = true;
+ 	}
+-- 
+2.43.0
+

@@ -1,0 +1,234 @@
+From 6d1f2668ee4b4bc1f6e60176c730c8f71807210d Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 3 Jun 2026 03:14:38 +0000
+Subject: [PATCH 02/10] =?UTF-8?q?=E7=AC=AC=E4=B8=80=E9=98=B6=E6=AE=B5?=
+ =?UTF-8?q?=EF=BC=88=E7=9B=91=E5=90=AC=E6=A8=A1=E5=BC=8F=E4=BD=BF=E8=83=BD?=
+ =?UTF-8?q?=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../policy_mgr/inc/wlan_policy_mgr_api.h      | 19 +++++
+ .../policy_mgr/src/wlan_policy_mgr_action.c   | 42 ++++++++++
+ .../core/hdd/src/wlan_hdd_cfg80211.c          | 78 +++++++++++++++++--
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   |  1 +
+ 4 files changed, 134 insertions(+), 6 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h
+index 89ae7cfd3..37df6b160 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h
+@@ -758,6 +758,25 @@ bool policy_mgr_is_pcl_weightage_required(struct wlan_objmgr_psoc *psoc);
+ bool policy_mgr_check_for_session_conc(struct wlan_objmgr_psoc *psoc,
+ 				       uint8_t vdev_id, uint32_t ch_freq);
+ 
++/**
++ * policy_mgr_is_hw_mode_change_required_for_channel_switch() - Check if HW mode change is needed for channel switch
++ * @psoc: PSOC object pointer
++ * @vdev_id: VDEV identifier
++ * @chan_freq: Channel frequency to switch to
++ * @reason: Reason for mode change request
++ *
++ * This function checks whether a hardware mode change is required when switching
++ * to the specified channel on the given vdev. It avoids unnecessary transitions,
++ * especially useful when operating in monitor mode.
++ *
++ * Return: true if HW mode change is needed, false otherwise.
++ */
++bool policy_mgr_is_hw_mode_change_required_for_channel_switch(
++	struct wlan_objmgr_psoc *psoc,
++	uint8_t vdev_id,
++	uint32_t chan_freq,
++	uint32_t reason);
++
+ /**
+  * policy_mgr_handle_conc_multiport() - to handle multiport concurrency
+  * @psoc: PSOC object information
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c
+index 88b69aa31..b968b5eff 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c
+@@ -1215,6 +1215,48 @@ policy_mgr_is_hw_mode_change_required(struct wlan_objmgr_psoc *psoc,
+ 	return false;
+ }
+ 
++/*
++ * Check if HW mode change is needed for channel switching,
++ * avoiding unnecessary transitions in monitor mode
++ */
++bool policy_mgr_is_hw_mode_change_required_for_channel_switch(
++	struct wlan_objmgr_psoc *psoc,
++	uint8_t vdev_id,
++	uint32_t chan_freq,
++	uint32_t reason)
++{
++	struct wlan_objmgr_vdev *vdev;
++	enum QDF_OPMODE opmode;
++	struct wlan_channel *chan;
++	uint32_t current_chan = 0;
++
++	if (!psoc) {
++		policy_mgr_err("psoc is NULL");
++		return false;
++	}
++
++	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id, WLAN_POLICY_MGR_ID);
++	if (!vdev) {
++		policy_mgr_err("vdev is NULL for vdev_id %d", vdev_id);
++		return false;
++	}
++
++	opmode = wlan_vdev_mlme_get_opmode(vdev);
++
++	chan = wlan_vdev_get_active_channel(vdev);
++	if (chan)
++		current_chan = chan->ch_freq;
++
++	wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
++
++	/* If we're in monitor mode and already on the desired channel — no HW mode change needed */
++	if (opmode == QDF_MONITOR_MODE && current_chan == chan_freq)
++		return false;
++
++	/* Otherwise — a change might be required */
++	return true;
++}
++
+ static bool
+ policy_mgr_is_ch_width_downgrade_required(struct wlan_objmgr_psoc *psoc,
+ 					  uint8_t vdev_id,
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 048b62913..8ebf88103 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -26337,6 +26337,7 @@ static bool hdd_is_client_mode(enum QDF_OPMODE mode)
+ 	case QDF_STA_MODE:
+ 	case QDF_P2P_CLIENT_MODE:
+ 	case QDF_P2P_DEVICE_MODE:
++	case QDF_MONITOR_MODE:
+ 		return true;
+ 	default:
+ 		return false;
+@@ -26348,6 +26349,7 @@ static bool hdd_is_ap_mode(enum QDF_OPMODE mode)
+ 	switch (mode) {
+ 	case QDF_SAP_MODE:
+ 	case QDF_P2P_GO_MODE:
++	case QDF_MONITOR_MODE:
+ 		return true;
+ 	default:
+ 		return false;
+@@ -31356,9 +31358,23 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 	/* Verify the BW before accepting this request */
+ 	ch_width = hdd_map_nl_chan_width(chandef->width);
+ 
+-	if (ch_width > CH_WIDTH_10MHZ ||
+-	   (!cds_is_sub_20_mhz_enabled() && ch_width > CH_WIDTH_160MHZ)) {
+-		hdd_err("invalid BW received %d", ch_width);
++	switch (ch_width) {
++	case CH_WIDTH_5MHZ:
++	case CH_WIDTH_10MHZ:
++		if (!cds_is_sub_20_mhz_enabled()) {
++			hdd_err("Sub-20MHz not supported, but got BW %d", ch_width);
++			return -EINVAL;
++		}
++		break;
++
++	case CH_WIDTH_20MHZ:
++	case CH_WIDTH_40MHZ:
++	case CH_WIDTH_80MHZ:
++	case CH_WIDTH_160MHZ:
++		break;
++
++	default:
++		hdd_err("Unsupported channel width received: %d", ch_width);
+ 		return -EINVAL;
+ 	}
+ 
+@@ -31393,11 +31409,23 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 						chandef->chan->center_freq,
+ 						sec_ch_2g_freq, &ch_params,
+ 						REG_CURRENT_PWR_MODE);
+-	if (wlan_hdd_change_hw_mode_for_given_chnl(adapter,
++
++	/*
++	 * Skip HW mode change if not required, to avoid unnecessary
++	 * MCC/SCC/DBS transitions. This helps in cases where monitor
++	 * mode is started on a channel that is already active on
++	 * another interface.
++	 */
++	if (policy_mgr_is_hw_mode_change_required_for_channel_switch(
++		hdd_ctx->psoc, adapter->deflink->vdev_id,
++		chandef->chan->center_freq,
++		POLICY_MGR_UPDATE_REASON_SET_OPER_CHAN)) {
++		if (wlan_hdd_change_hw_mode_for_given_chnl(adapter,
+ 						   chandef->chan->center_freq,
+ 						   POLICY_MGR_UPDATE_REASON_SET_OPER_CHAN)) {
+-		hdd_err("Failed to change hw mode");
+-		return -EINVAL;
++			hdd_err("Failed to change hw mode");
++			return -EINVAL;
++		}
+ 	}
+ 
+ 	if (adapter->monitor_mode_vdev_up_in_progress) {
+@@ -32910,6 +32938,44 @@ static int __wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
+ 		ret = wlan_hdd_cfg80211_get_channel_sta(wiphy, chandef, hdd_ctx,
+ 							adapter, link_id);
+ 		break;
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++	case QDF_MONITOR_MODE: {
++		/*
++		 * Report the current monitor capture channel so that nl80211
++		 * (NL80211_CMD_GET_INTERFACE) and wext (SIOCGIWFREQ) clients
++		 * such as aireplay-ng / mdk3 can determine it.
++		 */
++		struct hdd_monitor_ctx *mon_ctx =
++			WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
++		struct ieee80211_channel *chan;
++		uint32_t freq = mon_ctx ? mon_ctx->freq : 0;
++
++		if (!freq)
++			return -ENODATA;
++
++		chan = ieee80211_get_channel(wiphy, freq);
++		if (!chan)
++			return -ENODATA;
++
++		cfg80211_chandef_create(chandef, chan, NL80211_CHAN_NO_HT);
++
++		/* Upgrade width if we know the monitor bandwidth */
++		switch (mon_ctx->bandwidth) {
++		case CH_WIDTH_40MHZ:
++			chandef->width = NL80211_CHAN_WIDTH_40;
++			break;
++		case CH_WIDTH_80MHZ:
++			chandef->width = NL80211_CHAN_WIDTH_80;
++			break;
++		case CH_WIDTH_160MHZ:
++			chandef->width = NL80211_CHAN_WIDTH_160;
++			break;
++		default:
++			break;
++		}
++		break;
++	}
++#endif /* FEATURE_MONITOR_MODE_SUPPORT */
+ 	default:
+ 		return -EINVAL;
+ 	}
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index dcdaf2f64..c13d5977b 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -684,6 +684,7 @@ QDF_STATUS hdd_common_roam_callback(struct wlan_objmgr_psoc *psoc,
+ 	case QDF_NDI_MODE:
+ 	case QDF_P2P_CLIENT_MODE:
+ 	case QDF_P2P_DEVICE_MODE:
++	case QDF_MONITOR_MODE:
+ 		status = hdd_sme_roam_callback(link_info, roam_info,
+ 					       roam_status, roam_result);
+ 		break;
+-- 
+2.43.0
+

@@ -1,0 +1,162 @@
+From 300b05aebc7ea67c691f565f94c02f9be2a82c8c Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Sat, 6 Jun 2026 05:05:33 +0000
+Subject: [PATCH 05/10] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E7=9B=91=E5=90=AC?=
+ =?UTF-8?q?=E5=8F=A3=E5=AD=903?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../qcacld-3.0/core/hdd/inc/wlan_hdd_main.h   | 16 +++++++++++
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 28 +++++++++++++++++--
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c    | 26 +++++++++++++++--
+ .../core/hdd/src/wlan_hdd_rx_monitor.c        |  4 ++-
+ 4 files changed, 67 insertions(+), 7 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+index adcc3c507..ecfb3b783 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+@@ -4488,6 +4488,22 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode);
+  */
+ void hdd_psoc_idle_timer_start(struct hdd_context *hdd_ctx);
+ 
++/**
++ * hdd_psoc_idle_shutdown_force() - force a one-shot psoc idle shutdown
++ * @hdd_ctx: the hdd context to shut down
++ *
++ * Schedules a psoc idle shutdown (full hdd_wlan_stop_modules) even when the
++ * idle timer is disabled by the platform ini (gInterfaceChangeWait=0). Used
++ * after monitor-mode teardown to rebuild the DP/firmware context (the
++ * monitor-exit path otherwise leaves the RX rings in monitor config and the
++ * subsequent STA connection floods dp_rx "MSDU DONE failure"). The shutdown
++ * is scheduled asynchronously on the idle-timeout work, so it runs after the
++ * caller's vdev sync completes (no nested-sync deadlock).
++ *
++ * Return: None
++ */
++void hdd_psoc_idle_shutdown_force(struct hdd_context *hdd_ctx);
++
+ /**
+  * hdd_psoc_idle_timer_stop() - stop the idle psoc detection timer
+  * @hdd_ctx: the hdd context for which the timer should be stopped
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index 6db6cbca9..71dc9765a 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -7485,12 +7485,18 @@ hdd_alloc_station_adapter(struct hdd_context *hdd_ctx, tSirMacAddr mac_addr,
+ 	dev->watchdog_timeo = HDD_TX_TIMEOUT;
+ 
+ 	if (wlan_hdd_is_session_type_monitor(session_type)) {
++		/*
++		 * NETHUNTER: in pkt_capture (enhanced STA capture) mode the
++		 * netdev must keep pktcapture ops; only install monitor ops
++		 * otherwise. Using else (not a separate if) prevents mon ops
++		 * from overriding pktcapture ops. For a standalone monitor
++		 * (pkt_capture DISABLE on this device) this still installs
++		 * mon ops, which __hdd_mon_open requires.
++		 */
+ 		if (ucfg_pkt_capture_get_mode(hdd_ctx->psoc) !=
+ 						PACKET_CAPTURE_MODE_DISABLE)
+ 			hdd_set_pktcapture_ops(adapter->dev);
+-		if (ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) ||
+-		    ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc) ||
+-		    wlan_hdd_is_session_type_monitor(session_type))
++		else
+ 			hdd_set_mon_ops(adapter->dev);
+ 	} else {
+ 		hdd_set_station_ops(adapter->dev);
+@@ -15302,6 +15308,22 @@ void hdd_psoc_idle_timer_start(struct hdd_context *hdd_ctx)
+ 	hdd_idle_timer_in_active(timeout_ms);
+ }
+ 
++/*
++ * Delay (ms) used to force a one-shot idle shutdown after monitor teardown on
++ * platforms that disable the idle timer (gInterfaceChangeWait=0). Kept short so
++ * the DP rebuild completes before the user re-enables WiFi, but non-zero so the
++ * scheduling and suspend-prevention wakelock behave like the normal idle path.
++ */
++#define HDD_MON_FORCE_IDLE_SHUTDOWN_MS 1000
++
++void hdd_psoc_idle_shutdown_force(struct hdd_context *hdd_ctx)
++{
++	hdd_info("forcing psoc idle shutdown (idle timer disabled by ini)");
++	qdf_delayed_work_start(&hdd_ctx->psoc_idle_timeout_work,
++			       HDD_MON_FORCE_IDLE_SHUTDOWN_MS);
++	hdd_idle_timer_in_active(HDD_MON_FORCE_IDLE_SHUTDOWN_MS);
++}
++
+ void hdd_psoc_idle_timer_stop(struct hdd_context *hdd_ctx)
+ {
+ 	qdf_delayed_work_stop_sync(&hdd_ctx->psoc_idle_timeout_work);
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
+index 7baed59b8..5402d671c 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
+@@ -1159,6 +1159,7 @@ int __wlan_hdd_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
+ 	struct hdd_context *hdd_ctx = (struct hdd_context *) wiphy_priv(wiphy);
+ 	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+ 	int errno;
++	bool was_monitor = false;
+ 
+ 	hdd_enter();
+ 
+@@ -1189,7 +1190,8 @@ int __wlan_hdd_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
+ 	if (errno)
+ 		return errno;
+ 
+-	if (wlan_hdd_is_session_type_monitor(adapter->device_mode))
++	was_monitor = wlan_hdd_is_session_type_monitor(adapter->device_mode);
++	if (was_monitor)
+ 		ucfg_dp_set_mon_conf_flags(hdd_ctx->psoc, 0);
+ 
+ 	if (adapter->device_mode == QDF_SAP_MODE &&
+@@ -1205,8 +1207,26 @@ int __wlan_hdd_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
+ 		hdd_clean_up_interface(hdd_ctx, adapter);
+ 	}
+ 
+-	if (!hdd_is_any_interface_open(hdd_ctx))
+-		hdd_psoc_idle_timer_start(hdd_ctx);
++	if (!hdd_is_any_interface_open(hdd_ctx)) {
++		/*
++		 * Monitor-mode teardown leaves the BE/mon2.0 DP RX rings in
++		 * monitor configuration; dp_reset_monitor_mode_unlock() only
++		 * resets the monitor filters, so the shared STA RX path is not
++		 * rebuilt and the next STA connection floods
++		 * dp_rx_process_be: "MSDU DONE failure" (associates but no
++		 * DHCP/EAPOL/data). Stock qcacld self-heals this via the psoc
++		 * idle shutdown (hdd_wlan_stop_modules) that runs when the last
++		 * interface closes, but this platform disables the idle timer
++		 * (gInterfaceChangeWait=0). For monitor exit only, force a
++		 * one-shot idle shutdown so the DP/firmware is rebuilt on the
++		 * next interface up. Normal (non-monitor) teardown keeps the
++		 * platform's idle behaviour untouched.
++		 */
++		if (was_monitor)
++			hdd_psoc_idle_shutdown_force(hdd_ctx);
++		else
++			hdd_psoc_idle_timer_start(hdd_ctx);
++	}
+ 	hdd_exit();
+ 
+ 	return 0;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+index 381fdf303..b25464467 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+@@ -39,8 +39,10 @@ int hdd_enable_monitor_mode(struct net_device *dev)
+ 
+ 	/* NETHUNTER build marker: grep dmesg for this to confirm the freshly
+ 	 * built ko is the one actually running (bump the tag on each rebuild).
++	 * info level (not err) so it is greppable for version checks without
++	 * spamming the error log on every monitor start.
+ 	 */
+-	hdd_err("NETHUNTER-MON: enable_monitor_mode build=lpc-off-gates-r2");
++	hdd_info("NETHUNTER-MON: enable_monitor_mode build=mon-idle-shutdown-r4");
+ 
+ 	vdev_id = cdp_get_mon_vdev_from_pdev(soc, OL_TXRX_PDEV_ID);
+ 	if (vdev_id < 0)
+-- 
+2.43.0
+
