@@ -1,6 +1,5 @@
 #!/system/bin/sh
 # scanap — list nearby APs with channel/freq (uses normal wlan0, not monitor)
-echo "=== Scanning APs (5 sec) ==="
 iw dev wlan0 scan 2>/dev/null | awk '
 /^BSS/ {mac=$2; gsub(/\(.*/, "", mac)}
 /freq:/ {freq=$NF}

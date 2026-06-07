@@ -60,6 +60,28 @@ stage_usb_firmware() {
 log_i "boot-time module init: staging firmware only"
 stage_usb_firmware || true
 
+# Expose monitor commands as global shell commands. KSU does not always mount
+# the module's system/bin into /system/bin on this device (read-only /system),
+# so symlink the wrappers into a PATH dir that IS writable. Prefer KSU's own
+# bin dir; fall back to /data/local/tmp (also commonly used).
+install_cmd_links() {
+  for bindir in /data/adb/ksu/bin /data/adb/magisk /system/bin; do
+    [ -d "$bindir" ] || continue
+    # writability test
+    if ( : > "$bindir/.optest" ) 2>/dev/null; then
+      rm -f "$bindir/.optest"
+      ln -sf "$MODDIR/monstart" "$bindir/monstart" 2>/dev/null
+      ln -sf "$MODDIR/monstop"  "$bindir/monstop"  2>/dev/null
+      ln -sf "$MODDIR/scanap"   "$bindir/scanap"   2>/dev/null
+      log_i "monitor commands linked into $bindir"
+      return 0
+    fi
+  done
+  log_i "no writable PATH dir found; use full path or alias for monstart/monstop"
+  return 1
+}
+install_cmd_links || true
+
 if [ -x "$MODDIR/bind_mount_control.sh" ]; then
   if [ -f "$MODDIR/.nethunter_enabled" ]; then
     "$MODDIR/bind_mount_control.sh" apply_if_enabled --quiet || true
