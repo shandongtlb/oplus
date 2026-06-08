@@ -1,7 +1,7 @@
 # inject 补丁集
 
 本目录包含基于「Initial kernel source import」(`a22d7e3fc`) 之后的全部改动历史，
-由 `git format-patch` 导出，共 12 个补丁，按编号顺序应用。
+由 `git format-patch` 导出，共 13 个补丁，按编号顺序应用。
 
 ## 应用方法
 
@@ -22,17 +22,18 @@ git apply oplus/补丁/inject/*.patch
 
 补丁文件名即「序号-提交信息」：
 
-| 序号 | 提交信息（即文件名） |
+| 序号 | 文件名 |
 | --- | --- |
-| 0001 | 添加 WLAN 平台和 qcacld 模块构建及安装功能 |
-| 0002 | 第一阶段（监听模式使能） |
-| 0003 | 修复监听口子1 |
-| 0004 | 修复监听口子2 |
-| 0005 | 修复监听口子3 |
-| 0006 | 添加注入功能v1 |
-| 0007 | 添加注入功能v2 |
-| 0008 | 添加注入功能v3 |
-| 0009 | qcacld: fix monitor channel reporting for aireplay-ng |
-| 0010 | qcacld: improve injection debugging - reset counters per session |
-| 0011 | 修复wext |
-| 0012 | 修复wext+竞态窗口收窄 |
+| 0001 | add-qcacldko.patch |
+| 0002 | add-monitor.patch |
+| 0003 | fix-monitor-1.patch |
+| 0004 | fix-monitor-2.patch |
+| 0005 | fix-monitor-3.patch |
+| 0006 | add-inject.patch |
+| 0007 | fix-inject-1.patch |
+| 0008 | fix-inject-2.patch |
+| 0009 | fix-monitor-channel.patch |
+| 0010 | improve-injection.patch |
+| 0011 | fix-wext-for-qcamonitor.patch |
+| 0012 | fix-wext+waittime.patch |
+| 0013 | NETHUNTER: Enable broadcast deauth injection via WMI test flag.patch |

