@@ -61,7 +61,13 @@
 ```
 ip link set wlan0mon down; iw dev wlan0mon del; sleep 5; svc wifi enable
 ```
-`sleep 5` 必须:强制 shutdown 调度在 1000ms 后 + stop_modules 约 1s;若 `svc wifi enable` 抢先,`hdd_trigger_psoc_idle_restart` 会取消 pending work → 不 shutdown → DP 还是坏的。
+`sleep 5` 必须:强制 shutdown 调度后 + stop_modules 约 1s;若 `svc wifi enable` 抢先,`hdd_trigger_psoc_idle_restart` 会取消 pending work → 不 shutdown → DP 还是坏的。
+
+**竞态窗口收窄(2026-06-08,待编译)**:`HDD_MON_FORCE_IDLE_SHUTDOWN_MS` **1000 → 200ms**(1 行)。原 1s 窗口里若有人/系统开 iface 会让 shutdown 被取消;200ms 把可被抢的窗口压到远小于任何人手/脚本的 monstop→re-enable 间隔(同时仍 >del 返回+释放 vdev trans 的微秒级耗时,避免 work 撞 DSC down-tree 而静默失败)。**注意下限**:不能设 0,否则 work 在 vdev trans 释放前跑 → `osif_psoc_sync_trans_start` 撞 DSC down-tree → E_AGAIN abort。
+
+**为什么没做"彻底根治"(Fix-B 已评估否决)**:想让 restart 不取消 pending shutdown 而是等它跑完——但 `svc wifi enable→hdd_open` 跑在 `osif_vdev_sync` trans 里,在那里同步触发 shutdown(经 psoc trans)会撞 DSC down-tree(`wlan_dsc_psoc.c:144-151`),和"同步方案"同一个死锁/abort。唯一不死锁的变体是让 enable 返回 -EAGAIN 失败重试,代价(enable 偶尔失败 + 改热点路径)大于收益,**否决,只保留 200ms**。
+
+**"连得上但没网"多为误操作**:典型触发 = (a) 监听期间手动开手机 WiFi,或 (b) monstop 后没等脚本跑完就手动 `svc wifi enable`——都正中那个 shutdown 窗口。**操作铁律**:监听期别手动开 WiFi;monstop 后让脚本自己的 `sleep` 跑完,别插队。误中后"再 monstart/monstop 切一次"即可恢复(第二次没抢窗口,DP 重建成功)。
 
 ### 1.5 监听被后台扫描"偷走"(Phase 1c)
 **现象**:挂着 monitor 闲置一会儿,"网卡没了"。
@@ -124,14 +130,40 @@ ip link set wlan0mon down; iw dev wlan0mon del; sleep 5; svc wifi enable
   ```
   aireplay-ng -9 -a <bssid> --ignore-negative-one wlan0mon
   ```
-### 4.1 zero-flag 方案(wext,经深入排查后确认热切 ko 可行)
-三树架构排查结论:
-- **WEXT_CORE 是 `def_bool y; depends on CFG80211_WEXT || WIRELESS_EXT`**(自动级联,不能手动设),它编进 **vmlinux**;`socket.c:1274 #ifdef CONFIG_WEXT_CORE → wext_handle_ioctl` 是 SIOCGIWFREQ 的 socket 层入口。
-- **大反转**:本机 OEM 内核 `zcat /proc/config.gz` 显示 **`CONFIG_WIRELESS_EXT=y` + `CONFIG_WEXT_CORE=y` 已经带了**(Android 上不常见)→ socket 层路由和 wext-core 符号**已在运行 vmlinux 里**,**不用刷 boot.img**。
-- 唯一要开的是模块级 **`CONFIG_CFG80211_WEXT`**(cfg80211.ko 里的 wext-compat),改 `msm-kernel/arch/arm64/configs/vendor/sun_perf.config:21` 一行 → 重编 → **只热切 cfg80211.ko**。
-- **qcacld 自带的 wext(`wlan_hdd_wext.c`,`CONFIG_WLAN_WEXT_SUPPORT_ENABLE`)必须保持 off**:它的 `we_handler_def` 是 `.num_standard=0/.standard=NULL`(没有 SIOCGIWFREQ),且会占住 `dev->wireless_handlers` 盖掉 cfg80211 的 giwfreq。
-- 验证链:SIOCGIWFREQ → socket.c wext_handle_ioctl(已在 vmlinux)→ `wiphy.wext`(core.c:536,CFG80211_WEXT 下自动挂)→ `cfg80211_wext_giwfreq`(wext-compat.c:884)→ `case NL80211_IFTYPE_MONITOR`(902 行)→ `rdev_get_channel` → 我们已修的 `__wlan_hdd_cfg80211_get_channel`(返回 mon_ctx->freq)。
-- **已改 config(待编译)**:`sun_perf.config:21` `# CONFIG_CFG80211_WEXT is not set` → `CONFIG_CFG80211_WEXT=y`。编完热切 cfg80211.ko 即可零 flag。`--ignore-negative-one` 作为不想重编时的后备。
+### 4.1 zero-flag 原生 wext —— Path B(已实现并设备验证,2026-06-08)
+
+> 目标:不加 `--ignore-negative-one` 也能让 aireplay 读到信道,并支持 `iwconfig` / `iwlist`。最终用**纯 `qca_cld3_peach_v2.ko` 热切**做到,不碰 vmlinux/boot.img。
+
+**先说被否决的 Path A(别再走)**:曾想改 `sun_perf.config:21` `CONFIG_CFG80211_WEXT=y` + 只热切 cfg80211.ko。**否决原因**:本机启动的 **vmlinux 来自 `common` 树(那里 CFG80211 根本没开)**,只在 msm 侧开 CFG80211_WEXT 会让 cfg80211.ko 的 `struct wiphy`/`struct wireless_dev` 多出 `#ifdef CONFIG_CFG80211_WEXT` 的 wext 成员,与 common 编出的 vmlinux **结构体布局不一致** + `CONFIG_MODVERSIONS=y` 导致 **CRC 级联失配** → 热切会被拒/内存错乱。`sun_perf.config:21` 已回退为 `# CONFIG_CFG80211_WEXT is not set`。
+
+**Path B 原理(安全的那条门)**:`net/wireless/wext-core.c get_handler()` 里有两条取 handler 的路:
+- `#ifdef CONFIG_CFG80211_WEXT`(读 `wiphy->wext`)—— 在运行 vmlinux 里**被编掉**(死路)。
+- `#ifdef CONFIG_WIRELESS_EXT`(读 `dev->wireless_handlers`)—— **在运行 vmlinux 里是活的**。
+
+关键:**`CONFIG_WIRELESS_EXT` 是 GKI 基线开的,和 CFG80211_WEXT 无关**。链路:`gki_defconfig` 里 `CONFIG_GKI_HACKS_TO_FIX=y`(common 和 msm 都有)→ `select GKI_LEGACY_WEXT_ALLCONFIG` → **无条件 `select WIRELESS_EXT`**(`init/Kconfig.gki:138`)。注意 CFG80211_WEXT 只 `select WEXT_CORE`,**根本不碰 WIRELESS_EXT**。所以把 CFG80211_WEXT 设回 n,WIRELESS_EXT 仍 =y。而 `dev->wireless_handlers` 是 `struct net_device` 的**常驻字段**(不受 CFG80211_WEXT 门控)→ 给它赋值**没有任何结构体/CRC 风险** → 纯 ko 热切即可。
+
+**实现(全部在 qcacld,主要 `wlan_hdd_main.c`)**:在 `hdd_mon_mode_ether_setup()`(每次 ifup 都跑)给 wlan0mon 挂一张自包含的 `iw_handler_def`(`#ifdef CONFIG_WIRELESS_EXT` 保护):
+- `giwname` → `"IEEE 802.11"`(让 iwconfig 认它是无线口)
+- `giwmode` → `IW_MODE_MONITOR`
+- `giwfreq` → 读 `mon_ctx->freq`(`m=MHz,e=6`),**这条让 aireplay 零 flag 读信道**
+- `siwfreq` → 解析 iw_freq → `wlan_hdd_mon_wext_set_freq()`(cfg80211.c 新增的导出 helper)→ **走和 `iw set freq` 完全相同的 `wlan_hdd_cfg80211_set_mon_ch`**(osif_psoc_sync 保护、可睡眠;wext SET ioctl 是进程上下文,安全)
+- `giwrange` → 遍历 `wiphy->bands[]->channels[]` 填信道表(`iwlist channel/freq` 用)
+
+**重要发现**:`peach_defconfig:649` 本来就 `CONFIG_WLAN_WEXT_SUPPORT_ENABLE=y`,但 qcacld 自带的 `we_handler_def` 是**空标准表**(`.num_standard=0/.standard=NULL`,只有 private 厂商命令,没有 SIOCGIWFREQ)——**这正是为什么连 STA 也读不到信道**。而 `hdd_register_wext`(设 `dev->wireless_handlers=&we_handler_def`)**只在 STA/FTM 路径调,不给 monitor 调** → wlan0mon 的 `wireless_handlers` 归我们独占,无冲突。
+
+**配置归属(排查确认)**:编译模块时 `#ifdef CONFIG_WIRELESS_EXT` 看的是 **msm-kernel 的 config**(vendor 模块在 msm 构建上下文,autoconf 来自那里),已确认 `=y`。
+
+**编译坑**:`-Werror,-Wcomment` —— 用 Edit 替换函数前导 `/**` 注释时漏掉了开头那行 `/**`,残留导致 `'/*' within block comment`。教训:替换函数文档注释要连 `/**` 一起包含。
+
+**✅ 设备验证(2026-06-08,纯 qca_cld3 热切)**:
+- `iwconfig wlan0mon` → `Mode:Monitor  Frequency:2.4xx GHz`
+- `iwlist wlan0mon freq` → 列出 26 信道(2.4G ch1-13 + 5G ch36-165,无 6G 符合设备能力)
+- `iwconfig wlan0mon channel 1` → 回读 2.412GHz;`iwconfig wlan0mon freq 2.437G` → 回读 2.437GHz **且 `iw dev wlan0mon info` 同步显示 channel 6**(证明 wext SET 真的驱动了底层 set_mon_ch,不是只改回读值)
+- `aireplay-ng -9 -a <bssid> wlan0mon` **零 flag** 读到信道
+
+**后备**:`--ignore-negative-one` 仍可用(不想重编时的零改动方案)。
+
+> 两条路最终拧的是**同一个监听信道**(`mon_ctx->freq` + 实际 vdev channel-switch),全系统只有一个值:`iwconfig` / `iw` / airodump 谁最后写就听谁的(airodump 跳频时会持续覆盖手动设的频)。
 
 ---
 
@@ -168,16 +200,20 @@ ip link set wlan0mon down; iw dev wlan0mon del; sleep 5; svc wifi enable
 
 | 文件 | 改了什么 |
 |---|---|
-| `core/hdd/src/wlan_hdd_main.c` | mon-ops gate 放宽、__hdd_mon_open 启 TX 队列、`hdd_mon_hard_start_xmit`、`hdd_psoc_idle_shutdown_force`、hdd_change_adapter_mode 建 event |
+| `core/hdd/src/wlan_hdd_main.c` | mon-ops gate 放宽、__hdd_mon_open 启 TX 队列、`hdd_mon_hard_start_xmit`、`hdd_psoc_idle_shutdown_force`(200ms)、hdd_change_adapter_mode 建 event、**wext handler(giwname/giwmode/giwfreq/siwfreq/giwrange)挂 wlan0mon `dev->wireless_handlers`** |
 | `core/hdd/src/wlan_hdd_p2p.c` | add_virtual_intf monitor-create gate、del_virtual_intf 触发 force idle shutdown |
-| `core/hdd/src/wlan_hdd_cfg80211.c` | set_mon_ch BW 重构、get_channel 加 QDF_MONITOR_MODE 分支(回读信道)、helper vdev ensure、TX 队列重启、mon_ctx->freq 设置 |
+| `core/hdd/src/wlan_hdd_cfg80211.c` | set_mon_ch BW 重构、get_channel 加 QDF_MONITOR_MODE 分支(回读信道)、helper vdev ensure、TX 队列重启、mon_ctx->freq 设置、**`wlan_hdd_mon_wext_set_freq()` 导出 helper(给 wext siwfreq)** |
+| `core/hdd/src/wlan_hdd_cfg80211.h` | **`wlan_hdd_mon_wext_set_freq()` 原型声明** |
 | `core/hdd/src/wlan_hdd_rx_monitor.c` | build marker、monstop 销毁 helper vdev |
 | `core/wma/src/wma_mgmt.c` | 注入核心:`wma_inject_mon_frame`/`ensure_tx_vdev`/`destroy_tx_vdev`/`handle_completion`、私有 desc 环、计数器 |
 | `core/wma/inc/wma_api.h` | 注入函数原型 |
 | `net/wireless/chan.c`(msm-kernel) | 去掉 monitors_only EBUSY(让 iw set freq 到达 qcacld) |
 
 **vermagic**(KernelSU 热切必须匹配):`6.6.89-android15-8-o-4k`
-**git 状态**:内核改动**多数已 commit**(commit01-08 + 注入 v1/v2/v3 + channel 修复 bcff63918 + 计数器重置 139505246);channel-readback 与计数器重置两个 commit **尚未进运行中的 ko**,需重新编译。
+**git 状态(2026-06-08)**:监听/注入主体均已 commit(commit01-08 + 注入 v1/v2/v3 + channel 修复 bcff63918 + 计数器重置 139505246 + wext 读路 `39337f12d 修复wext`)。
+- **工作树未提交**(3 个 wlan 文件 M):wext **siwfreq/giwrange**(已编译验证)+ **200ms** 一行。
+- **未编进设备**:仅 200ms(不紧急)。wext 读/设/列表已在设备验证。
+- ⚠️ 工作树另有一堆 `D ...Android.bp` 删除 + 未跟踪 `LOGDIR/ exports.txt build.config`(构建副产物,**非功能改动**)。提交时**只 `git add` 那 3 个 wlan 文件,别用 `git commit -a`**,否则会把删除一起带进去弄坏构建。
 
 ---
 
@@ -190,30 +226,73 @@ ip link set wlan0mon down; iw dev wlan0mon del; sleep 5; svc wifi enable
 monstop && scanap
 # 3. 锁到目标信道(简写:monstart 1 / 6 / 149 ...;或直接频率 monstart 2412)
 monstart 1
-# 4. 抓包 / 注入(注入必须加 --ignore-negative-one)
+#    也可用 wext:iwconfig wlan0mon channel 6 / iwconfig wlan0mon freq 2.437G
+# 4. 抓包 / 注入(已支持零 flag;旧 ko 才需 --ignore-negative-one)
 airodump-ng wlan0mon
-aireplay-ng -9 -a <bssid> --ignore-negative-one wlan0mon
-# 5. 恢复日常 WiFi
+aireplay-ng -9 -a <bssid> wlan0mon
+# 5. 恢复日常 WiFi(让脚本 sleep 跑完,别手动插队开 WiFi)
 monstop
 # 6. (可选)KSU Action → stock
 ```
 
 ---
 
-## 8. 可选后续(都需重新编译,低优先级)
-1. airodump **跳频注入**优化:v1 每次 set_freq 重建 helper vdev(~400ms),跳频会卡;固定信道 aireplay 不受影响。改动较大、风险有、实际价值低,**已 deferred**。
-2. 注入计数器**按 monitor session 重置**(已 commit 139505246,待编译)——纯诊断便利。
-3. 二设备 OTA 抓取确认注入帧确实辐射(status=0 已是固件级强证据)。
-4. tx_vdev 统计(`ip -s link` 现显示 0,纯 cosmetic)。
-5. Phase 1d:root-gate 加固(参考 Loukious sm8150,阻止非 root 在监听时干扰),仅研究过,未实现。
+## 8. 当前状态总览(2026-06-08)
+
+**核心三目标 + wext 全部达成、已设备验证:**
+
+| 能力 | 状态 |
+|---|---|
+| 监听捕获(2.4G/5G,20MHz) | ✅ 稳定 |
+| 数据包注入(helper STA vdev,FW status=0) | ✅ 稳定 |
+| 监听↔日常 WiFi 干净往返(MSDU=0/VALIDATED) | ✅ 稳定 |
+| aireplay 零 flag + iwconfig 读/设频 + iwlist 列表 | ✅ 已验证 |
+| 投屏/P2P/SoftAP 不受影响 | ✅ |
+
+**没有"必须解决"的功能问题了。** 下面都是收尾/可选。
 
 ---
 
-## 9. 经验法则(给未来的自己)
+## 9. 还需要做的 + 建议
+
+### 9.1 应该做的一件实事:干净提交 + 编进 200ms
+- 工作树里 wext **siwfreq/giwrange**(已验证)+ **200ms**(未编)还没 commit。
+- **建议**:`git add` **只挑那 3 个 wlan 文件**(`wlan_hdd_main.c`/`wlan_hdd_cfg80211.c`/`wlan_hdd_cfg80211.h`)提交,**绝不用 `git commit -a`**(避免把工作树里那堆 `D Android.bp` 删除一起带进去)。
+- 200ms 不紧急,下次因任何原因重编 `qca_cld3_peach_v2.ko` 时自动带上即可。
+
+### 9.2 KSU 打包链路(唯一的部署隐患,建议闭环)
+- `out/op13_usb_arsenal_ksu/` 无 META-INF,刷的 zip 来源未确认 → "改了不一定进设备"。
+- **建议**:从 out/ 打一个带标准 KSU/Magisk installer 模板的完整 zip,实现"刷进去→重启→直接能用"。这是离用户目标("刷进去重启就能用")最近、价值最高的收尾。
+
+### 9.3 可选增强(都要重编,价值/风险见下,按需)
+| 项 | 价值 | 风险/成本 | 建议 |
+|---|---|---|---|
+| 注入计数器按 session 重置(已 commit 139505246,待编) | 诊断便利 | 低 | 顺带编 |
+| airodump **跳频注入**优化(现每 set_freq 重建 helper ~400ms) | 跳频时注入不卡 | 改动较大 | 固定信道够用,**deferred** |
+| **Phase 1d root-gate 加固**(监听期锁死网卡、防 framework reap) | 偏执级防抢 | **副作用大**:拒绝 framework 合法操作可能让其状态机错乱/刷 log;**必须先验 monstop 的 euid==0 否则咬自己** | 软防护(scan-always off)已够,**非必要不做** |
+| 宽信道捕获(40/80/160MHz HE/EHT) | 完整嗅探高吞吐 AP 的**数据**流量 | 需验证 peach_v2 宽带 monitor + FW | 审计(握手/deauth/probe 全是管理帧,20MHz 够),**nice-to-have** |
+| 二设备 OTA 确认注入辐射 | 最终物理确认 | 需第二台设备 | status=0 已是固件级强证据,可选 |
+
+### 9.4 防"抢网卡"现状说明
+- 抢夺源 = framework 后台 PNO/scan-always(非 root)+ OPLUS 互联 P2P。
+- **第 1 层(已有,有效)**:monstart 里 `svc wifi disable` + 关 scan-always,实测闲置 70s/140s 不掉。
+- **第 2 层(可选,9.3 的 Phase 1d)**:内核 root-gate 锁死,副作用大,非必要不上。
+
+### 9.5 宽信道是什么(给未来的自己)
+- WiFi 信道宽度 20/40/80/160MHz;HE=WiFi6、EHT=WiFi7。现代 AP 数据常跑 80/160MHz。
+- 我们监听锁 **20MHz**(siwfreq 写死 `NL80211_CHAN_WIDTH_20_NOHT`)。**管理帧(beacon/probe/deauth/握手)都在主 20MHz 发,照抓**;只有目标 AP 的**宽带数据帧**会漏。
+- 对常规 WiFi 审计/注入**无影响**;只有要做完整数据流量取证才需要宽信道。
+
+---
+
+## 10. 经验法则(给未来的自己)
 - **本树取 vdev_id 一律 `adapter->deflink->vdev_id`**(MLO 重构)。
-- **编译用 clang `-Werror,-Wenum-conversion`**,跨枚举赋值显式 cast。
-- **编译前在源码里逐 gate 验证放行条件**,不要靠"编了再看"——用户被反复失败编译坑怕了。
+- **编译用 clang `-Werror`**:`-Wenum-conversion`(跨枚举显式 cast)、`-Wcomment`(替换函数注释别漏 `/**` 开头行)。
+- **编译前在源码里逐 gate/逐符号验证**,不要靠"编了再看"——用户被反复失败编译坑怕了。
+- **GKI 上很多"没开"的 config 其实是 `GKI_HACKS_TO_FIX`/`GKI_LEGACY_*_ALLCONFIG` 隐藏 select 出来的**,grep `select` 链,别只看 defconfig 字面。
+- **启动 vmlinux 来自 `common` 树**(CFG80211 没开),改 msm 侧 config 影响的是 ko;动会改结构体布局的 config(如 CFG80211_WEXT)会和 vmlinux 布局/CRC 失配 → 别动。要加 wext 走 `dev->wireless_handlers`(WIRELESS_EXT 常驻字段)这类不改布局的路。
 - **设备测试逻辑写进 .sh 推上去跑**,别 inline 一长串 su -c。
 - **NETHUNTER-INJ 计数器/banner 是模块生命周期级**,测单周期要么重载模块要么灌 >256 帧。
 - **改 out/ 模块源不等于进了设备**——先确认打包/部署链路,否则白改。
 - **网上 mac80211 注入补丁对 FullMAC 内置 WiFi 无效**,只对外接 USB 网卡有效。
+- **DSC 是分层锁(driver→psoc→vdev)**:在 vdev trans 上下文里同步起 psoc trans 必死锁/E_AGAIN;需要重建 DP 这类 psoc 级操作得走 workqueue 异步。

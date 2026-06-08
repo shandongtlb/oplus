@@ -1,7 +1,7 @@
 From 13950524635db6354e647ce128f0ed83e266cb21 Mon Sep 17 00:00:00 2001
 From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
 Date: Sun, 7 Jun 2026 08:38:48 +0000
-Subject: [PATCH 10/10] qcacld: improve injection debugging - reset counters
+Subject: [PATCH 10/12] qcacld: improve injection debugging - reset counters
  per session
 
 1. Reset g_wma_inj.{submitted,completed} to 0 each time helper vdev

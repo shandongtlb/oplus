@@ -1,0 +1,128 @@
+From 39337f12d9b651d36e97c4ec92f1a5b73398571e Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Mon, 8 Jun 2026 01:32:57 +0000
+Subject: [PATCH 11/12] =?UTF-8?q?=E4=BF=AE=E5=A4=8Dwext?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 88 +++++++++++++++++++
+ 1 file changed, 88 insertions(+)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index 30b2fbd8b..4a7bbcbc3 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -73,6 +73,7 @@
+ 
+ #include <net/addrconf.h>
+ #include <linux/wireless.h>
++#include <net/iw_handler.h>
+ #include <net/cfg80211.h>
+ #include <net/ieee80211_radiotap.h>
+ #include <linux/inetdevice.h>
+@@ -3417,6 +3418,85 @@ bool hdd_is_valid_mac_address(const uint8_t *mac_addr)
+ 	return xdigit == 12 && (separator == 5 || separator == 0);
+ }
+ 
++/*
++ * NETHUNTER wext bridge for the monitor netdev (wlan0mon).
++ *
++ * The booting GKI vmlinux is built with CONFIG_CFG80211_WEXT off, so the
++ * cfg80211<->wext compat bridge in net/wireless/wext-core.c get_handler() is
++ * compiled out. The OTHER lookup path in the SAME function - the
++ * CONFIG_WIRELESS_EXT path that reads dev->wireless_handlers - IS live in the
++ * running vmlinux (GKI selects WIRELESS_EXT via GKI_HACKS_TO_FIX). So we hang a
++ * tiny self-contained iw_handler_def on the monitor netdev to answer the few
++ * wext ioctls userspace tools issue:
++ *   SIOCGIWNAME  -> "IEEE 802.11"   (so iwconfig recognises it as wireless)
++ *   SIOCGIWMODE  -> IW_MODE_MONITOR
++ *   SIOCGIWFREQ  -> active monitor channel (mon_ctx->freq, MHz)
++ * The last one is what lets aireplay-ng read the channel WITHOUT
++ * --ignore-negative-one (osdep linux_get_channel() only uses SIOCGIWFREQ and
++ * has no nl80211 fallback), and what makes `iwconfig wlan0mon` show the channel.
++ *
++ * Read-only handlers: no locks, no sleeping, safe in ioctl context. Channel
++ * setting stays on the nl80211 path (monstart / `iw set channel`); a wext
++ * SIOCSIWFREQ setter can be added later once this read path is confirmed.
++ *
++ * NOTE: keep qcacld's own CONFIG_WLAN_WEXT_SUPPORT_ENABLE OFF - its
++ * we_handler_def (num_standard=0) would otherwise overwrite dev->wireless_handlers.
++ */
++#ifdef CONFIG_WIRELESS_EXT
++static int hdd_mon_wext_giwname(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	strlcpy(wrqu->name, "IEEE 802.11", IFNAMSIZ);
++	return 0;
++}
++
++static int hdd_mon_wext_giwmode(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	wrqu->mode = IW_MODE_MONITOR;
++	return 0;
++}
++
++static int hdd_mon_wext_giwfreq(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	struct iw_freq *freq = &wrqu->freq;
++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
++	struct hdd_monitor_ctx *mon_ctx;
++
++	if (!adapter || !adapter->deflink)
++		return -EOPNOTSUPP;
++
++	mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
++	if (!mon_ctx || !mon_ctx->freq)
++		return -EAGAIN;
++
++	/* center freq in MHz: m * 10^e Hz, mirror cfg80211_wext_giwfreq() */
++	freq->m = mon_ctx->freq;
++	freq->e = 6;
++	freq->i = 0;
++	freq->flags = 0;
++	return 0;
++}
++
++/* Dense standard-handler table indexed by IW_IOCTL_IDX(cmd) = cmd-SIOCIWFIRST.
++ * Sized to the highest index used (SIOCGIWMODE -> 7), gaps are NULL.
++ */
++static const iw_handler hdd_mon_wext_std[] = {
++	IW_HANDLER(SIOCGIWNAME, hdd_mon_wext_giwname),
++	IW_HANDLER(SIOCGIWFREQ, hdd_mon_wext_giwfreq),
++	IW_HANDLER(SIOCGIWMODE, hdd_mon_wext_giwmode),
++};
++
++static const struct iw_handler_def hdd_mon_wext_handler_def = {
++	.standard     = hdd_mon_wext_std,
++	.num_standard = ARRAY_SIZE(hdd_mon_wext_std),
++};
++#endif /* CONFIG_WIRELESS_EXT */
++
+ /**
+  * hdd_mon_mode_ether_setup() - Update monitor mode struct net_device.
+  * @dev: Handle to struct net_device to be updated.
+@@ -3434,6 +3514,14 @@ static void hdd_mon_mode_ether_setup(struct net_device *dev)
+ 	dev->flags              = IFF_BROADCAST|IFF_MULTICAST;
+ 	dev->priv_flags        |= IFF_TX_SKB_SHARING;
+ 
++	/*
++	 * NETHUNTER: expose a minimal wext interface on wlan0mon so aireplay-ng
++	 * reads the channel (no --ignore-negative-one) and iwconfig works.
++	 */
++#ifdef CONFIG_WIRELESS_EXT
++	dev->wireless_handlers  = &hdd_mon_wext_handler_def;
++#endif
++
+ 	memset(dev->broadcast, 0xFF, ETH_ALEN);
+ }
+ 
+-- 
+2.43.0
+

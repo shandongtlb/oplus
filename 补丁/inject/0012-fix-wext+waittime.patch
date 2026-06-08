@@ -1,0 +1,235 @@
+From 61a76083e13cf580e7a0b86fbf42806df21da411 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Mon, 8 Jun 2026 04:34:12 +0000
+Subject: [PATCH 12/12] =?UTF-8?q?=E4=BF=AE=E5=A4=8Dwext+=E7=AB=9E=E6=80=81?=
+ =?UTF-8?q?=E7=AA=97=E5=8F=A3=E6=94=B6=E7=AA=84?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../core/hdd/src/wlan_hdd_cfg80211.c          |  26 ++++
+ .../core/hdd/src/wlan_hdd_cfg80211.h          |  13 ++
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 136 ++++++++++++++++--
+ 3 files changed, 167 insertions(+), 8 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index bc38a8e6d..2fbc058aa 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31578,6 +31578,32 @@ static int wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ }
+ #endif
+ 
++/*
++ * NETHUNTER: wext SIOCSIWFREQ entry for wlan0mon. Lets `iwconfig wlan0mon
++ * channel N` / `freq X` set the monitor channel via the SAME path nl80211
++ * (`iw set freq`) uses - wlan_hdd_cfg80211_set_mon_ch() (osif_psoc_sync
++ * protected, sleepable; called here from the wext SET ioctl process context).
++ * Defined unconditionally so the handler in wlan_hdd_main.c links even when
++ * FEATURE_MONITOR_MODE_SUPPORT is off; body is feature-guarded.
++ */
++int wlan_hdd_mon_wext_set_freq(struct wiphy *wiphy, int freq_mhz)
++{
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++	struct cfg80211_chan_def chandef = {
++		.width = NL80211_CHAN_WIDTH_20_NOHT,
++	};
++
++	chandef.center_freq1 = freq_mhz;
++	chandef.chan = ieee80211_get_channel(wiphy, freq_mhz);
++	if (!chandef.chan)
++		return -EINVAL;
++
++	return wlan_hdd_cfg80211_set_mon_ch(wiphy, &chandef);
++#else
++	return -EOPNOTSUPP;
++#endif
++}
++
+ #define CNT_DIFF(cur, prev) \
+ 	((cur >= prev) ? (cur - prev) : (cur + (MAX_COUNT - (prev) + 1)))
+ #define MAX_COUNT 0xffffffff
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h
+index 2d1d47557..d4b361c2b 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h
+@@ -1277,4 +1277,17 @@ void wlan_hdd_save_sta_keep_alive_interval(struct hdd_adapter *adapter,
+ enum nl80211_chan_width
+ hdd_convert_phy_bw_to_nl_bw(enum phy_ch_width bw);
+ 
++/**
++ * wlan_hdd_mon_wext_set_freq() - set monitor channel from a wext SIOCSIWFREQ
++ * @wiphy: wiphy handle
++ * @freq_mhz: target channel center frequency in MHz
++ *
++ * NETHUNTER: routes `iwconfig wlan0mon channel/freq` to the monitor
++ * channel-set path. Always defined; returns -EOPNOTSUPP if monitor support
++ * is compiled out.
++ *
++ * Return: 0 on success or negative errno.
++ */
++int wlan_hdd_mon_wext_set_freq(struct wiphy *wiphy, int freq_mhz);
++
+ #endif
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index 4a7bbcbc3..ff574c4f9 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -3482,13 +3482,110 @@ static int hdd_mon_wext_giwfreq(struct net_device *dev,
+ 	return 0;
+ }
+ 
++/* SIOCSIWFREQ: `iwconfig wlan0mon channel N` / `freq X` -> set monitor channel
++ * via the same path nl80211 (`iw set freq`) uses. Runs in process ctx (SET
++ * ioctl, rtnl held) so the sleeping channel-switch is safe.
++ */
++static int hdd_mon_wext_siwfreq(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	struct iw_freq *f = &wrqu->freq;
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	int freq_mhz;
++
++	if (!wdev || !wdev->wiphy)
++		return -EOPNOTSUPP;
++
++	/* parse wext freq encoding (mirror cfg80211_wext_freq()) */
++	if (f->e == 0) {
++		/* channel-number form */
++		if (f->m < 0)
++			return -EINVAL;		/* "auto" unsupported for monitor */
++		freq_mhz = ieee80211_channel_to_frequency(f->m,
++				(f->m > 14) ? NL80211_BAND_5GHZ :
++					      NL80211_BAND_2GHZ);
++	} else {
++		/* frequency form: value = m * 10^e Hz -> MHz */
++		int i, div = 1000000;
++
++		for (i = 0; i < f->e; i++)
++			div /= 10;
++		if (div <= 0)
++			return -EINVAL;
++		freq_mhz = f->m / div;
++	}
++
++	if (freq_mhz <= 0)
++		return -EINVAL;
++
++	return wlan_hdd_mon_wext_set_freq(wdev->wiphy, freq_mhz);
++}
++
++/* SIOCGIWRANGE: channel/frequency list for `iwlist wlan0mon channel/freq`.
++ * Trimmed from cfg80211_wext_giwrange() to we_version + the band freq table.
++ */
++static int hdd_mon_wext_giwrange(struct net_device *dev,
++				 struct iw_request_info *info,
++				 union iwreq_data *wrqu, char *extra)
++{
++	struct iw_point *data = &wrqu->data;
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct iw_range *range = (struct iw_range *)extra;
++	enum nl80211_band band;
++	int i, c = 0;
++
++	if (!wdev || !wdev->wiphy)
++		return -EOPNOTSUPP;
++
++	data->length = sizeof(struct iw_range);
++	memset(range, 0, sizeof(struct iw_range));
++
++	range->we_version_compiled = WIRELESS_EXT;
++	range->we_version_source = 21;
++	range->max_qual.level = (u8)-110;
++	range->max_qual.qual = 70;
++	range->max_qual.updated = IW_QUAL_DBM | IW_QUAL_QUAL_UPDATED |
++				  IW_QUAL_LEVEL_UPDATED;
++	range->avg_qual.level = range->max_qual.level / 2;
++	range->avg_qual.qual = 35;
++	range->avg_qual.updated = range->max_qual.updated;
++
++	for (band = 0; band < NUM_NL80211_BANDS; band++) {
++		struct ieee80211_supported_band *sband =
++						wdev->wiphy->bands[band];
++
++		if (!sband)
++			continue;
++
++		for (i = 0; i < sband->n_channels &&
++			    c < IW_MAX_FREQUENCIES; i++) {
++			struct ieee80211_channel *chan = &sband->channels[i];
++
++			if (chan->flags & IEEE80211_CHAN_DISABLED)
++				continue;
++			range->freq[c].i =
++				ieee80211_frequency_to_channel(chan->center_freq);
++			range->freq[c].m = chan->center_freq;
++			range->freq[c].e = 6;
++			c++;
++		}
++	}
++	range->num_channels = c;
++	range->num_frequency = c;
++
++	return 0;
++}
++
+ /* Dense standard-handler table indexed by IW_IOCTL_IDX(cmd) = cmd-SIOCIWFIRST.
+- * Sized to the highest index used (SIOCGIWMODE -> 7), gaps are NULL.
++ * Sized to the highest index used (SIOCGIWRANGE -> 11), gaps are NULL.
+  */
+ static const iw_handler hdd_mon_wext_std[] = {
+-	IW_HANDLER(SIOCGIWNAME, hdd_mon_wext_giwname),
+-	IW_HANDLER(SIOCGIWFREQ, hdd_mon_wext_giwfreq),
+-	IW_HANDLER(SIOCGIWMODE, hdd_mon_wext_giwmode),
++	IW_HANDLER(SIOCGIWNAME,  hdd_mon_wext_giwname),
++	IW_HANDLER(SIOCSIWFREQ,  hdd_mon_wext_siwfreq),
++	IW_HANDLER(SIOCGIWFREQ,  hdd_mon_wext_giwfreq),
++	IW_HANDLER(SIOCGIWMODE,  hdd_mon_wext_giwmode),
++	IW_HANDLER(SIOCGIWRANGE, hdd_mon_wext_giwrange),
+ };
+ 
+ static const struct iw_handler_def hdd_mon_wext_handler_def = {
+@@ -15490,11 +15587,34 @@ void hdd_psoc_idle_timer_start(struct hdd_context *hdd_ctx)
+ 
+ /*
+  * Delay (ms) used to force a one-shot idle shutdown after monitor teardown on
+- * platforms that disable the idle timer (gInterfaceChangeWait=0). Kept short so
+- * the DP rebuild completes before the user re-enables WiFi, but non-zero so the
+- * scheduling and suspend-prevention wakelock behave like the normal idle path.
++ * platforms that disable the idle timer (gInterfaceChangeWait=0).
++ *
++ * Two opposing constraints set this value:
++ *  - MUST be > 0 and long enough that __wlan_hdd_del_virtual_intf() has fully
++ *    returned and its caller released the osif_vdev_sync trans before this work
++ *    runs. The work's hdd_psoc_idle_shutdown() takes a psoc-level DSC trans,
++ *    which DSC rejects with -EAGAIN while a down-tree vdev trans is still
++ *    active (wlan_dsc_psoc.c __dsc_psoc_can_trans) -> shutdown would silently
++ *    abort. That del return path is only microseconds, so any small delay works.
++ *  - SHOULD be as short as possible: while this work is pending, a racing
++ *    `svc wifi enable` -> hdd_trigger_psoc_idle_restart() -> hdd_psoc_idle_timer_stop()
++ *    does qdf_delayed_work_stop_sync(): if the work has NOT started yet it is
++ *    CANCELLED (DP stays in monitor config -> STA associates but no DHCP/data);
++ *    if it has already started, stop_sync waits for it to finish (DP rebuilt OK).
++ *    So a short delay maximises the chance the work has already started before
++ *    any re-enable arrives. 200ms gives a large margin over the (microsecond)
++ *    del-return path while keeping the cancellable window far below any
++ *    human/script monstop->re-enable latency.
++ *
++ * A deterministic in-driver close of this race was evaluated (have the restart
++ * path defer to the pending shutdown instead of cancelling it) but rejected:
++ * hdd_open()/restart runs inside an osif_vdev_sync trans, so it cannot drive the
++ * psoc-level shutdown without hitting the same DSC down-tree deadlock; the only
++ * non-deadlocking variant would force `svc wifi enable` to fail-and-retry, which
++ * is a worse trade than this short-delay window. Operating rule instead: after
++ * monstop let the script's own delay run before re-enabling WiFi.
+  */
+-#define HDD_MON_FORCE_IDLE_SHUTDOWN_MS 1000
++#define HDD_MON_FORCE_IDLE_SHUTDOWN_MS 200
+ 
+ void hdd_psoc_idle_shutdown_force(struct hdd_context *hdd_ctx)
+ {
+-- 
+2.43.0
+

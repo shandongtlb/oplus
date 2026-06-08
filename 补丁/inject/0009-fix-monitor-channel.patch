@@ -1,7 +1,7 @@
 From bcff639183153a6510d1f1a279ea53743747541c Mon Sep 17 00:00:00 2001
 From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
 Date: Sun, 7 Jun 2026 08:02:10 +0000
-Subject: [PATCH 09/10] qcacld: fix monitor channel reporting for aireplay-ng
+Subject: [PATCH 09/12] qcacld: fix monitor channel reporting for aireplay-ng
 
 Update mon_ctx->freq and mon_ctx->bandwidth after successful channel
 set in __wlan_hdd_cfg80211_set_mon_ch(). Without this, get_channel()
