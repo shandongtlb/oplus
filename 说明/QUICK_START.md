@@ -49,7 +49,15 @@ aireplay-ng --deauth 20 -a <目标AP_MAC> wlan0mon
 aireplay-ng --deauth 0 -a <目标AP_MAC> wlan0mon
 ```
 
-### 4. 停止 Monitor
+### 4. 重置 Monitor（如果 AP 变少）
+```bash
+# 如果 airodump-ng 多次运行后 AP 越来越少
+monreset 6          # 重置并锁定信道6
+# 或
+monreset            # 重置但不锁信道
+```
+
+### 5. 停止 Monitor
 ```bash
 monstop
 ```
@@ -123,6 +131,29 @@ lsmod | grep qca_cld3
 # 重新加载模块
 modprobe -r qca_cld3_peach_v2
 modprobe qca_cld3_peach_v2
+```
+
+### airodump-ng 搜到的 AP 越来越少
+```bash
+# 问题：多次 ctrl+c 后 AP 数量递减，最后搜不到任何 AP
+# 原因：频繁的信道切换导致驱动状态混乱
+
+# 解决方案1（推荐）：重置 monitor vdev
+monreset 6          # 重置并锁定到信道6（3秒）
+
+# 解决方案2：完全退出再进入
+monstop             # 退出 monitor（~17秒）
+monstart 6          # 重新启动
+
+# 解决方案3（最后手段）：热切模块
+rmmod qca_cld3_peach_v2
+modprobe qca_cld3_peach_v2
+monstart 6
+
+# 预防措施：锁定单信道，避免跳频
+scanap              # 先用 STA 模式扫一遍
+monstart 6          # 锁定目标信道
+airodump-ng wlan0mon --channel 6   # 不跳频，只监听 ch6
 ```
 
 ### Deauth 无效果

@@ -138,10 +138,14 @@ EOF
 #!/system/bin/sh
 exec sh "$MODDIR/monitor_control.sh" off
 EOF
+      cat > "$bindir/monreset" <<EOF
+#!/system/bin/sh
+exec sh "$MODDIR/monitor_control.sh" reset "\$@"
+EOF
       # scanap: inline the real implementation, do NOT forward.
       write_scanap "$bindir/scanap"
 
-      chmod 755 "$bindir/monstart" "$bindir/monstop"
+      chmod 755 "$bindir/monstart" "$bindir/monstop" "$bindir/monreset"
       log_i "monitor commands installed into $bindir"
       return 0
     fi

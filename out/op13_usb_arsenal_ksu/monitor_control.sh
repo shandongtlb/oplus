@@ -115,9 +115,44 @@ mon_off() {
   return 0
 }
 
+mon_reset() {
+  ch_or_freq="$1"
+  if [ ! -f "$MON_FLAG" ]; then
+    log_i "[monitor] not in monitor mode, use 'monstart' first"
+    return 1
+  fi
+  log_i "[monitor] resetting wlan0mon (down->del->add->up)..."
+  PHY=$(get_phy)
+  [ -z "$PHY" ] && PHY=$(cat /sys/class/net/wlan0mon/phy80211/name 2>/dev/null)
+  [ -z "$PHY" ] && { log_i "[monitor] cannot find phy"; return 1; }
+
+  ip link set wlan0mon down 2>/dev/null
+  sleep 1
+  iw dev wlan0mon del 2>/dev/null
+  sleep 1
+
+  ADD=$(iw "$PHY" interface add wlan0mon type monitor 2>&1)
+  if [ $? -ne 0 ] || ! iw dev wlan0mon info >/dev/null 2>&1; then
+    log_i "[monitor] reset FAILED: $ADD"
+    rm -f "$MON_FLAG"
+    return 1
+  fi
+  ip link set wlan0mon up
+
+  if [ -n "$ch_or_freq" ]; then
+    freq=$(chan_to_freq "$ch_or_freq") || return 1
+    iw dev wlan0mon set freq "$freq" && log_i "[monitor] reset OK, locked ch/freq: $ch_or_freq -> $freq MHz" \
+      || log_i "[monitor] warn: set freq $freq failed"
+  else
+    log_i "[monitor] reset OK (no channel lock, capture-only mode)"
+  fi
+  return 0
+}
+
 case "$1" in
   on|enable|start)  shift; mon_on "$1" ;;
   off|disable|stop) mon_off ;;
+  reset|restart)    shift; mon_reset "$1" ;;
   status|"")
     if [ -f "$MON_FLAG" ] && iw dev wlan0mon info >/dev/null 2>&1; then
       log_i "[monitor] status: ON"; iw dev wlan0mon info 2>/dev/null | grep -E "Interface|type|channel"
@@ -125,5 +160,5 @@ case "$1" in
       log_i "[monitor] status: OFF"
     fi
     ;;
-  *) echo "usage: $0 [on [freq]|off|status]" >&2; exit 1 ;;
+  *) echo "usage: $0 [on [freq]|off|reset [freq]|status]" >&2; exit 1 ;;
 esac
