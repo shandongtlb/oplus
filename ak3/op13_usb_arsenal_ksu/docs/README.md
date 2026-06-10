@@ -10,6 +10,7 @@ Build markers:
 Included modules:
 - `system_dlkm`: `ch341.ko`, `pl2303.ko`
 - `vendor_dlkm`: `cfg80211.ko`, `mac80211.ko`, `qca_cld3_peach_v2.ko`, `zd1201.ko`, `rt2x00lib.ko`, `rt2x00usb.ko`, `rt2800lib.ko`, `rt2800usb.ko`
+- Additional `.ko` files placed under `system_dlkm/lib/modules/` or `vendor_dlkm/lib/modules/` are auto-loaded after the known WLAN/USB dependency order is applied
 
 Boot-time behavior:
 - Keep the stock `cnss*` platform stack and normal WLAN stack in place
@@ -66,6 +67,7 @@ Design notes:
 - `cfg80211`, `mac80211`, and `qca_cld3_peach_v2` are treated as a matched set
 - `cnss*` is never unloaded or replaced
 - USB add-on drivers stay optional and are loaded only when the WLAN stack switch is requested
+- Extra bundled `.ko` files are loaded with several retry passes so simple dependency ordering issues can resolve without hardcoding every new module name
 
 Important limitations:
 - This package does not replace `boot.img` or the running kernel

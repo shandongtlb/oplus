@@ -37,6 +37,23 @@ resolve_moddir_file() {
   return 1
 }
 
+resolve_moddir_dir() {
+  rel="$1"
+
+  if [ -d "$MODDIR/$rel" ]; then
+    echo "$MODDIR/$rel"
+    return 0
+  fi
+
+  flat_rel=$(printf '%s' "$rel" | tr '/' '\\')
+  if [ -d "$MODDIR/$flat_rel" ]; then
+    echo "$MODDIR/$flat_rel"
+    return 0
+  fi
+
+  return 1
+}
+
 resolve_path() {
   leaf="$1"
   shift
@@ -151,6 +168,151 @@ load_module_relaxed() {
 
   log_e "failed to load $name from $path"
   return 1
+}
+
+module_name_from_path() {
+  base="${1##*/}"
+  base="${base%.ko}"
+  printf '%s' "$base" | tr '-' '_'
+}
+
+is_auto_managed_known_module() {
+  case "$1" in
+    cfg80211|mac80211|qca_cld3_peach_v2|zd1201|rt2x00lib|rt2800lib|rt2x00usb|rt2800usb)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+load_extra_modules_from_dir() {
+  dir="$1"
+  passes="${2:-5}"
+
+  [ -d "$dir" ] || return 0
+
+  pass=1
+  while [ "$pass" -le "$passes" ]; do
+    progress=0
+    pending=0
+
+    for path in "$dir"/*.ko; do
+      [ -f "$path" ] || continue
+      name=$(module_name_from_path "$path")
+
+      if is_auto_managed_known_module "$name"; then
+        continue
+      fi
+
+      if is_loaded "$name"; then
+        continue
+      fi
+
+      pending=1
+      if insmod "$path" 2>/dev/null; then
+        log_i "loaded extra $name from $path"
+        progress=1
+      fi
+    done
+
+    [ "$pending" -eq 0 ] && return 0
+    [ "$progress" -eq 0 ] && break
+    pass=$((pass + 1))
+  done
+
+  rc=0
+  for path in "$dir"/*.ko; do
+    [ -f "$path" ] || continue
+    name=$(module_name_from_path "$path")
+
+    if is_auto_managed_known_module "$name"; then
+      continue
+    fi
+
+    if ! is_loaded "$name"; then
+      log_e "extra module not loaded: $name from $path"
+      rc=1
+    fi
+  done
+
+  return $rc
+}
+
+load_extra_modules_from_rel() {
+  rel="$1"
+  dir=$(resolve_moddir_dir "$rel")
+
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    return 0
+  fi
+
+  load_extra_modules_from_dir "$dir" 5
+}
+
+unload_extra_modules_from_dir() {
+  dir="$1"
+  passes="${2:-5}"
+
+  [ -d "$dir" ] || return 0
+
+  pass=1
+  while [ "$pass" -le "$passes" ]; do
+    progress=0
+    pending=0
+
+    for path in "$dir"/*.ko; do
+      [ -f "$path" ] || continue
+      name=$(module_name_from_path "$path")
+
+      if is_auto_managed_known_module "$name"; then
+        continue
+      fi
+
+      if ! is_loaded "$name"; then
+        continue
+      fi
+
+      pending=1
+      if rmmod "$name" 2>/dev/null; then
+        if wait_until_unloaded "$name" 10; then
+          log_i "unloaded extra $name"
+          progress=1
+        fi
+      fi
+    done
+
+    [ "$pending" -eq 0 ] && return 0
+    [ "$progress" -eq 0 ] && break
+    pass=$((pass + 1))
+  done
+
+  rc=0
+  for path in "$dir"/*.ko; do
+    [ -f "$path" ] || continue
+    name=$(module_name_from_path "$path")
+
+    if is_auto_managed_known_module "$name"; then
+      continue
+    fi
+
+    if is_loaded "$name"; then
+      log_e "extra module still loaded: $name"
+      rc=1
+    fi
+  done
+
+  return $rc
+}
+
+unload_extra_modules_from_rel() {
+  rel="$1"
+  dir=$(resolve_moddir_dir "$rel")
+
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    return 0
+  fi
+
+  unload_extra_modules_from_dir "$dir" 5
 }
 
 load_stock_module() {
@@ -307,12 +469,17 @@ prepare_switch() {
   fi
   sleep 2
 
-  unload_module qca_cld3_peach_v2 || true
+  # Unload add-on drivers first; keep the WLAN core stack until the end.
+  unload_extra_modules_from_rel "vendor_dlkm/lib/modules" || true
+  unload_extra_modules_from_rel "system_dlkm/lib/modules" || true
+
   unload_module zd1201 || true
   unload_module rt2800usb || true
   unload_module rt2800lib || true
   unload_module rt2x00usb || true
   unload_module rt2x00lib || true
+
+  unload_module qca_cld3_peach_v2 || true
   unload_module mac80211 || true
   unload_module cfg80211 || true
 }
@@ -351,11 +518,15 @@ switch_to_nethunter() {
   load_module_strict cfg80211 "vendor_dlkm/lib/modules/cfg80211.ko" || return 1
   load_module_strict mac80211 "vendor_dlkm/lib/modules/mac80211.ko" || return 1
   load_module_strict qca_cld3_peach_v2 "vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko" || return 1
+
+  # Load known and newly bundled add-on drivers only after WLAN core is ready.
   load_module_relaxed zd1201 "$MODDIR/vendor_dlkm/lib/modules/zd1201.ko" || true
   load_module_relaxed rt2x00lib "$MODDIR/vendor_dlkm/lib/modules/rt2x00lib.ko" || true
   load_module_relaxed rt2800lib "$MODDIR/vendor_dlkm/lib/modules/rt2800lib.ko" || true
   load_module_relaxed rt2x00usb "$MODDIR/vendor_dlkm/lib/modules/rt2x00usb.ko" || true
   load_module_relaxed rt2800usb "$MODDIR/vendor_dlkm/lib/modules/rt2800usb.ko" || true
+  load_extra_modules_from_rel "system_dlkm/lib/modules" || true
+  load_extra_modules_from_rel "vendor_dlkm/lib/modules" || true
 
   finish_switch
   : > "$STATE_FLAG"
