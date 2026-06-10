@@ -1,39 +1,146 @@
-# inject 补丁集
+# 一加 13 (peach_v2) NetHunter 注入补丁集
 
-本目录包含基于「Initial kernel source import」(`a22d7e3fc`) 之后的全部改动历史，
-由 `git format-patch` 导出，共 13 个补丁，按编号顺序应用。
+为一加 13 (peach_v2) 内核启用 monitor 模式和帧注入功能，支持 NetHunter 无线安全测试。
 
-## 应用方法
+## 功能特性
 
-在内核源码根目录（与 `kernel_platform/`、`vendor/` 同级）执行：
+- ✅ **Monitor 模式**：qcacld-3.0 驱动完整 monitor 支持
+- ✅ **帧注入**：mac80211 + qcacld 注入通路，支持 aireplay-ng
+- ✅ **广播 deauth**：通过 WMI test flag 绕过固件限制，稳定踢出全部 client
+- ✅ **vdev_restart 优化**：解决 AP 扫描时递减问题
 
-```sh
-# 方式一：保留提交历史
-git am oplus/补丁/inject/*.patch
+## 适用基线
 
-# 方式二：仅打补丁，不产生提交
-git apply oplus/补丁/inject/*.patch
+- **目标仓库**：OnePlus 13 内核源码 (peach_v2)
+- **基线 commit**：`0de73fc2` 或相同的一加 13 16.0.7.201 同步代码
+  ```
+  Synchronize code for OnePlus CPH2649_16.0.7.201(EX01) ...
+  Based on QCOM release TAG: AU_LINUX_KERNEL.PLATFORM.4.0.R1.00.00.00.061.111
+  ```
+
+## 应用步骤
+
+从基线 `0de73fc2` 开始，按序应用全部 14 个补丁：
+
+```bash
+cd /path/to/oneplus13-kernel
+git checkout 0de73fc2   # 或你的基线 commit
+
+# 应用 0001-0014（完整功能）
+for i in $(seq 1 14); do
+  git am /path/to/补丁/inject/$(printf "%04d" $i)-*.patch
+done
 ```
 
-> 已验证：从 `a22d7e3fc` 基线按序应用全部补丁后，生成的代码树与当前 `HEAD`
-> (`61a76083e`) 完全一致。
+**说明**：
+- `0001`：构建系统配置（WLAN 平台模块）
+- `0002-0012`：monitor/inject 核心功能
+- `0013`：广播 deauth 注入（关键功能）
+- `0014`：r8 - vdev_restart 优化
+- `0004` 包含**跨仓库改动**：
+  - `vendor/qcom/opensource/wlan/qcacld-3.0/` （驱动层）
+  - `kernel_platform/msm-kernel/net/mac80211/` 等（内核侧）
+  
+  这些改动会一起通过 `git am` 应用。如果你的 msm-kernel 是独立仓库，需要手动提取 0004 里的内核部分单独打补丁。
+
+## 验证
+
+应用完成后，最终 HEAD 应该是：
+
+```bash
+git log --oneline -4
+# ae508b19 peach_v2: r8 - vdev_restart优化解决AP递减问题
+# ca172e31 NETHUNTER: Enable broadcast deauth injection via WMI test flag
+# (0002-0012 的提交)
+# 2f347c6e 临时
+```
 
 ## 补丁清单
 
-补丁文件名即「序号-提交信息」：
+| 序号 | 功能 | 状态 |
+|------|------|------|
+| 0001 | WLAN 平台构建 | ✅ 稳定 |
+| 0002-0012 | monitor + inject 核心 | ✅ 稳定 |
+| 0013 | 广播 deauth 注入 | ✅ 已验证，可踢出全部 client |
+| 0014 | r8 - vdev_restart 优化 | ✅ 稳定 |
 
-| 序号 | 文件名 |
-| --- | --- |
-| 0001 | add-qcacldko.patch |
-| 0002 | add-monitor.patch |
-| 0003 | fix-monitor-1.patch |
-| 0004 | fix-monitor-2.patch |
-| 0005 | fix-monitor-3.patch |
-| 0006 | add-inject.patch |
-| 0007 | fix-inject-1.patch |
-| 0008 | fix-inject-2.patch |
-| 0009 | fix-monitor-channel.patch |
-| 0010 | improve-injection.patch |
-| 0011 | fix-wext-for-qcamonitor.patch |
-| 0012 | fix-wext+waittime.patch |
-| 0013 | NETHUNTER: Enable broadcast deauth injection via WMI test flag.patch |
+## 使用示例
+
+### 开启 monitor 模式
+
+```bash
+# 创建 monitor 接口
+iw phy phy0 interface add wlan0mon type monitor
+ip link set wlan0mon up
+
+# 设置频道（例如 2.4G channel 6）
+iw dev wlan0mon set freq 2437
+
+# 验证
+iw dev wlan0mon info
+```
+
+### 广播 deauth 攻击
+
+```bash
+# 踢出目标 AP 的所有 client（-a 指定 AP MAC）
+aireplay-ng --deauth 10 -a <AP_MAC> wlan0mon
+
+# 查看注入日志
+dmesg | grep -iE "inject|deauth" | tail -20
+```
+
+## 构建
+
+应用补丁后，按一加官方构建流程编译内核和模块：
+
+```bash
+./build/build_module.sh modules
+```
+
+生成的 `wlan.ko` 包含全部注入功能。
+
+## 故障排查
+
+### 补丁应用失败
+
+- **"does not exist in index"（0004）**：确认基线正确（0de73fc2），且 msm-kernel 结构与补丁匹配
+- **冲突**：检查基线是否已包含部分改动，必要时先 `git reset --hard 0de73fc2`
+
+### Monitor 无法开启
+
+- 检查 `iw phy phy0 info` 是否列出 `monitor` 接口类型和并发组合
+- 确认 wlan.ko 版本：`modinfo wlan.ko | grep vermagic`
+
+### 注入无响应
+
+- 确认 monitor 口已 `up`：`ip link set wlan0mon up`
+- 查看注入日志：`dmesg | grep -iE "inject|wma_inject|completion"`
+- 检查 WMI test mode 是否启用（0013 自动开启）
+
+### 广播 deauth 不稳定
+
+- 确保已应用到 0014 (r8)，该版本经过验证稳定
+- 检查目标 AP 频道与 monitor 频道是否一致
+- 使用 `--deauth 10` 或更多次数确保覆盖
+
+## 已知限制
+
+- **单播 deauth**：固件会 DISCARD 未知 peer 的单播帧，只有广播 deauth 可用
+- **频道切换**：部分场景下频道报告可能不准确，使用前确认 `iw dev wlan0mon info` 显示正确频道
+
+## 贡献者
+
+- 原始开发：shandongtlb
+- 辅助实现：Claude Opus 4.8
+
+## 许可
+
+与 Linux 内核相同许可（GPL-2.0）。
+
+---
+
+**最后更新**：2026-06-10  
+**测试设备**：OnePlus 13 (CPH2649) 16.0.7.201(EX01)  
+**内核版本**：Linux 6.6 + QCOM AU_LINUX_KERNEL.PLATFORM.4.0.R1  
+**稳定版本**：r8 (ae508b19) - 广播 deauth 已验证可用
