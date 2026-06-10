@@ -1,14 +1,13 @@
 diff --git a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
-index 03c16ecc9398..78111110ad08 100755
+index 03c16ecc9398..78111110ad08 100644
 --- a/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
 +++ b/kernel_platform/msm-kernel/arch/arm64/configs/vendor/sun_perf.config
-@@ -11,7 +11,9 @@ CONFIG_ARM_SMMU_QCOM=m
+@@ -11,6 +11,8 @@ CONFIG_ARM_SMMU_QCOM=m
  # CONFIG_ARM_SMMU_QCOM_DEBUG is not set
  # CONFIG_ARM_SMMU_SELFTEST is not set
  CONFIG_CFG80211=m
 +CONFIG_WLAN_VENDOR_ZYDAS=y
 +CONFIG_USB_ZD1201=m
- # CONFIG_CFG80211_WEXT is not set
  # CONFIG_CFG80211_CERTIFICATION_ONUS is not set
  # CONFIG_CFG80211_CRDA_SUPPORT is not set
  # CONFIG_CFG80211_DEBUGFS is not set
