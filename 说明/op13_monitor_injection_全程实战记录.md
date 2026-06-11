@@ -311,26 +311,24 @@ aireplay-ng --deauth 20 -a 3a:4e:5c:63:b7:de wlan0mon
 - ✅ 固件接受：广播地址 (a1=ff:ff:ff:ff:ff:ff)
 - ❌ 固件拒绝：单播地址 (a1=特定客户端MAC) → status=1 DISCARD
 
-**固件检查逻辑（已确认）:**
+**固件检查逻辑（r10/r11 验证后的正确结论）:**
 ```
-if (tx_flags & SET_WRONG_KEY) {
-    // WFA 测试模式
-    if (addr1 == BROADCAST) {
-        return COMPLETE_OK;  // ✅ 广播允许
-    } else {
-        // 单播仍检查关联状态
-        if (!is_peer_associated(vdev, addr1)) {
-            return DISCARD;  // ❌ 未关联的 peer 被拒
-        }
-    }
+// 固件按发送 vdev 的【类型】过滤，不是按 peer 关联状态
+if (vdev->type == MONITOR) {
+    if (addr1 == BROADCAST)
+        return COMPLETE_OK;  // ✅ 广播允许（配合 SET_WRONG_KEY）
+    else
+        return DISCARD;      // ❌ 单播一律拒绝（monitor vdev 类型限制）
 }
 ```
+> ⚠️ 早期曾写成"单播检查关联状态（未关联→DISCARD）"，该归因已被 r11 推翻：
+> 对固件已知的合法 peer 发单播仍 DISCARD（详见 §11.3.6）。决定因素是 vdev 类型，非关联。
 
 **剩余限制（已明确边界）:**
 
 | 功能 | 状态 | 原因 |
 |---|---|---|
-| **定向单播 deauth** | ❌ 固件 DISCARD | 固件检查 peer 是否在关联列表 |
+| **定向单播 deauth** | ❌ 固件 DISCARD | monitor vdev 类型限制（只能发广播，非关联状态）|
 
 **备注：之前误认为 5GHz deauth 被拒，实际测试发现 5GHz 信道36也成功。可能之前测试的信道149（5745MHz）属于 DFS 或特殊监管限制。**
 
@@ -372,7 +370,7 @@ if (tx_flags & SET_WRONG_KEY) {
    - 发现 WMI 测试标志：`tx_flags = 0x00000001` (SET_WRONG_KEY)
    - **只用 1 行代码**实现 2.4GHz + 5GHz 广播 deauth 注入
    - 实战验证：成功踢掉客户端并阻止重连（2.4G + 5G 都验证）
-   - 确认固件检查边界：广播允许，单播检查关联状态
+   - 确认固件检查边界：广播允许，单播受 monitor vdev 类型限制（r10/r11 验证，非关联状态）
 
 4. **wext 完整支持**
    - 从零实现 5 个 ioctl handler（giwname/giwmode/giwfreq/siwfreq/giwrange）
@@ -387,7 +385,7 @@ if (tx_flags & SET_WRONG_KEY) {
 - ✅ DP RX ring 时序竞态（200ms 窗口精确定位）
 - ✅ DSC 锁层级理解（psoc/vdev trans 死锁规避）
 - ✅ **固件安全机制突破**（WMI 测试标志逆向，广播 deauth 实现）
-- ✅ 固件边界确认（单播检查关联状态，5GHz 额外限制）
+- ✅ 固件边界确认（单播受 monitor vdev 类型限制，r10/r11 验证；5GHz DFS 信道额外限制）
 
 ### 代码资产
 | 文件 | 改动量 | 核心贡献 |
@@ -1799,22 +1797,49 @@ wma_inject_setup_ap_impersonation(uint8_t *target_ap_mac, uint32_t freq)
 
 ## 12. 相关文档索引
 
-本项目完整文档：
-- **[op13_monitor_injection_全程实战记录.md](op13_monitor_injection_全程实战记录.md)** - 本文档（技术实现细节 + 后续探索 §11.2-11.5）
-- **[injection_limitation_summary.md](injection_limitation_summary.md)** - Injection 功能限制与实战用途总结
-- **[DEAUTH_BREAKTHROUGH.md](DEAUTH_BREAKTHROUGH.md)** - 广播 deauth 突破记录
-- **[peach_v2_deauth_analysis_summary.md](peach_v2_deauth_analysis_summary.md)** - deauth 固件分析总结
-- **[peach_v2_firmware_reverse_engineering.md](peach_v2_firmware_reverse_engineering.md)** - 固件逆向参考（单播突破方向四）
-- **[patch_r8_vdev_restart_optimization.md](patch_r8_vdev_restart_optimization.md)** - r8 vdev_restart 优化详解
+> 本目录（`oplus/说明/`）共 16 篇文档，按主题分类如下。
+
+### 入门 / 总览
+- **[QUICK_START.md](QUICK_START.md)** - 快速开始指南（平台信息、刷入、基本命令）
+- **[PROJECT_COMPLETE.md](PROJECT_COMPLETE.md)** - 项目完成总结（功能清单、状态）
+- **[op13_kernel_work_report_zh.md](op13_kernel_work_report_zh.md)** - 内核改动工作报告（任务背景、整体改动）
 - **[致敬_一场伟大的技术探索.md](致敬_一场伟大的技术探索.md)** - 项目价值评估与寄语
 
-补丁集：`/root/pt/oplus/补丁/inject/`（0001-0014，含 README 应用说明）
-代码仓库：`/root/pt/kernel/vendor/qcom/opensource/wlan/qcacld-3.0/`
-内存记录：`/root/.claude/projects/-root-pt/memory/nethunter-oneplus13-port.md`
+### 技术实现（核心）
+- **[op13_monitor_injection_全程实战记录.md](op13_monitor_injection_全程实战记录.md)** - 本文档（全程实战 + 后续探索 §11.2-11.5）
+- **[op13_qcacld3_injection_port_map.md](op13_qcacld3_injection_port_map.md)** - qcacld-3.0 注入移植代码映射（改了哪些文件/函数）
+- **[op13_nethunter_msm_only_scope.md](op13_nethunter_msm_only_scope.md)** - msm-kernel 改动边界界定（GKI 3-tree 范围）
+- **[op13_docker_gki_sysvipc_enable.md](op13_docker_gki_sysvipc_enable.md)** - Docker/GKI SYSVIPC 启用说明（构建环境）
 
-**关键 git 锚点**：
+### Deauth 攻击专题
+- **[DEAUTH_BREAKTHROUGH.md](DEAUTH_BREAKTHROUGH.md)** - 广播 deauth 突破记录（WMI test flag）
+- **[peach_v2_deauth_analysis_summary.md](peach_v2_deauth_analysis_summary.md)** - deauth 固件行为分析总结
+- **[peach_v2_firmware_reverse_engineering.md](peach_v2_firmware_reverse_engineering.md)** - 固件逆向参考（单播突破方向四，见 §11.5.5）
+- **[injection_limitation_summary.md](injection_limitation_summary.md)** - 注入功能限制与实战用途总结（单播边界）
+
+### 优化 / 问题排查
+- **[patch_r8_vdev_restart_optimization.md](patch_r8_vdev_restart_optimization.md)** - r8 vdev_restart 优化详解（最终采用版本）
+- **[driver_level_channel_switch_optimization.md](driver_level_channel_switch_optimization.md)** - helper vdev 重建开销优化方案
+- **[airodump_ap_missing_issue.md](airodump_ap_missing_issue.md)** - airodump AP 递减问题排查
+
+### 验证清单
+- **[op13_runtime_validation_checklist.md](op13_runtime_validation_checklist.md)** - 真机运行时验证清单
+
+### 资源路径
+- 补丁集：`/root/pt/oplus/补丁/inject/`（**0001-0014**，含 README 应用说明）
+- 代码仓库：`/root/pt/kernel/vendor/qcom/opensource/wlan/qcacld-3.0/`
+- 内存记录：`/root/.claude/projects/-root-pt/memory/nethunter-oneplus13-port.md`
+
+### 关键 git 锚点
 - 基线：`0de73fc2`（一加13纯净同步代码）
-- r8 稳定版：`ae508b19`（最终采用 = 补丁 0014）
+- r8 稳定版：`ae508b19`（**最终采用** = 补丁 0014）
 - r10 单播实验：已记录但未采用（§11.2）
 - r11 STA+MON 并存：已记录但未采用（§11.3）
-- **DSC 是分层锁(driver→psoc→vdev)**:在 vdev trans 上下文里同步起 psoc trans 必死锁/E_AGAIN;需要重建 DP 这类 psoc 级操作得走 workqueue 异步。
+
+### 实用排查备忘
+- **airodump 在 5G 频道"跳回 2.4G"不是 bug**：airodump 默认只跳频 2.4G(CH1-14)，会覆盖预设的 5G 频道。
+  - 锁定 5G 单信道：`airodump-ng -c 149 wlan0mon`
+  - 扫所有 5G：`airodump-ng --band a wlan0mon`
+  - 扫全部：`airodump-ng --band abg wlan0mon`
+  - 已设备实测：手动 `set freq`/`iwconfig channel 149` 设 5G 全部正常，giwrange 返回 26 信道含全部 5G——驱动侧无问题。
+- **DSC 是分层锁(driver→psoc→vdev)**：在 vdev trans 上下文里同步起 psoc trans 必死锁/E_AGAIN；需要重建 DP 这类 psoc 级操作得走 workqueue 异步。

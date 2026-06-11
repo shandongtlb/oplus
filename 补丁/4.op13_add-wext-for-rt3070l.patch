@@ -1,0 +1,500 @@
+From 3f7bfb7c1a5980c786693f1223c50300b997f136 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 11 Jun 2026 01:25:19 +0000
+Subject: [PATCH] rt2x00: add wext shim for external cards (rt3070
+ iwconfig/aireplay)
+
+On GKI/Android cfg80211 is built with CONFIG_CFG80211_WEXT not set, so
+cfg80211 never installs wiphy->wext and net/wireless/wext-core.c
+get_handler() finds no handler for rt2x00 (mac80211) netdevs. SIOCGIWFREQ
+then fails and aircrack-ng reports "channel -1"; iwconfig/iwlist do not
+work on the external card (e.g. rt3070/rt2800usb).
+
+CONFIG_WIRELESS_EXT is unconditionally selected by the GKI baseline
+(GKI_HACKS_TO_FIX -> GKI_LEGACY_WEXT_ALLCONFIG -> WIRELESS_EXT) and
+net_device::wireless_handlers is a resident field, read by get_handler()
+in the CONFIG_WIRELESS_EXT branch after the (compiled-out) CFG80211_WEXT
+branch. Populating it is therefore safe (no struct-layout / MODVERSIONS
+CRC change) and authoritative, and needs no vmlinux/cfg80211 reflash --
+rt2x00lib.ko alone can be hot-swapped.
+
+Add a self-contained iw_handler_def attached to the netdevs of rt2x00
+wiphys via a netdevice notifier:
+  giwname / giwmode / giwfreq / siwfreq / giwrange.
+giwfreq reads rt2x00dev->hw->conf.chandef so zero-flag aireplay-ng can
+read the channel; siwfreq (monitor only) programs the radio through the
+driver's own rt2x00mac_config() path, needing no cfg80211 wext symbols.
+
+All guarded by CONFIG_WIRELESS_EXT.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+---
+ drivers/net/wireless/ralink/rt2x00/Makefile   |   1 +
+ drivers/net/wireless/ralink/rt2x00/rt2x00.h   |  16 +
+ .../net/wireless/ralink/rt2x00/rt2x00dev.c    |  11 +
+ .../net/wireless/ralink/rt2x00/rt2x00wext.c   | 387 ++++++++++++++++++
+ 4 files changed, 415 insertions(+)
+ create mode 100644 drivers/net/wireless/ralink/rt2x00/rt2x00wext.c
+
+diff --git a/drivers/net/wireless/ralink/rt2x00/Makefile b/drivers/net/wireless/ralink/rt2x00/Makefile
+index de030ebcd..6ff7257c4 100644
+--- a/drivers/net/wireless/ralink/rt2x00/Makefile
++++ b/drivers/net/wireless/ralink/rt2x00/Makefile
+@@ -4,6 +4,7 @@ rt2x00lib-y				+= rt2x00mac.o
+ rt2x00lib-y				+= rt2x00config.o
+ rt2x00lib-y				+= rt2x00queue.o
+ rt2x00lib-y				+= rt2x00link.o
++rt2x00lib-$(CONFIG_WIRELESS_EXT)	+= rt2x00wext.o
+ rt2x00lib-$(CONFIG_RT2X00_LIB_DEBUGFS)	+= rt2x00debug.o
+ rt2x00lib-$(CONFIG_RT2X00_LIB_CRYPTO)	+= rt2x00crypto.o
+ rt2x00lib-$(CONFIG_RT2X00_LIB_FIRMWARE)	+= rt2x00firmware.o
+diff --git a/drivers/net/wireless/ralink/rt2x00/rt2x00.h b/drivers/net/wireless/ralink/rt2x00/rt2x00.h
+index 07a6a5a9c..d42aad45d 100644
+--- a/drivers/net/wireless/ralink/rt2x00/rt2x00.h
++++ b/drivers/net/wireless/ralink/rt2x00/rt2x00.h
+@@ -1505,4 +1505,20 @@ void rt2x00lib_remove_dev(struct rt2x00_dev *rt2x00dev);
+ int rt2x00lib_suspend(struct rt2x00_dev *rt2x00dev);
+ int rt2x00lib_resume(struct rt2x00_dev *rt2x00dev);
+ 
++/*
++ * Wireless Extensions (iwconfig/iwlist) shim. See rt2x00wext.c.
++ */
++#ifdef CONFIG_WIRELESS_EXT
++int rt2x00_wext_register(struct rt2x00_dev *rt2x00dev);
++void rt2x00_wext_unregister(struct rt2x00_dev *rt2x00dev);
++#else
++static inline int rt2x00_wext_register(struct rt2x00_dev *rt2x00dev)
++{
++	return 0;
++}
++static inline void rt2x00_wext_unregister(struct rt2x00_dev *rt2x00dev)
++{
++}
++#endif /* CONFIG_WIRELESS_EXT */
++
+ #endif /* RT2X00_H */
+diff --git a/drivers/net/wireless/ralink/rt2x00/rt2x00dev.c b/drivers/net/wireless/ralink/rt2x00/rt2x00dev.c
+index 00b945053..82d885a9f 100644
+--- a/drivers/net/wireless/ralink/rt2x00/rt2x00dev.c
++++ b/drivers/net/wireless/ralink/rt2x00/rt2x00dev.c
+@@ -1081,6 +1081,9 @@ static int rt2x00lib_probe_hw_modes(struct rt2x00_dev *rt2x00dev,
+ 
+ static void rt2x00lib_remove_hw(struct rt2x00_dev *rt2x00dev)
+ {
++	/* Detach the wext shim before the interfaces go away. */
++	rt2x00_wext_unregister(rt2x00dev);
++
+ 	if (test_bit(DEVICE_STATE_REGISTERED_HW, &rt2x00dev->flags))
+ 		ieee80211_unregister_hw(rt2x00dev->hw);
+ 
+@@ -1203,6 +1206,14 @@ static int rt2x00lib_probe_hw(struct rt2x00_dev *rt2x00dev)
+ 
+ 	set_bit(DEVICE_STATE_REGISTERED_HW, &rt2x00dev->flags);
+ 
++	/*
++	 * Attach the wext (iwconfig/iwlist) shim to this device's
++	 * interfaces. cfg80211's own wext compat is compiled out on GKI
++	 * (CONFIG_CFG80211_WEXT not set), so without this iwconfig and
++	 * zero-flag aireplay-ng cannot read the channel.
++	 */
++	rt2x00_wext_register(rt2x00dev);
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/wireless/ralink/rt2x00/rt2x00wext.c b/drivers/net/wireless/ralink/rt2x00/rt2x00wext.c
+new file mode 100644
+index 000000000..ddf32b7c3
+--- /dev/null
++++ b/drivers/net/wireless/ralink/rt2x00/rt2x00wext.c
+@@ -0,0 +1,387 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++	Copyright (C) 2026 rt2x00 NetHunter wext shim
++
++	Module: rt2x00lib
++	Abstract:
++	Minimal Wireless Extensions (wext) shim for rt2x00 (mac80211) devices.
++
++	Background: on GKI/Android the running cfg80211 is built with
++	"# CONFIG_CFG80211_WEXT is not set", so cfg80211 never installs its
++	wext compat handler table (net/wireless/core.c sets
++	wiphy->wext only under CONFIG_CFG80211_WEXT). As a result
++	net/wireless/wext-core.c:get_handler() finds no handler for our
++	netdevs and ioctls like SIOCGIWFREQ fail -> tools such as
++	aircrack-ng read "channel -1".
++
++	CONFIG_WIRELESS_EXT itself is unconditionally selected by the GKI
++	baseline (GKI_HACKS_TO_FIX -> GKI_LEGACY_WEXT_ALLCONFIG ->
++	WIRELESS_EXT), and net_device::wireless_handlers is a resident field
++	regardless of CONFIG_CFG80211_WEXT. get_handler() reads
++	dev->wireless_handlers in the CONFIG_WIRELESS_EXT branch *after* the
++	(compiled-out) CFG80211_WEXT branch, so populating it is both safe
++	(no struct-layout / MODVERSIONS-CRC risk) and authoritative.
++
++	This shim attaches a small self-contained iw_handler_def to the
++	netdevs of rt2x00 wiphys via a netdevice notifier, providing just
++	enough wext for iwconfig / iwlist and zero-flag aireplay-ng:
++	  giwname / giwmode / giwfreq / siwfreq / giwrange.
++
++	siwfreq (monitor only) programs the radio directly through the
++	driver's own rt2x00mac_config() path -- it needs no cfg80211 wext
++	symbols (which are not compiled into the running cfg80211).
++ */
++
++#include <linux/list.h>
++#include <linux/mutex.h>
++#include <linux/slab.h>
++#include <linux/math64.h>
++#include <linux/netdevice.h>
++#include <linux/rtnetlink.h>
++#include <linux/wireless.h>
++#include <net/net_namespace.h>
++#include <net/iw_handler.h>
++#include <net/cfg80211.h>
++#include <net/mac80211.h>
++
++#include "rt2x00.h"
++#include "rt2x00lib.h"
++
++/*
++ * Set of wiphys owned by rt2x00 drivers. The notifier only touches
++ * netdevs whose wiphy is on this list, so it never disturbs other
++ * wireless drivers sharing the same kernel.
++ */
++struct rt2x00_wext_node {
++	struct list_head list;
++	struct wiphy *wiphy;
++};
++
++static DEFINE_MUTEX(rt2x00_wext_mutex);
++static LIST_HEAD(rt2x00_wext_wiphy_list);
++static bool rt2x00_wext_notifier_active;
++
++/* Recover the rt2x00 device that backs a wext-capable netdev. */
++static struct rt2x00_dev *rt2x00_wext_dev(struct net_device *dev)
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct ieee80211_hw *hw;
++
++	if (!wdev || !wdev->wiphy)
++		return NULL;
++
++	hw = wiphy_to_ieee80211_hw(wdev->wiphy);
++	if (!hw)
++		return NULL;
++
++	return hw->priv;
++}
++
++/* Convert an iw_freq into a MHz value (channel numbers handled by caller). */
++static int rt2x00_wext_freq_to_mhz(const struct iw_freq *freq)
++{
++	u64 v = (u64)(u32)freq->m;
++	int e = freq->e;
++
++	/* value == m * 10^e Hz; normalise to MHz (10^6 Hz). */
++	while (e > 6) {
++		v *= 10;
++		e--;
++	}
++	while (e < 6) {
++		v = div_u64(v + 5, 10);
++		e++;
++	}
++
++	return (int)v;
++}
++
++/* Resolve an iw_freq (channel number or frequency) to a wiphy channel. */
++static struct ieee80211_channel *
++rt2x00_wext_resolve_chan(struct wiphy *wiphy, const struct iw_freq *freq)
++{
++	enum nl80211_band band;
++	bool by_chan = (freq->e == 0 && freq->m > 0 && freq->m < 1000);
++	int target = by_chan ? freq->m : rt2x00_wext_freq_to_mhz(freq);
++	int i;
++
++	for (band = 0; band < NUM_NL80211_BANDS; band++) {
++		struct ieee80211_supported_band *sband = wiphy->bands[band];
++
++		if (!sband)
++			continue;
++
++		for (i = 0; i < sband->n_channels; i++) {
++			struct ieee80211_channel *chan = &sband->channels[i];
++
++			if (chan->flags & IEEE80211_CHAN_DISABLED)
++				continue;
++			if (by_chan) {
++				if (chan->hw_value == target)
++					return chan;
++			} else if (chan->center_freq == target) {
++				return chan;
++			}
++		}
++	}
++
++	return NULL;
++}
++
++static int rt2x00_wext_giwname(struct net_device *dev,
++			       struct iw_request_info *info,
++			       union iwreq_data *wrqu, char *extra)
++{
++	strcpy(wrqu->name, "IEEE 802.11");
++	return 0;
++}
++
++static int rt2x00_wext_giwmode(struct net_device *dev,
++			       struct iw_request_info *info,
++			       union iwreq_data *wrqu, char *extra)
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++
++	switch (wdev ? wdev->iftype : NL80211_IFTYPE_UNSPECIFIED) {
++	case NL80211_IFTYPE_MONITOR:
++		wrqu->mode = IW_MODE_MONITOR;
++		break;
++	case NL80211_IFTYPE_STATION:
++	case NL80211_IFTYPE_P2P_CLIENT:
++		wrqu->mode = IW_MODE_INFRA;
++		break;
++	case NL80211_IFTYPE_ADHOC:
++		wrqu->mode = IW_MODE_ADHOC;
++		break;
++	case NL80211_IFTYPE_AP:
++	case NL80211_IFTYPE_AP_VLAN:
++	case NL80211_IFTYPE_P2P_GO:
++		wrqu->mode = IW_MODE_MASTER;
++		break;
++	default:
++		wrqu->mode = IW_MODE_AUTO;
++		break;
++	}
++
++	return 0;
++}
++
++static int rt2x00_wext_giwfreq(struct net_device *dev,
++			       struct iw_request_info *info,
++			       union iwreq_data *wrqu, char *extra)
++{
++	struct rt2x00_dev *rt2x00dev = rt2x00_wext_dev(dev);
++	struct ieee80211_channel *chan;
++
++	if (!rt2x00dev)
++		return -ENODEV;
++
++	chan = rt2x00dev->hw->conf.chandef.chan;
++	if (!chan)
++		return -EAGAIN;
++
++	/* MHz with exponent 6, matching cfg80211's wext compat. */
++	wrqu->freq.m = chan->center_freq;
++	wrqu->freq.e = 6;
++	wrqu->freq.i = 0;
++	wrqu->freq.flags = IW_FREQ_FIXED;
++
++	return 0;
++}
++
++static int rt2x00_wext_siwfreq(struct net_device *dev,
++			       struct iw_request_info *info,
++			       union iwreq_data *wrqu, char *extra)
++{
++	struct rt2x00_dev *rt2x00dev = rt2x00_wext_dev(dev);
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct ieee80211_channel *chan;
++
++	if (!rt2x00dev)
++		return -ENODEV;
++
++	/*
++	 * Only monitor mode may have its channel forced from here. In any
++	 * managed/AP role mac80211 owns the channel and we must not fight it.
++	 */
++	if (!wdev || wdev->iftype != NL80211_IFTYPE_MONITOR)
++		return -EOPNOTSUPP;
++
++	chan = rt2x00_wext_resolve_chan(rt2x00dev->hw->wiphy, &wrqu->freq);
++	if (!chan)
++		return -EINVAL;
++
++	/*
++	 * wext SET ioctls run in process context and may sleep;
++	 * rt2x00mac_config() takes conf_mutex and cycles the RX queue.
++	 */
++	cfg80211_chandef_create(&rt2x00dev->hw->conf.chandef, chan,
++				NL80211_CHAN_NO_HT);
++
++	return rt2x00mac_config(rt2x00dev->hw, IEEE80211_CONF_CHANGE_CHANNEL);
++}
++
++static int rt2x00_wext_giwrange(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	struct rt2x00_dev *rt2x00dev = rt2x00_wext_dev(dev);
++	struct iw_range *range = (struct iw_range *)extra;
++	enum nl80211_band band;
++	int i;
++
++	if (!rt2x00dev)
++		return -ENODEV;
++
++	wrqu->data.length = sizeof(*range);
++	memset(range, 0, sizeof(*range));
++
++	range->we_version_compiled = WIRELESS_EXT;
++	range->we_version_source = WIRELESS_EXT;
++
++	for (band = 0; band < NUM_NL80211_BANDS; band++) {
++		struct ieee80211_supported_band *sband =
++			rt2x00dev->hw->wiphy->bands[band];
++
++		if (!sband)
++			continue;
++
++		for (i = 0; i < sband->n_channels; i++) {
++			struct ieee80211_channel *chan = &sband->channels[i];
++
++			if (chan->flags & IEEE80211_CHAN_DISABLED)
++				continue;
++			if (range->num_frequency >= IW_MAX_FREQUENCIES)
++				goto done;
++
++			range->freq[range->num_frequency].i =
++				ieee80211_frequency_to_channel(chan->center_freq);
++			range->freq[range->num_frequency].m = chan->center_freq;
++			range->freq[range->num_frequency].e = 6;
++			range->num_frequency++;
++		}
++	}
++
++done:
++	range->num_channels = range->num_frequency;
++	return 0;
++}
++
++static const iw_handler rt2x00_wext_handlers[] = {
++	IW_HANDLER(SIOCGIWNAME,	rt2x00_wext_giwname),
++	IW_HANDLER(SIOCSIWFREQ,	rt2x00_wext_siwfreq),
++	IW_HANDLER(SIOCGIWFREQ,	rt2x00_wext_giwfreq),
++	IW_HANDLER(SIOCGIWMODE,	rt2x00_wext_giwmode),
++	IW_HANDLER(SIOCGIWRANGE,	rt2x00_wext_giwrange),
++};
++
++static const struct iw_handler_def rt2x00_wext_handler_def = {
++	.num_standard	= ARRAY_SIZE(rt2x00_wext_handlers),
++	.standard	= rt2x00_wext_handlers,
++};
++
++/* True if @wiphy belongs to an rt2x00 device we registered. */
++static bool rt2x00_wext_owns_wiphy(struct wiphy *wiphy)
++{
++	struct rt2x00_wext_node *node;
++	bool owned = false;
++
++	mutex_lock(&rt2x00_wext_mutex);
++	list_for_each_entry(node, &rt2x00_wext_wiphy_list, list) {
++		if (node->wiphy == wiphy) {
++			owned = true;
++			break;
++		}
++	}
++	mutex_unlock(&rt2x00_wext_mutex);
++
++	return owned;
++}
++
++/* Attach our handler table to @dev if it is one of ours and still bare. */
++static void rt2x00_wext_try_attach(struct net_device *dev)
++{
++	if (!dev->ieee80211_ptr || !dev->ieee80211_ptr->wiphy)
++		return;
++	if (dev->wireless_handlers)
++		return;
++	if (!rt2x00_wext_owns_wiphy(dev->ieee80211_ptr->wiphy))
++		return;
++
++	dev->wireless_handlers = &rt2x00_wext_handler_def;
++}
++
++static int rt2x00_wext_netdev_event(struct notifier_block *nb,
++				    unsigned long event, void *ptr)
++{
++	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
++
++	if (event == NETDEV_REGISTER)
++		rt2x00_wext_try_attach(dev);
++
++	return NOTIFY_DONE;
++}
++
++static struct notifier_block rt2x00_wext_netdev_nb = {
++	.notifier_call = rt2x00_wext_netdev_event,
++};
++
++int rt2x00_wext_register(struct rt2x00_dev *rt2x00dev)
++{
++	struct rt2x00_wext_node *node;
++	struct net_device *dev;
++	bool need_notifier;
++
++	node = kzalloc(sizeof(*node), GFP_KERNEL);
++	if (!node)
++		return -ENOMEM;
++
++	node->wiphy = rt2x00dev->hw->wiphy;
++
++	mutex_lock(&rt2x00_wext_mutex);
++	list_add_tail(&node->list, &rt2x00_wext_wiphy_list);
++	need_notifier = !rt2x00_wext_notifier_active;
++	rt2x00_wext_notifier_active = true;
++	mutex_unlock(&rt2x00_wext_mutex);
++
++	/* Register the notifier outside the mutex: its replay of existing
++	 * netdevs calls back into rt2x00_wext_try_attach() which takes it. */
++	if (need_notifier)
++		register_netdevice_notifier(&rt2x00_wext_netdev_nb);
++
++	/* Catch interfaces that already exist for this wiphy (e.g. the
++	 * default wlan0 created by ieee80211_register_hw before this call,
++	 * or any interface that registered before we joined the list). */
++	rtnl_lock();
++	for_each_netdev(&init_net, dev)
++		rt2x00_wext_try_attach(dev);
++	rtnl_unlock();
++
++	return 0;
++}
++
++void rt2x00_wext_unregister(struct rt2x00_dev *rt2x00dev)
++{
++	struct rt2x00_wext_node *node, *tmp;
++	struct wiphy *wiphy = rt2x00dev->hw->wiphy;
++	bool drop_notifier = false;
++
++	mutex_lock(&rt2x00_wext_mutex);
++	list_for_each_entry_safe(node, tmp, &rt2x00_wext_wiphy_list, list) {
++		if (node->wiphy == wiphy) {
++			list_del(&node->list);
++			kfree(node);
++			break;
++		}
++	}
++	if (list_empty(&rt2x00_wext_wiphy_list) && rt2x00_wext_notifier_active) {
++		rt2x00_wext_notifier_active = false;
++		drop_notifier = true;
++	}
++	mutex_unlock(&rt2x00_wext_mutex);
++
++	/* The netdevs of this wiphy are torn down right after by
++	 * ieee80211_unregister_hw(), so there is no handler pointer to clear. */
++	if (drop_notifier)
++		unregister_netdevice_notifier(&rt2x00_wext_netdev_nb);
++}
+-- 
+2.43.0
+

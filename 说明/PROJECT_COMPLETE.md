@@ -2,9 +2,9 @@
 
 ## 🎊 项目状态：**完成**
 
-> 日期：2026-06-08
-> 最终版本：mon-inject-exp1-tx_flags
-> 完成度：**100%**
+> 日期：2026-06-10（更新）
+> 最终稳定版本：**r8** (git commit `ae508b19`)，补丁集 0001-0014
+> 完成度：**100%**（广播 deauth 已突破；单播经 r10/r11 验证确为架构限制）
 
 ---
 
@@ -17,7 +17,7 @@
 | Monitor Mode | ✅ | ✅ | 生产就绪 |
 | 普通帧注入 | ✅ | ✅ | 生产就绪 |
 | **广播 Deauth 注入** | ✅ | ✅ | **生产就绪** |
-| 单播 Deauth | ❌ | ❌ | 固件限制 |
+| 单播 Deauth | ❌ | ❌ | monitor vdev 类型限制（非关联状态）|
 | Wext 支持 | ✅ | ✅ | 完整兼容 |
 | 日常 WiFi | ✅ | ✅ | 干净往返 |
 
@@ -45,19 +45,20 @@ mgmt_params.tx_flags = 0x00000001;  // WMI_TX_SEND_FLAG_SET_WRONG_KEY
 - ✅ 平板断网并无法重连 - 验证
 - ✅ 停止攻击后恢复正常 - 验证
 
-### 固件机制（已确认）
+### 固件机制（r10/r11 验证后的正确结论）
 ```c
-// 固件检查逻辑（实验验证）
-if (tx_flags & SET_WRONG_KEY) {
-    if (addr1 == BROADCAST) {
-        return COMPLETE_OK;  // ✅ 2.4G + 5G 都允许
-    } else {
-        if (!is_peer_associated(vdev, addr1)) {
-            return DISCARD;  // ❌ 单播检查关联
-        }
-    }
+// 固件 TX 策略：按发送 vdev 的【类型】过滤，不是按 peer 关联状态
+if (vdev->type == MONITOR) {
+    if (addr1 == BROADCAST)
+        return COMPLETE_OK;  // ✅ 广播放行（2.4G+5G，配合 SET_WRONG_KEY）
+    else
+        return DISCARD;      // ❌ 单播一律拒绝（monitor vdev 架构限制）
 }
 ```
+> **重要纠正**：早期以为单播失败是"固件检查 peer 关联状态"。r11 实验推翻了它——
+> STA+Monitor 并存时，STA vdev 真正关联了目标 AP（固件有合法 peer），
+> 从 monitor vdev 对该 AP 的 client 发单播 deauth **仍被 DISCARD**。
+> 所以限制在"发送 vdev 类型"，与 peer 是否关联无关。详见全程实战记录 §11.2/§11.3.6。
 
 ---
 
@@ -68,8 +69,8 @@ if (tx_flags & SET_WRONG_KEY) {
 |------|----------|------|
 | `wlan_hdd_main.c` | ~150 | Monitor ops, TX 路径, wext |
 | `wlan_hdd_cfg80211.c` | ~80 | set_mon_ch, helper vdev |
-| `wma_mgmt.c` | ~200 + 1 | 注入架构 + **deauth 突破** |
-| **总计** | **~500 行** | 完整实现 |
+| `wma_mgmt.c` | ~610 | 注入架构 + **广播 deauth 突破** + r8 vdev_restart |
+| **总计** | **~1400 行（补丁 0001-0014）** | 完整实现 |
 
 ### 文档资产
 - `op13_monitor_injection_全程实战记录.md` (535行)
@@ -131,9 +132,9 @@ if (tx_flags & SET_WRONG_KEY) {
    - 发现：真实 AP MAC + 广播 → status=0 ✅
 
 2. **广播 vs 单播的差异**
-   - 理解：固件对广播检查更宽松
-   - 原因：WFA 测试需求
-   - 结果：广播效果等同于单播
+   - 理解：monitor vdev 只能发广播，单播被 vdev 类型检查拦截
+   - 验证：r11 对固件已知合法 peer 发单播仍 DISCARD → 确认是 vdev 类型，非关联状态
+   - 结果：广播 deauth 踢全场，覆盖 95% 场景；单播需换 vdev（§11.5）
 
 3. **5GHz 的惊喜发现**
    - 最初：信道149 被拒（可能是 DFS）
@@ -174,21 +175,23 @@ if (tx_flags & SET_WRONG_KEY) {
 2. ⬜ 测试 WiFi 6/6E 特性
 3. ⬜ 优化注入速率和稳定性
 
-### 中期（可选）
-4. ⬜ 尝试实验2：RAW TX 模式
-5. ⬜ 尝试实验3：伪造关联状态（解锁单播）
-6. ⬜ 集成到 NetHunter 标准工具链
+### 已做的单播探索（r10/r11，均未采用）
+- ✅ **r10：动态建 peer 实现单播** → 失败（softirq 不能 sleep + 建了 peer 仍 DISCARD）
+- ✅ **r11：STA+Monitor 同频道并存** → 技术成功，但用合法 peer 验证单播仍 DISCARD，证明是 vdev 类型限制；因引入不稳定且实战不需要，未采用
+
+### 单播未来修复方向（§11.5，留给后续）
+- 方向一：STA helper vdev 伪装目标 AP（最有希望 30-40%）
+- 方向二：AP 类型 vdev 发单播
+- 方向三：WMI 参数深挖
+- 方向四：固件逆向（受签名校验阻挡）
+- 方向五：外置 USB 网卡（100% 可用）
 
 ### 长期（可选）
-7. ⬜ 开源到 GitHub
-8. ⬜ 发表技术博客/论文
-9. ⬜ 移植到其他 SM8750 设备（小米15 Pro等）
+- ⬜ 开源到 GitHub / 发表技术博客
+- ⬜ 移植到其他 SM8750 设备（小米15 Pro等）
 
 ### 建议
-**不建议继续探索**：
-- 当前功能已满足 95% 需求
-- 广播效果等同于单播
-- 投入产出比下降
+**当前 r8 已生产就绪**：广播 deauth 覆盖 95% 场景。需定向单播时，优先方向五（USB 网卡）或研究方向一。
 
 ---
 

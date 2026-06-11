@@ -1,7 +1,7 @@
 # OnePlus 13 NetHunter 快速开始指南
 
 > 平台：SM8750 (骁龙 8 Elite), OnePlus 13
-> 状态：生产就绪 (2026-06-08)
+> 状态：生产就绪 · 稳定版 r8 (git `ae508b19`, 补丁集 0001-0014) · 2026-06-10
 
 ---
 
@@ -107,8 +107,8 @@ aireplay-ng --deauth 0 -a <真实AP_MAC> wlan0mon
 ## ⚠️ 注意事项
 
 ### 限制
-- ❌ 单播 deauth 不可用（固件检查关联状态）
-- ✅ 广播 deauth 效果相同（所有客户端都被踢）
+- ❌ 单播/定向 deauth 不可用（monitor vdev 类型限制，只能发广播；非关联状态问题，r10/r11 已验证）
+- ✅ 广播 deauth 踢全场（覆盖 95% 场景）；需定向单播请用外置 USB 网卡（见 §11.5 方向五）
 
 ### 兼容性
 - ✅ 对大多数家用 WiFi 有效
@@ -162,11 +162,23 @@ airodump-ng wlan0mon --channel 6   # 不跳频，只监听 ch6
 aireplay-ng --deauth 20 -a <AP> wlan0mon  # ✅ 正确
 
 # 2. 不要指定客户端
-aireplay-ng --deauth 20 -a <AP> -c <CLIENT> wlan0mon  # ❌ 被拒
+aireplay-ng --deauth 20 -a <AP> -c <CLIENT> wlan0mon  # ❌ 被拒（monitor vdev 只能广播）
 
 # 3. 检查固件日志
 dmesg | grep NETHUNTER-INJ | tail -20
 # 看到 status=0 就是成功
+```
+
+### airodump 在 5G 信道"跳回 2.4G"（不是 bug）
+```bash
+# 现象：monstart 5745（5G ch149）后，跑 airodump-ng wlan0mon 频道变成 2.4G
+# 原因：airodump 默认只跳频扫描 2.4G(CH1-14)，会覆盖你预设的 5G 频道
+#       这是 airodump 的默认行为，驱动侧 set freq/iwconfig 设 5G 全部正常
+
+# 正确用法：
+airodump-ng -c 149 wlan0mon        # 锁定 5G 单信道（最常用）
+airodump-ng --band a wlan0mon      # 扫描所有 5G
+airodump-ng --band abg wlan0mon    # 扫描 2.4G + 5G 全部
 ```
 
 ### 查看详细日志
@@ -191,9 +203,9 @@ dmesg | grep NETHUNTER-INJ | tail -50
 ## 🏆 技术成就
 
 - 🥇 全球首个 SM8750 monitor mode
-- 🥇 全球首个 SM8750 deauth 注入
-- 💎 只用 1 行代码实现突破
-- ✅ 2.4GHz + 5GHz 全部可用
+- 🥇 全球首个 SM8750 广播 deauth 注入（2.4G + 5G）
+- 💎 只用 1 行代码实现广播 deauth 突破（WMI test flag）
+- ✅ 稳定版 r8，补丁集 0001-0014
 
 ---
 

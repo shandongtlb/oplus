@@ -1,8 +1,15 @@
 # Peach_v2 Firmware Reverse Engineering - Deauth Injection 限制分析
 
 > 目标：找到固件如何检查并 DISCARD deauth/disassoc 帧，寻找绕过方法
-> 日期：2026-06-08
+> 日期：2026-06-08（原始计划）/ 2026-06-10（更新结论）
 > 平台：SM8750 (骁龙 8 Elite), peach_v2 chipset
+> **本文对应全程实战记录 §11.5.5「单播突破方向四：固件逆向工程」**
+
+> ⚠️ **重要更新（2026-06-10）**：
+> - **广播 deauth 已突破**（不需要逆向，用 WMI test flag `tx_flags=0x00000001`，补丁 0013）。本文针对的是**单播** deauth。
+> - **单播失败的根因已由 r10/r11 在驱动层确定**：固件检查**发送 vdev 的类型**（monitor vdev 只能发广播），**不是**本文 1.2 推断的"关联状态检查"。r11 用真正关联的合法 peer 测单播仍 DISCARD 已证明。
+> - 因此固件逆向（本文方向四）的目标应修正为：找到并 patch 掉"monitor vdev 单播过滤"，而非"关联状态检查"。
+> - 此方向**受固件签名校验阻挡**（见 §8.1），成功率约 5%，是 5 个方向里优先级最低的。
 
 ---
 
@@ -10,16 +17,19 @@
 
 ### 1.1 已知事实
 - ✅ **普通管理帧注入成功**：beacon/probe request/probe response 等帧 → `status=0 COMPLETE_OK`
-- ❌ **Deauth/Disassoc 注入失败**：→ `status=1 WMI_MGMT_TX_COMP_TYPE_DISCARD`
+- ✅ **广播 deauth 已突破**：`tx_flags=0x00000001` → `status=0`（2.4G+5G，补丁 0013）
+- ❌ **单播 Deauth/Disassoc 注入失败**：→ `status=1 WMI_MGMT_TX_COMP_TYPE_DISCARD`
 - ✅ **Helper vdev 机制有效**：WMI_VDEV_TYPE_STA 可以发送普通管理帧
-- ❌ **MAC 伪造无效**：动态修改 helper vdev MAC 为目标 AP MAC 仍被 DISCARD
+- ❌ **MAC 伪造无效 / 动态建 peer 无效 / 真实关联无效**：r10/r11 全部验证过，单播照样 DISCARD
 
-### 1.2 固件层检查推断
-根据实验结果，固件可能有以下检查机制：
-1. **关联状态检查**：helper STA vdev 未关联到任何 AP → 拒绝 deauth/disassoc
-2. **Frame Control 字段检查**：识别 fc=0xc0 (deauth) / 0xa0 (disassoc) 特殊处理
-3. **地址验证**：检查 A1/A2/A3 的关联关系（不仅仅是 MAC 值）
-4. **BSSID 上下文检查**：验证 vdev 的 BSSID 是否与帧中的地址匹配
+### 1.2 固件层检查（r10/r11 验证后的正确结论）
+**真正的限制**：固件按**发送 vdev 的类型**过滤——monitor vdev 只允许广播帧，单播一律 DISCARD。
+
+~~关联状态检查~~（已证伪）：r11 让 STA vdev 真正关联目标 AP，对其 client 发单播仍 DISCARD，证明与关联状态无关。
+
+逆向时应聚焦的真正检查点：
+1. **vdev 类型门控**：`if (vdev->type == MONITOR && da != BROADCAST) DISCARD` —— 这是要 patch 的目标
+2. Frame Control 字段检查：识别 fc=0xc0 (deauth) / 0xa0 (disassoc)（次要）
 
 ---
 
@@ -79,7 +89,7 @@ typedef enum {
 ### 3.2 中期目标（3-7天）
 5. ⬜ **提取固件二进制**：从设备 dump wlanmdsp.mbn / bdwlan*.bin
 6. ⬜ **固件符号分析**：使用 Ghidra/IDA Pro 查找 mgmt_tx_send handler
-7. ⬜ **查找关联状态检查函数**：定位 deauth/disassoc 的特殊处理代码
+7. ⬜ **查找 vdev 类型门控函数**：定位 `vdev->type == MONITOR && da != BROADCAST → DISCARD` 的检查（r10/r11 确认的真正限制点，非"关联状态检查"）
 8. ⬜ **寻找绕过点**：
    - Option A：找到"raw inject"接口（不经过 mgmt_tx_send）
    - Option B：找到可修改的固件参数（通过 WMI config 命令）
@@ -155,17 +165,12 @@ adb pull /vendor/firmware/bdwlan* ./firmware_dump/
 
 **风险**：固件可能仍检查 frame control 字段。
 
-### 方案 C：伪造完整关联状态（优先级：⭐⭐）
-**原理**：让 helper vdev 真的"关联"到目标 AP（但不完成握手）。
+### 方案 C：伪造完整关联状态 ❌ 已验证失败（r10/r11）
+> r10 实现了动态建 peer + 试图伪造关联，r11 实现了 STA vdev 真正关联——
+> 两者对单播 deauth 都无效（仍 DISCARD）。证明限制在 vdev 类型，伪造/真实关联都没用。
+> 本方案方向已证伪，以下为历史记录。
 
-**实现**：
-1. 在 helper vdev 上触发 `vdev_up` + `peer_assoc`
-2. 伪造一个 BSS peer（目标 AP 的 MAC）
-3. 固件认为 vdev 已关联 → 允许发 deauth
-
-**风险**：
-- 可能触发固件状态机错乱
-- 需要复杂的 WMI 序列（assoc_req → assoc_resp → vdev_up）
+**原理（已证伪）**：让 helper vdev 真的"关联"到目标 AP（但不完成握手）。
 
 ### 方案 D：利用 monitor vdev + raw inject（优先级：⭐）
 **原理**：寻找固件的"真·原始注入"接口，完全绕过 mgmt_tx_send。
@@ -198,18 +203,18 @@ adb pull /vendor/firmware/bdwlan* ./firmware_dump/
 
 ### 8.1 技术限制
 - **固件闭源**：高通不开放 WLAN 固件源码
-- **签名验证**：固件可能有签名，无法直接 patch
+- **签名验证（确认受阻）**：高通固件有签名 + secure boot，修改后无法加载。这是固件逆向方向（方向四）的致命障碍，也是它成功率仅约 5% 的根本原因。
 - **硬件限制**：某些检查可能在硬件 MAC 层，驱动/固件都改不了
 
-### 8.2 成功率评估
-- **方案 A/B（WMI 标志探索）**：成功率 30-40%（可能已有隐藏接口）
-- **方案 C（伪造关联）**：成功率 10-20%（固件状态机复杂）
-- **方案 D（固件逆向 + patch）**：成功率 5-10%（需要大量时间 + 运气）
+### 8.2 成功率评估（实验后更新）
+- ✅ **WMI test flag（→广播 deauth）**：已成功（补丁 0013）
+- ❌ **方案 C 伪造/真实关联（=r10/r11）**：已验证失败（限制在 vdev 类型）
+- **方案 D（固件逆向 + patch）= 方向四**：成功率约 5%（受签名校验阻挡）
 
-### 8.3 投入产出比
-- **低成本方案（1-2天）**：查找 WMI 标志 + 测试 offchan TX → 值得尝试
-- **高成本方案（1-2周）**：固件逆向 + patch → 仅在学习目的下值得
-- **实用替代方案**：使用 RT3070L 外置网卡（$0，5分钟） → **最优解**
+### 8.3 单播突破的现实选择（§11.5）
+- **最有希望**：方向一 STA helper vdev 伪装目标 AP（30-40%，纯软件）
+- **100% 可用**：方向五 外置 USB 网卡（rtl8187/zd1211rw SoftMAC，不受固件限制）
+- **本文方向四（固件逆向）**：优先级最低，受签名阻挡，仅学习目的值得
 
 ---
 
@@ -238,8 +243,16 @@ adb pull /vendor/firmware/bdwlan* ./firmware_dump/
 - ✅ 确认逆向目标：绕过 deauth DISCARD 限制
 - ✅ 定位 WMI 固件 API 头文件：`fw-api/fw/wmi_unified.h`
 - ✅ 分析 WMI_MGMT_TX_SEND_CMDID 结构体
-- ⏳ 下一步：查找 tx_flags 定义 + 测试 RAW 模式
+
+### 2026-06-08 ~ 06-10 - 实验完成（无需进入固件逆向）
+- ✅ **广播 deauth 突破**：`tx_flags=0x00000001`（补丁 0013），纯软件，未动固件
+- ✅ **单播根因在驱动层定位完毕**：r10/r11 确认是 monitor vdev 类型限制，非关联状态
+- 📌 **固件逆向（本文）降级为方向四**：受签名校验阻挡，成功率约 5%，暂不推进
 
 ---
 
-**最终目标**：找到一种纯软件方法在 peach_v2 平台发送 deauth 帧，或者明确证明这在当前固件版本下不可能，从而为未来的选择提供清晰的技术依据。
+**结论更新**：原"最终目标"（找到纯软件方法发 deauth，或证明不可能）**已部分达成**：
+- 广播 deauth 的纯软件方法已找到（WMI test flag）
+- 单播 deauth 已证明在 monitor vdev 上不可行（vdev 类型限制），但**未证明全平台不可能**——
+  换 vdev 类型（方向一/二）或外置网卡（方向五）仍有路。固件逆向（本文方向四）是受签名阻挡的兜底选项。
+- 完整方向规划见全程实战记录 §11.5。

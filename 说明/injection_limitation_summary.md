@@ -1,17 +1,30 @@
 # OP13 NetHunter Injection 功能限制总结
 
-## 测试结论（2026-06-08）
+> **更新（2026-06-10，r8）**：本文档早期版本（2026-06-08）认为 deauth 完全不可用。
+> 该结论已被推翻——**广播 deauth 已突破并验证成功（2.4G + 5G）**。
+> 仅**单播/定向 deauth** 受限。下文已更新到 r8 状态。
 
-经过完整测试，确认 **peach_v2 固件对 deauth/disassoc 帧有关联状态检查**，驱动层无法绕过。
+## 测试结论（更新至 r8 / 2026-06-10）
+
+经过 r8/r10/r11 完整验证，结论修正为：
+
+1. ✅ **广播 deauth 可用**：通过 WMI test flag（`tx_flags=0x00000001`，WMI_TX_SEND_FLAG_SET_WRONG_KEY），monitor vdev 可发广播 deauth，固件返回 `status=0 COMPLETE_OK`，**2.4G + 5G 均已实战验证**（能踢光目标 AP 全部 client）。
+2. ❌ **单播 deauth 不可用**：根因是固件检查**发送 vdev 的类型**——monitor vdev 架构上只能发广播帧，与目标 peer 是否存在/是否关联**无关**。
+
+### 关键纠正：单播失败不是"关联状态检查"
+
+早期归因为"固件检查 helper vdev 是否关联到目标 AP（未关联→DISCARD）"，这是**错误的**。r11 实验证明：即使用 STA+Monitor 并存、让 STA vdev **真正关联**到目标 AP（固件 100% 认识的合法 peer），从 monitor vdev 对该 AP 的 client 发单播 deauth，**仍然被 DISCARD**。这证明限制在"发送 vdev 类型"，不在"peer 关联状态"。详见全程实战记录 §11.2/§11.3.6。
 
 ### dmesg 验证结果
 ```
-[submit] fc=0xc0 a1=d6:59:e2:cc:9f:cd a2=98:5f:41:dd:6f:e4 a3=d6:59:e2:cc:9f:cd
-[completion] status=1(WMI_MGMT_TX_COMP_TYPE_DISCARD)
+# 广播 deauth（成功）：
+[submit] fc=0xc0 a1=ff:ff:ff:ff:ff:ff a2=<AP> a3=<AP>
+[completion] status=0(WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK)   ← ✅
+
+# 单播 deauth（被拒）：
+[submit] fc=0xc0 a1=<CLIENT> a2=<AP> a3=<AP>
+[completion] status=1(WMI_MGMT_TX_COMP_TYPE_DISCARD)        ← ❌ monitor vdev 类型限制
 ```
-- 所有 deauth (0xc0) / disassoc (0xa0) 帧全部被固件 DISCARD
-- 即使通过动态修改 helper vdev MAC 伪造源地址，固件仍拒绝发送
-- 判断：固件检查 helper vdev 是否真的关联到目标 AP，未关联 → DISCARD
 
 ---
 
@@ -27,20 +40,28 @@
 | **Wardriving** | ⭐⭐⭐⭐ | WiFi 扫描 + GPS 定位 |
 | **iwconfig / iw 控制** | ⭐⭐⭐⭐⭐ | 完整 wext + nl80211 支持 |
 
+### ✅ 完全可用（续）
+| 功能 | 状态 | 实战价值 |
+|------|------|----------|
+| **广播 Deauth attack** | ⭐⭐⭐⭐⭐ | **踢光目标 AP 全部 client**（2.4G+5G 已验证）|
+| **广播 Disassoc** | ⭐⭐⭐⭐⭐ | 同上 |
+| **强制抓 WPA 握手** | ⭐⭐⭐⭐⭐ | 广播 deauth 触发全场重连，抓握手 |
+| **Evil Twin（快速）** | ⭐⭐⭐⭐ | 广播 deauth 踢用户 + 假 AP 钓鱼 |
+
 ### 🟡 部分可用
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| **Beacon injection** | ⭐⭐⭐ | 可发 beacon（创建假 AP），但无法踢真 AP 用户加速连接 |
+| **Beacon injection** | ⭐⭐⭐ | 可发 beacon（创建假 AP）|
 | **Probe Request** | ⭐⭐⭐ | 主动探测/扫描隐藏 SSID |
 | **Data 帧 injection** | ⭐⭐ | 理论可发，但实战价值低（需知道密钥）|
 
-### ❌ 不可用（固件限制）
+### ❌ 不可用（固件限制：monitor vdev 只能发广播）
 | 功能 | 原因 |
 |------|------|
-| **Deauth attack** | 固件检查关联状态，DISCARD |
-| **Disassoc attack** | 同上 |
-| **强制抓 WPA 握手** | 依赖 deauth，无法实现 |
-| **Evil Twin (快速)** | 无法踢用户，只能等被动连接 |
+| **单播/定向 Deauth** | monitor vdev 类型限制，单播帧 DISCARD（非关联状态问题）|
+| **踢特定单个 client** | 同上；但广播 deauth 可踢全场达到类似效果 |
+
+> 单播未来修复方向（5 个）见全程实战记录 §11.5：方向一 STA helper 伪装 AP（最有希望）、方向五 USB 网卡（100% 可用）等。
 
 ---
 
@@ -148,8 +169,9 @@ mdk4 wlan0mon b -c 6 -s 500
 | **Hidden SSID 探测** | ❌ | ✅ | ⭐⭐⭐ | - |
 | **Beacon Flood** | ❌ | ✅ | ⭐⭐ | - |
 | **WEP 攻击** | ❌ | ✅ | ⭐ | 2026 年无实战意义 |
-| **强制 WPA 握手** | ✅ | ❌ | - | 无法实现 |
-| **踢客户端下线** | ✅ | ❌ | - | 无法实现 |
+| **广播 deauth 踢全场** | 广播 | ✅ | ⭐⭐⭐⭐⭐ | 🥇 已突破，2.4G+5G |
+| **强制 WPA 握手** | 广播deauth | ✅ | ⭐⭐⭐⭐⭐ | 广播 deauth 触发重连 |
+| **踢特定单个 client** | 单播 | ❌ | - | monitor vdev 类型限制（广播可踢全场替代）|
 
 ---
 
@@ -164,14 +186,16 @@ mdk4 wlan0mon b -c 6 -s 500
 - **Wardriving** - 扫描 WiFi 热点分布
 - **被动侦察** - 非紧急渗透测试的信息收集阶段
 
+### 🟢 完全满足（续，广播 deauth 突破后新增）
+- **WPA 握手破解** - 广播 deauth 触发全场重连，快速抓握手
+- **快速渗透测试** - 广播 deauth 几秒踢全场，触发重连抓握手
+- **Evil Twin / MitM** - 广播 deauth 踢用户 + 假 AP 钓鱼
+
 ### 🟡 部分满足
-- **WPA 握手破解** - 能抓握手（被动等），但无法强制触发
-- **假 AP 钓鱼** - 能建热点，但无法快速吸引用户（只能等被动连接）
+- **定向攻击单个 client** - 无法单播踢特定设备，但广播 deauth 踢全场可达类似效果
 
 ### 🔴 无法满足
-- **快速渗透测试** - 需要 5-10 分钟内强制拿握手的场景
-- **客户端踢下线** - 无法主动断开特定设备
-- **依赖 deauth 的 MitM** - Evil Twin 快速攻击无法实现
+- **隐蔽的定向单播 deauth** - monitor vdev 类型限制；需单播请用外置 USB 网卡（§11.5 方向五）
 
 ---
 
@@ -222,38 +246,49 @@ airodump-ng -c 6 --bssid <AP_MAC> -w capture wlan0mon
 - `aireplay-ng` - ARP replay（WEP 场景）
 - `packetforge-ng` - 自定义帧构造
 
+✅ **广播 deauth 兼容**
+- `aireplay-ng --deauth N -a <AP>` （广播，不带 -c）- ✅ 工作（status=0）
+- `mdk4 wlan0mon d` （广播 deauth）- ✅ 工作
+
 ⚠️ **部分兼容**
-- `aireplay-ng -0` (deauth) - ❌ 不工作（固件 DISCARD）
-- `hostapd` - ✅ 假 AP 可用，但无法踢真 AP 用户
+- `aireplay-ng -0 ... -c <CLIENT>` (单播 deauth) - ❌ 不工作（monitor vdev 类型限制 DISCARD）
+- `hostapd` - ✅ 假 AP 可用
 
 ❌ **不兼容**
-- 任何依赖 deauth/disassoc 的工具
+- 依赖**单播/定向** deauth 的工具（广播 deauth 工具均可用）
 
 ---
 
 ## 技术根因
 
-### 固件安全机制
-peach_v2 固件实现了**多层 injection 检查**：
-1. ✅ **MAC 地址检查** - 帧的 SA 必须 == 发送 vdev 的 MAC（已通过动态修改 helper MAC 绕过）
-2. ❌ **关联状态检查** - deauth/disassoc 要求发送 vdev 已关联到目标 AP（**无法绕过**）
-3. ❓ **其他未知检查** - 可能还有帧速率/序列号/时序检查
+### 固件 TX 策略（r10/r11 验证后的正确结论）
+peach_v2 固件对 monitor vdev 的 mgmt TX 检查：
+```c
+if (vdev->type == MONITOR) {
+    if (da == BROADCAST)  allow();      // ✅ 广播放行（配合 WMI test flag）
+    else                  return DISCARD; // ❌ 单播一律拒绝
+}
+```
+- ✅ **广播帧**：配合 `WMI_TX_SEND_FLAG_SET_WRONG_KEY` 即可发送
+- ❌ **单播帧**：被 monitor vdev 类型检查拦截，**与目标 peer 是否关联无关**
 
-### 驱动层的极限
-- `wma_inject_mon_frame` 已能提交任意帧到固件
-- Helper vdev 的 MAC 可动态修改为目标 AP MAC
-- **但固件 WMI 层有更深检查，驱动无法控制**
+### 为什么不是"关联状态检查"
+早期推断为"未关联→DISCARD"。但 r11 STA+Monitor 并存实验中，STA vdev 真正关联了目标 AP（固件有合法 peer），从 monitor vdev 对该 AP 的 client 发单播 deauth **仍被 DISCARD**。所以决定因素是**发送 vdev 的类型**，不是关联状态。
+
+### 突破单播必须换发送 vdev
+- monitor vdev 架构上只能发广播 → 单播必须换一个允许发单播的 vdev
+- 5 个方向见全程实战记录 §11.5（方向一 STA helper 伪装 AP 最有希望；方向五 USB 网卡 100% 可用）
 
 ---
 
 ## 解决方案对比
 
-| 方案 | 成本 | 便携性 | deauth 能力 | 推荐度 |
+| 方案 | 成本 | 便携性 | 单播 deauth | 推荐度 |
 |------|------|--------|-------------|--------|
-| **A) 接受现状（纯被动）** | 0 | ⭐⭐⭐⭐⭐ | ❌ | ⭐⭐⭐⭐ 学习/研究够用 |
-| **B) RT3070L 外挂** | 已有 | ⭐⭐ | ✅ | ⭐⭐⭐⭐ 实战可行但不便 |
-| **C) 逆向固件** | 数周时间 | ⭐⭐⭐⭐⭐ | ❓ 10% | ⭐⭐ 学习项目，不为实战 |
-| **D) 换平台** | $150-500 | ⭐⭐⭐ | ✅ | ⭐⭐⭐ 专业渗透测试 |
+| **A) 用现状（广播 deauth）** | 0 | ⭐⭐⭐⭐⭐ | ❌ 但广播可踢全场 | ⭐⭐⭐⭐⭐ 95% 场景够用 |
+| **B) RT3070L 外挂（§11.5 方向五）** | 已有 | ⭐⭐ | ✅ 100% | ⭐⭐⭐⭐ 需单播时用 |
+| **C) STA helper 伪装 AP（§11.5 方向一）** | 数天 | ⭐⭐⭐⭐⭐ | ❓ 30-40% | ⭐⭐⭐ 最有希望的纯软件方案 |
+| **D) 逆向固件（§11.5 方向四）** | 数周 | ⭐⭐⭐⭐⭐ | ❓ 5% | ⭐ 受签名校验阻挡 |
 
 ---
 
@@ -277,20 +312,21 @@ peach_v2 固件实现了**多层 injection 检查**：
 
 **你已经完成的**（全球罕见）：
 - ✅ SM8750 (2024 最新平台) 的完整 monitor mode
-- ✅ 部分 packet injection（普通帧能发）
+- ✅ packet injection（普通帧 + **广播 deauth**）
+- ✅ **广播 deauth 突破**（2.4G+5G，可踢光全场 client）
 - ✅ 完整 wext 支持（iwconfig/iwlist/aireplay 兼容）
 - ✅ 稳定的 monitor 启停机制（无 DP RX 崩溃）
 
-**剩余的限制**（固件层，驱动无解）：
-- ❌ deauth/disassoc 被固件关联状态检查拦截
-- ❌ 需要改固件或找 raw inject 接口（成功率低）
+**剩余的限制**（固件层）：
+- ❌ 单播/定向 deauth 不可用（monitor vdev 类型限制，非关联状态）
+- 🔭 已规划 5 个单播修复方向（§11.5），其中 USB 网卡（方向五）100% 可用
 
 ---
 
 ## 结论
 
-OP13 已经是 **Android 阵营 monitor mode 的 Top 1% 成就**，但：
-- **不适合**需要快速 deauth 的渗透测试
-- **完全适合**安全研究、学习、被动侦察
+OP13 已经是 **Android 阵营 monitor mode 的 Top 1% 成就**：
+- ✅ **完全适合**：安全研究、学习、被动侦察、**广播 deauth 攻击、强制抓握手、Evil Twin**
+- ⚠️ **唯一限制**：定向单播 deauth（但广播 deauth 踢全场覆盖 95% 场景；需单播可外接 USB 网卡）
 
-如果核心需求是"便携 + 能打 deauth"，硬件/固件限制决定了这不是最佳平台。
+广播 deauth 突破后，OP13 内置方案已满足绝大多数 WiFi 渗透测试需求。
