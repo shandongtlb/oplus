@@ -20,14 +20,14 @@
 
 ## 应用步骤
 
-从基线 `0de73fc2` 开始，按序应用全部 14 个补丁：
+从基线 `0de73fc2` 开始，按序应用全部 15 个补丁：
 
 ```bash
 cd /path/to/oneplus13-kernel
 git checkout 0de73fc2   # 或你的基线 commit
 
-# 应用 0001-0014（完整功能）
-for i in $(seq 1 14); do
+# 应用 0001-0015（完整功能 + 稳定性修复）
+for i in $(seq 1 15); do
   git am /path/to/补丁/inject/$(printf "%04d" $i)-*.patch
 done
 ```
@@ -37,6 +37,7 @@ done
 - `0002-0012`：monitor/inject 核心功能
 - `0013`：广播 deauth 注入（关键功能）
 - `0014`：r8 - vdev_restart 优化
+- `0015`：r8.1 - 注入稳定性修复（超时回收 + generation 防 UAF）**强烈建议应用**
 - `0004` 包含**跨仓库改动**：
   - `vendor/qcom/opensource/wlan/qcacld-3.0/` （驱动层）
   - `kernel_platform/msm-kernel/net/mac80211/` 等（内核侧）
@@ -48,7 +49,8 @@ done
 应用完成后，最终 HEAD 应该是：
 
 ```bash
-git log --oneline -4
+git log --oneline -5
+# (0015) peach_v2: r8.1 - 注入稳定性修复(超时回收 + generation 防 UAF)
 # ae508b19 peach_v2: r8 - vdev_restart优化解决AP递减问题
 # ca172e31 NETHUNTER: Enable broadcast deauth injection via WMI test flag
 # (0002-0012 的提交)
@@ -63,6 +65,7 @@ git log --oneline -4
 | 0002-0012 | monitor + inject 核心 | ✅ 稳定 |
 | 0013 | 广播 deauth 注入 | ✅ 已验证，可踢出全部 client |
 | 0014 | r8 - vdev_restart 优化 | ✅ 稳定 |
+| 0015 | r8.1 - 注入稳定性修复 | ✅ 已验证，连续灌 1 万+帧无卡死 |
 
 ## 使用示例
 
@@ -118,11 +121,14 @@ dmesg | grep -iE "inject|deauth" | tail -20
 - 查看注入日志：`dmesg | grep -iE "inject|wma_inject|completion"`
 - 检查 WMI test mode 是否启用（0013 自动开启）
 
-### 广播 deauth 不稳定
+### 广播 deauth 不稳定（第一次能发、第二次卡死）
 
-- 确保已应用到 0014 (r8)，该版本经过验证稳定
+- **务必应用 0015 (r8.1)**：这正是该补丁修复的问题。r8/r9 在 aireplay 爆发
+  灌帧时会因固件静默丢帧而 wedge（第二次运行卡死、或发包但目标不掉线）。
+  r8.1 用"超时回收 + generation 防 UAF"根治，连续灌 1 万+帧、连测七八次稳定。
+- 应用 0015 后，`dmesg | grep build=` 应显示 `mon-inject-r8.1-stable`
+- 健康判据：`dmesg` 里 `completed + reclaimed == submitted`、`dropped` 接近 0
 - 检查目标 AP 频道与 monitor 频道是否一致
-- 使用 `--deauth 10` 或更多次数确保覆盖
 
 ## 已知限制
 
@@ -140,7 +146,7 @@ dmesg | grep -iE "inject|deauth" | tail -20
 
 ---
 
-**最后更新**：2026-06-10  
+**最后更新**：2026-06-11  
 **测试设备**：OnePlus 13 (CPH2649) 16.0.7.201(EX01)  
 **内核版本**：Linux 6.6 + QCOM AU_LINUX_KERNEL.PLATFORM.4.0.R1  
-**稳定版本**：r8 (ae508b19) - 广播 deauth 已验证可用
+**稳定版本**：r8.1 (0015) - 广播 deauth 稳定性已根治，连续灌 1 万+帧、连测七八次无卡死

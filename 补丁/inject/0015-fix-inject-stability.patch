@@ -1,0 +1,319 @@
+From a4d9fbeb5ac0d876bd04a7c2ea9dfaee012a3cae Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 11 Jun 2026 16:16:53 +0000
+Subject: [PATCH] =?UTF-8?q?peach=5Fv2:=20r8.1=20-=20=E6=B3=A8=E5=85=A5?=
+ =?UTF-8?q?=E7=A8=B3=E5=AE=9A=E6=80=A7=E4=BF=AE=E5=A4=8D(=E8=B6=85?=
+ =?UTF-8?q?=E6=97=B6=E5=9B=9E=E6=94=B6=20+=20generation=20=E9=98=B2=20UAF)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+(版本号说明: r9~r11 是探索/中间版 - r9/r9b 为本次背压中间尝试,
+ r10/r11 为更早放弃的单播 dynamic-peer / STA+Monitor 实验,均未进入
+ 补丁系列。本补丁直接基于 r8(0014) 做稳定性修复,故记为 r8.1。)
+
+问题: 广播 deauth 注入不稳定 - 第一次能发,第二次卡死;有时发包
+      但目标不掉线。aireplay 爆发灌帧时整条 mgmt-TX 路径会 wedge。
+
+根因(逐步定位):
+1. 固件会【静默丢弃】一部分注入帧 - 根本不回 tx-completion
+   (实测 completed 冻结在 submitted 下方约 35,然后停住)。
+2. r8 的"环回强行覆盖在途槽位"恰好容错了这种静默丢弃,所以能持续
+   灌几千帧;但它会 unmap/free 固件可能仍在 DMA 读的 nbuf(UAF),
+   且 desc_id 复用时迟到的完成会误删新占用者的在途 nbuf。
+3. 纯背压(遇 valid 槽就丢、绝不复用)会在第一次固件静默丢弃后自锁:
+   next 卡在该槽,之后全丢,submitted 停在 0/64。
+
+解决(timeout-reclaim + generation):
+- 取槽位时按时效区分:
+  * 新鲜在途(<100ms): 真背压,丢弃本帧,不灌爆固件队列;
+  * 陈旧(>=100ms 未完成): 固件早已丢弃,安全回收复用。
+  保持持续提交(完成才会持续流动),同时把在途帧钳在池深。
+- desc_id 高位编入 generation(bit15 标记 | bit6-14 代号 | bit0-5 槽号):
+  迟到的完成 generation 不匹配 -> 完成处理器直接忽略,绝不误删
+  新占用者的在途 nbuf。彻底根除 desc 复用 UAF。
+- 重建 helper vdev 时清空 desc 环,新会话从干净状态起步。
+
+实测(ch149 5G 广播 deauth):
+- submitted/completed 一起持续增长,gap 恒定且完全等于 reclaimed;
+- completed + reclaimed == submitted(每帧都有归宿,无积压);
+- dropped=0,灌 1 万+帧无 wedge,连测七八次稳定,发包后 0-4s 必断。
+
+is_inj_desc 改用标记位判断;新增 reclaimed 计数;日志带
+submitted/completed/reclaimed/dropped 全景。build tag -> r8.1-stable。
+---
+ .../wlan/qcacld-3.0/core/wma/src/wma_mgmt.c   | 159 +++++++++++++++---
+ 1 file changed, 133 insertions(+), 26 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index c21b789b..b28fef96 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -38,6 +38,7 @@
+ #include "qdf_nbuf.h"
+ #include "qdf_types.h"
+ #include "qdf_mem.h"
++#include "qdf_time.h"
+ 
+ #include "wma_types.h"
+ #include "lim_api.h"
+@@ -3165,20 +3166,47 @@ static inline void wma_mgmt_pktdump_rx_handler(
+  * sees ACKs); if firmware DISCARDs it (as older QCA firmware does for monitor
+  * vdevs), the completion status shows DISCARD and a helper TX vdev is needed.
+  */
+-#define WMA_INJ_DESC_BASE  0x8000
+-#define WMA_INJ_SLOTS      64
++/*
++ * desc_id layout for injected frames (firmware echoes it back verbatim in the
++ * tx-completion). Stock mgmt desc_ids are 0..MGMT_DESC_POOL_MAX(64), so bit 15
++ * is free as our private marker:
++ *
++ *   bit 15      : WMA_INJ_DESC_MARK  - "this is an injected frame"
++ *   bits 6..14  : generation         - bumped every time a slot is reused
++ *   bits 0..5   : slot index (0..63)
++ *
++ * The generation makes a *late* completion (one that arrives after we already
++ * reclaimed a stale slot and handed it to a new frame) detectable: its gen no
++ * longer matches the slot, so we ignore it instead of freeing the new, still
++ * in-flight nbuf. This closes the desc-reuse use-after-free.
++ */
++#define WMA_INJ_SLOTS      64		/* must stay a power of two, <= 512 */
++#define WMA_INJ_SLOT_MASK  (WMA_INJ_SLOTS - 1)
++#define WMA_INJ_DESC_MARK  0x8000u
++#define WMA_INJ_GEN_SHIFT  6
++#define WMA_INJ_GEN_MASK   0x1ffu	/* 9-bit generation */
+ #define WMA_INJ_MAX_FRAME  2048
++/*
++ * A slot still "in flight" (no completion) longer than this is treated as
++ * firmware-dropped and reclaimed - the firmware silently drops a fraction of
++ * injected mgmt frames and never completes them. Must exceed the normal
++ * completion latency (observed < 50 ms) so we don't reclaim a merely-slow one.
++ */
++#define WMA_INJ_STALE_MS   100
+ 
+ static struct wma_inject_ctx {
+ 	qdf_spinlock_t lock;
+ 	struct {
+ 		qdf_nbuf_t nbuf;
++		unsigned long ts;	/* submit timestamp (ms) - stale detect */
++		uint16_t gen;		/* generation, disambiguates late compl */
+ 		bool valid;
+ 	} slots[WMA_INJ_SLOTS];
+ 	uint32_t next;
+ 	uint32_t submitted;	/* frames handed to WMI ok */
+ 	uint32_t completed;	/* tx-completion events seen */
+-	uint32_t reclaimed;	/* slots wrapped before completing */
++	uint32_t reclaimed;	/* stale (fw-dropped) slots reclaimed */
++	uint32_t dropped;	/* frames dropped by in-flight backpressure */
+ 	bool inited;
+ 	bool banner;
+ } g_wma_inj;
+@@ -3193,8 +3221,7 @@ static struct wma_inject_ctx {
+ 
+ static inline bool wma_inject_is_inj_desc(uint32_t desc_id)
+ {
+-	return desc_id >= WMA_INJ_DESC_BASE &&
+-	       desc_id < (WMA_INJ_DESC_BASE + WMA_INJ_SLOTS);
++	return (desc_id & WMA_INJ_DESC_MARK) != 0;
+ }
+ 
+ static void wma_inject_init_once(void)
+@@ -3214,17 +3241,26 @@ static void wma_inject_init_once(void)
+ static void wma_inject_handle_completion(tp_wma_handle wma, uint32_t desc_id,
+ 					 uint32_t status)
+ {
+-	uint32_t slot = desc_id - WMA_INJ_DESC_BASE;
++	uint32_t slot = desc_id & WMA_INJ_SLOT_MASK;
++	uint32_t gen = (desc_id >> WMA_INJ_GEN_SHIFT) & WMA_INJ_GEN_MASK;
+ 	qdf_nbuf_t nbuf = NULL;
++	bool late = false;
+ 
+ 	if (slot >= WMA_INJ_SLOTS || !g_wma_inj.inited)
+ 		return;
+ 
+ 	qdf_spin_lock_bh(&g_wma_inj.lock);
+-	if (g_wma_inj.slots[slot].valid) {
++	if (g_wma_inj.slots[slot].valid && g_wma_inj.slots[slot].gen == gen) {
++		/* matching occupant - this completion owns the nbuf */
+ 		nbuf = g_wma_inj.slots[slot].nbuf;
+ 		g_wma_inj.slots[slot].nbuf = NULL;
+ 		g_wma_inj.slots[slot].valid = false;
++	} else if (g_wma_inj.slots[slot].valid) {
++		/* slot reused since this frame was submitted: a very-late
++		 * completion for a generation we already reclaimed. Must NOT
++		 * touch the current occupant's nbuf (it is still in flight).
++		 */
++		late = true;
+ 	}
+ 	qdf_spin_unlock_bh(&g_wma_inj.lock);
+ 
+@@ -3232,9 +3268,12 @@ static void wma_inject_handle_completion(tp_wma_handle wma, uint32_t desc_id,
+ 		qdf_nbuf_unmap_single(wma->qdf_dev, nbuf, QDF_DMA_TO_DEVICE);
+ 		qdf_nbuf_free(nbuf);
+ 	} else {
+-		/* completion for a slot we already freed/reclaimed - desc reuse */
+-		wma_err_rl("NETHUNTER-INJ: [completion] desc=%u status=%u(%s) but slot %u empty (late/reclaimed)",
+-			   desc_id, status, wma_get_status_str(status), slot);
++		/* empty/late completion: slot already freed by its own
++		 * completion, or this is a stale-generation straggler.
++		 */
++		wma_err_rl("NETHUNTER-INJ: [completion] desc=%u status=%u(%s) slot %u %s",
++			   desc_id, status, wma_get_status_str(status), slot,
++			   late ? "stale-gen (ignored)" : "empty (late)");
+ 	}
+ 
+ 	g_wma_inj.completed++;
+@@ -3246,10 +3285,11 @@ static void wma_inject_handle_completion(tp_wma_handle wma, uint32_t desc_id,
+ 	 * "firmware never completes" failure mode (counts diverge).
+ 	 */
+ 	if (wma_inj_should_log(g_wma_inj.completed))
+-		wma_info("NETHUNTER-INJ: [completion] #%u desc=%u status=%u(%s) [submitted=%u completed=%u reclaimed=%u]",
++		wma_info("NETHUNTER-INJ: [completion] #%u desc=%u status=%u(%s) [submitted=%u completed=%u reclaimed=%u dropped=%u]",
+ 			 g_wma_inj.completed, desc_id, status,
+ 			 wma_get_status_str(status), g_wma_inj.submitted,
+-			 g_wma_inj.completed, g_wma_inj.reclaimed);
++			 g_wma_inj.completed, g_wma_inj.reclaimed,
++			 g_wma_inj.dropped);
+ }
+ 
+ /*
+@@ -3409,12 +3449,38 @@ QDF_STATUS wma_inject_ensure_tx_vdev(uint8_t mon_vdev_id, uint32_t chanfreq)
+ 	}
+ 
+ 	/*
+-	 * Reset injection counters each time we rebuild the helper vdev so
+-	 * that dmesg heartbeat logs (every 256 frames) start from 0 in each
+-	 * new monitor session, making per-session debugging clearer.
++	 * Reset injection state each time we rebuild the helper vdev so a new
++	 * monitor session starts clean. Besides the heartbeat counters this
++	 * flushes the desc ring: a previous session can leave slots marked
++	 * valid (frames the firmware silently dropped, never completed). The
++	 * timeout-reclaim path would eventually free them, but flushing here
++	 * frees the leftover nbufs immediately and lets the new session start
++	 * at slot 0 without burning the first lap on reclaims.
+ 	 */
++	if (g_wma_inj.inited) {
++		uint32_t s;
++
++		qdf_spin_lock_bh(&g_wma_inj.lock);
++		for (s = 0; s < WMA_INJ_SLOTS; s++) {
++			if (g_wma_inj.slots[s].valid) {
++				qdf_nbuf_t stale = g_wma_inj.slots[s].nbuf;
++
++				g_wma_inj.slots[s].nbuf = NULL;
++				g_wma_inj.slots[s].valid = false;
++				if (stale) {
++					qdf_nbuf_unmap_single(wma->qdf_dev, stale,
++							      QDF_DMA_TO_DEVICE);
++					qdf_nbuf_free(stale);
++				}
++			}
++		}
++		g_wma_inj.next = 0;
++		qdf_spin_unlock_bh(&g_wma_inj.lock);
++	}
+ 	g_wma_inj.submitted = 0;
+ 	g_wma_inj.completed = 0;
++	g_wma_inj.reclaimed = 0;
++	g_wma_inj.dropped = 0;
+ 
+ 	/*
+ 	 * Find an unused vdev slot, skipping the monitor vdev. Ceiling is
+@@ -3522,7 +3588,8 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 	uint8_t *data;
+ 	uint16_t chanfreq;
+ 	uint8_t tx_vdev_id;
+-	uint32_t slot, desc_id;
++	uint32_t slot, desc_id, gen;
++	unsigned long now;
+ 	QDF_STATUS status;
+ 
+ 	if (wma_validate_handle(wma) || !frame || !qdf_ctx) {
+@@ -3582,26 +3649,66 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 	}
+ 	qdf_mem_copy(data, frame, frame_len);
+ 
++	/*
++	 * Slot acquisition with timeout-reclaim backpressure.
++	 *
++	 * The firmware mgmt-TX queue is shallow and, crucially, *silently drops*
++	 * a fraction of injected frames - it never sends a tx-completion for
++	 * them (confirmed on-device: completed freezes ~35 below submitted and
++	 * stops). So the desc ring must distinguish two cases for the slot we
++	 * are about to reuse:
++	 *
++	 *   - valid and FRESH (< WMA_INJ_STALE_MS old): genuinely still in
++	 *     flight. The ring is full of not-yet-completed frames => real
++	 *     firmware backpressure. DROP this frame so we never overrun (and
++	 *     wedge) the firmware queue. A steady trickle still kicks clients.
++	 *
++	 *   - valid and STALE (>= WMA_INJ_STALE_MS old): the firmware dropped it
++	 *     long ago and will never complete it. RECLAIM the slot - the fw is
++	 *     done with that DMA buffer, and the generation tag in desc_id makes
++	 *     any astronomically-late completion a no-op (see handle_completion).
++	 *
++	 * This keeps submission flowing (so completions keep flowing) while
++	 * bounding in-flight frames, and never frees an nbuf the fw still reads.
++	 */
++	now = qdf_get_system_timestamp();
+ 	qdf_spin_lock_bh(&g_wma_inj.lock);
+-	slot = g_wma_inj.next++ % WMA_INJ_SLOTS;
+-	desc_id = WMA_INJ_DESC_BASE + slot;
++	slot = g_wma_inj.next % WMA_INJ_SLOTS;
++	if (g_wma_inj.slots[slot].valid &&
++	    (now - g_wma_inj.slots[slot].ts) < WMA_INJ_STALE_MS) {
++		g_wma_inj.dropped++;
++		qdf_spin_unlock_bh(&g_wma_inj.lock);
++		/* not DMA-mapped yet (mapping happens inside the WMI send) */
++		qdf_nbuf_free(nbuf);
++		if (wma_inj_should_log(g_wma_inj.dropped))
++			wma_err_rl("NETHUNTER-INJ: [drop] #%u slot %u in flight (submitted=%u completed=%u reclaimed=%u dropped=%u) - fw queue full, throttling",
++				   g_wma_inj.dropped, slot, g_wma_inj.submitted,
++				   g_wma_inj.completed, g_wma_inj.reclaimed,
++				   g_wma_inj.dropped);
++		return QDF_STATUS_SUCCESS;
++	}
+ 	if (g_wma_inj.slots[slot].valid) {
+-		old = g_wma_inj.slots[slot].nbuf;   /* never completed - reclaim */
++		old = g_wma_inj.slots[slot].nbuf;   /* stale - fw silently dropped it */
+ 		g_wma_inj.reclaimed++;
+ 	}
++	g_wma_inj.next++;
++	g_wma_inj.slots[slot].gen = (g_wma_inj.slots[slot].gen + 1) &
++				    WMA_INJ_GEN_MASK;
++	gen = g_wma_inj.slots[slot].gen;
+ 	g_wma_inj.slots[slot].nbuf = nbuf;
++	g_wma_inj.slots[slot].ts = now;
+ 	g_wma_inj.slots[slot].valid = true;
+ 	qdf_spin_unlock_bh(&g_wma_inj.lock);
+ 
++	desc_id = WMA_INJ_DESC_MARK | (gen << WMA_INJ_GEN_SHIFT) | slot;
++
+ 	if (old) {
+ 		qdf_nbuf_unmap_single(wma->qdf_dev, old, QDF_DMA_TO_DEVICE);
+ 		qdf_nbuf_free(old);
+-		/* All 64 slots in flight without a single completion => firmware
+-		 * is silently dropping injected frames (no tx-completion event).
+-		 */
+-		wma_err_rl("NETHUNTER-INJ: [warn] reclaimed uncompleted slot %u (submitted=%u completed=%u reclaimed=%u) - firmware may not be sending tx completions",
+-			   slot, g_wma_inj.submitted, g_wma_inj.completed,
+-			   g_wma_inj.reclaimed);
++		if (wma_inj_should_log(g_wma_inj.reclaimed))
++			wma_err_rl("NETHUNTER-INJ: [reclaim] stale slot %u (submitted=%u completed=%u reclaimed=%u dropped=%u) - fw never completed it",
++				   slot, g_wma_inj.submitted, g_wma_inj.completed,
++				   g_wma_inj.reclaimed, g_wma_inj.dropped);
+ 	}
+ 
+ 	mgmt_params.tx_frame = nbuf;
+@@ -3614,7 +3721,7 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 	mgmt_params.tx_flags = 0x00000001;  /* EXPERIMENT 1: WMI_TX_SEND_FLAG_SET_WRONG_KEY */
+ 
+ 	if (!g_wma_inj.banner) {
+-		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-r8-vdev_restart mon_vdev=%u tx_vdev=%u helper=%u chan=%u",
++		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-r8.1-stable mon_vdev=%u tx_vdev=%u helper=%u chan=%u",
+ 			 vdev_id, tx_vdev_id, g_inj_tx_vdev.created, chanfreq);
+ 		g_wma_inj.banner = true;
+ 	}
+-- 
+2.43.0
+

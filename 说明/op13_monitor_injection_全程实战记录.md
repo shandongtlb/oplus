@@ -6,9 +6,10 @@
 > 性质:本人设备授权渗透测试
 > 部署方式:KernelSU 模块热切 .ko(跑 OEM 原版内核,不刷完整 boot.img)
 > 编译命令:`./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf`(在 `/root/pt/kernel` 下跑)
-> **最终稳定版本**: r8 (ae508b19) / 补丁集 0001-0014 (2026-06-09)
+> **最终稳定版本**: r8.1 (补丁集 0001-0015, 2026-06-11) —— 在 r8(0014) 基础上根治了高频灌帧卡死，详见 §11.6
 > **项目状态**: ✅ **已完成，生产就绪**
 > **后续探索**: r10(单播,失败) / r11(STA+MON并存,成功但未采用) —— 详见 §11.2-11.5
+> **稳定性修复**: r8.1(广播 deauth 高频灌帧卡死根治, 补丁 0015) —— 详见 §11.6
 
 ---
 
@@ -265,12 +266,12 @@ monstop
 | 类型 | 2.4GHz | 5GHz | 说明 |
 |---|---|---|---|
 | **广播 deauth** | ✅ **成功** | ✅ **成功** | 可踢掉所有客户端并阻止重连 |
-| **单播 deauth** | ❌ DISCARD | ❌ DISCARD | 固件检查 peer 关联状态 |
+| **单播 deauth** | ❌ DISCARD | ❌ DISCARD | monitor vdev 类型限制（非关联状态，r10/r11 验证）|
 
 **实战验证：**
 - ✅ 2.4GHz 信道13 (2472 MHz) - 验证成功
 - ✅ 5GHz 信道36 (5180 MHz) - 验证成功
-- 📝 其他 5GHz 信道待测试（推测非 DFS 信道应该都可用）
+- ✅ 5GHz 信道149 (5745 MHz) - 验证成功（早期误判为 DFS 受限，实为 airodump 跳频没锁住；ch149 非 DFS 信道）
 
 **关键突破方法:**
 ```c
@@ -330,7 +331,7 @@ if (vdev->type == MONITOR) {
 |---|---|---|
 | **定向单播 deauth** | ❌ 固件 DISCARD | monitor vdev 类型限制（只能发广播，非关联状态）|
 
-**备注：之前误认为 5GHz deauth 被拒，实际测试发现 5GHz 信道36也成功。可能之前测试的信道149（5745MHz）属于 DFS 或特殊监管限制。**
+**备注：之前误认为 5GHz 信道149 deauth 被拒，后续实测确认 ch36 和 ch149 广播 deauth 都成功。当初 ch149 "被拒"是 airodump 跳频导致网卡没真正锁在 5745MHz（见 §12 airodump 5G 排查），不是 DFS 或监管限制——ch149 本就不是 DFS 信道。结论：5GHz 广播 deauth 全部可用。**
 
 **仍可用的高价值功能:**
 
@@ -385,7 +386,7 @@ if (vdev->type == MONITOR) {
 - ✅ DP RX ring 时序竞态（200ms 窗口精确定位）
 - ✅ DSC 锁层级理解（psoc/vdev trans 死锁规避）
 - ✅ **固件安全机制突破**（WMI 测试标志逆向，广播 deauth 实现）
-- ✅ 固件边界确认（单播受 monitor vdev 类型限制，r10/r11 验证；5GHz DFS 信道额外限制）
+- ✅ 固件边界确认（单播受 monitor vdev 类型限制，r10/r11 验证；5GHz 广播全部可用含 ch149）
 
 ### 代码资产
 | 文件 | 改动量 | 核心贡献 |
@@ -495,7 +496,7 @@ ROI = $17,000+ / $3 = 5,666倍
 
 **❌ 无法满足的场景（极少数）:**
 - 定向踢掉特定客户端（但广播效果相同，满足 95% 需求）
-- 5GHz DFS 信道（部分信道可能受限，如信道149）
+  （注：5GHz 广播 deauth 全部可用，含 ch149；早期"DFS 受限"是误判）
 
 **实战评估：满足 95% WiFi 渗透测试需求！** ✅
 
@@ -556,7 +557,7 @@ ROI = $17,000+ / $3 = 5,666倍
 
 ---
 
-## 11. 后续探索与最终版本 (2026-06-09 ~ 2026-06-10)
+## 11. 后续探索与最终版本 (2026-06-09 ~ 2026-06-11)
 
 ### 11.1 广播 Deauth 突破 (补丁 0013 + 0014 r8)
 
@@ -1492,10 +1493,16 @@ aireplay-ng --deauth 10 -a <AP> wlan0mon
 - ✅ aireplay-ng 完全兼容
 
 **已知限制**:
-- ❌ 单播 deauth 不可用（固件限制，r10 验证失败）
-- ❌ 双频道 STA+Monitor 并发不可用（固件不支持）
+- ❌ 单播 deauth 不可用（固件限制，单播探索验证失败，见 §11.2）
+- ❌ 双频道 STA+Monitor 并发不可用（固件不支持，见 §11.3）
 
-**项目状态**: ✅ **生产就绪，稳定可用**
+**项目状态**: ✅ **功能完整**
+
+> ⚠️ **后续发现（2026-06-11）**：r8 在 `aireplay-ng` **爆发式**灌帧下存在
+> 注入稳定性 bug——第一次能发、**第二次卡死**，或发包但目标不掉线。根因是
+> 固件会静默丢弃一部分注入帧，叠加 r8 的"环回强行覆盖在途槽位"导致
+> mgmt-TX 路径 wedge + 潜在 DMA-UAF。已在 **r8.1（补丁 0015）** 彻底根治。
+> **真正的最终稳定版是 r8.1**，详见 §11.6。
 
 ---
 
@@ -1792,6 +1799,212 @@ wma_inject_setup_ap_impersonation(uint8_t *target_ap_mac, uint32_t freq)
 - 如果 completion=0 但 client 不断 → 帧发出去了但 client 忽略（可能 reason code 或序列号问题）
 - 如果 completion=1 DISCARD → 固件仍拦截，伪装关联失败
 - 如果 completion=0 且 client 断开 → **单播突破成功！** 🎉
+
+---
+
+### 11.6 广播 Deauth 稳定性根治 (r8.1 / 补丁 0015) — 2026-06-11
+
+> 本节是 §11.1 广播突破之后的"稳定性篇"。广播 deauth 早就能踢人了，
+> 但在 `aireplay-ng -0 0`（无限爆发）这种**高频灌帧**下，r8 会卡死。
+> 这是一个被长期掩盖、最后在实战中暴露的固件交互 bug。完整记录其
+> 调试推理链（r8 → r9 → r9b → r8.1），它本身就是一份"如何与不回完成
+> 事件的固件打交道"的活教材。
+
+#### 11.6.1 症状：第一次能发，第二次卡死
+
+实战中发现广播 deauth **时灵时不灵**：
+
+- 第一次 `aireplay-ng -0 0 -a <AP>` 跑起来正常，目标掉线；
+- **第二次再跑就卡住**——`aireplay` 在刷 `Sending DeAuth`，但电脑/目标
+  **不掉线**；
+- 偶尔第一次也只发出去几个，之后就没动静。
+
+一句话：**注入路径在高频灌帧下会 wedge（卡死）。**
+
+#### 11.6.2 关键日志：固件在“静默丢弃”
+
+抓注入日志看 `submitted`（提交给 WMI 的帧）和 `completed`（固件回的
+tx-completion 事件）的差：
+
+```
+[warn] reclaimed uncompleted slot 8 (submitted=7688 completed=6751 ...)
+```
+
+`submitted - completed ≈ 930`，而 desc 槽位池只有 **64 个**。也就是说有
+近 900 帧“在途未完成”，是池子的 14 倍。更换上带背压的版本后，真相彻底
+暴露：
+
+```
+[submit]     #64 ...
+[completion] #29 ... [submitted=64 completed=29]   ← 然后 completed 永远停在 29
+```
+
+**固件接受了 64 帧，只回了 29 个完成事件，剩下约 35 帧的完成永不返回**，
+而且 desc 是**乱序**回的（先回 slot63，slot0 一直不回）。
+
+> 🔑 **核心发现**：peach_v2 固件会**静默丢弃一部分注入的 mgmt 帧——根本不
+> 回 tx-completion**。这不是偶发，是稳定的 ~3–6%。任何注入设计都必须容忍
+> “有去无回”的帧，否则迟早把自己卡死。
+
+#### 11.6.3 调试推理链（4 个版本）
+
+| 版本 | 策略 | 结果 | 学到的东西 |
+|------|------|------|-----------|
+| **r8** | 环回就**强行覆盖**在途槽位（stomp） | 能灌几千帧，但偶发卡死 | stomp 恰好“容错”了固件静默丢弃，所以平时能用 |
+| **r9** | **纯背压**：遇到 valid 槽就丢弃、绝不复用 | **全卡死**，submitted 停在 0 | 上一会话遗留的 valid 槽 + 固件静默丢弃 → `next` 卡死自锁 |
+| **r9b** | r9 + 会话开始清空 desc 环 | submitted 能涨了，但到 64 又卡死 | 暴露真相：固件回 29 个就不回了；纯背压遇静默丢弃必自锁 |
+| **r8.1** | **超时回收 + generation 防 UAF** | ✅ 稳定，灌 1 万+帧无卡死 | 按时效区分“真背压”与“固件已丢弃” |
+
+**为什么 r8 平时能用、却偶发卡死？**
+r8 的“环回强行覆盖”在一圈 64 帧之后才覆盖某个槽位——那个槽位的帧早就
+（几十 ms 前）发出去了，固件 DMA 也读完了，覆盖它是**安全**的，还顺手把
+“固件静默丢弃、永不回完成”的僵尸槽位给清了。所以 r8 能持续灌几千帧。
+它的隐患是：(1) 万一固件 DMA 还在读就被覆盖 → **DMA-UAF**；(2) desc_id
+复用后，**迟到的完成**会误删新占用者的在途 nbuf。高频下这两个隐患被放大，
+偶发卡死。
+
+**为什么纯背压（r9/r9b）反而更糟？**
+纯背压的逻辑是“目标槽还 valid 就丢弃本帧、不复用、`next` 不前进”。本意是
+不灌爆固件。但固件**静默丢弃**的那些帧，其槽位的 `valid` **永远不会被完成
+事件清掉**。于是 `next` 卡在那个僵尸槽上，之后**每一帧都被丢**——
+
+```
+[drop] #768 slot 0 still in flight (submitted=64 completed=29 dropped=768)
+```
+
+submitted 冻在 64、completed 冻在 29、dropped 一路狂飙。**背压把自己锁死了。**
+
+#### 11.6.4 r8.1 最终方案
+
+要同时满足三个互相拉扯的约束：
+1. **不能灌爆**固件 mgmt-TX 队列（否则 wedge）；
+2. **必须容忍**固件静默丢弃（否则僵尸槽自锁）；
+3. **不能 DMA-UAF / 不能误删**在途 nbuf。
+
+解法 = **超时回收（timeout-reclaim）+ desc_id 内嵌 generation**：
+
+**(a) 按时效区分槽位**
+
+取槽位时看目标槽 `slots[next % 64]`：
+- **valid 且新鲜（在途 < 100ms）** → 真的还在飞，这是**真背压**，
+  **丢弃本帧**（不灌爆固件，deauth 涓流足够踢人）；
+- **valid 且陈旧（在途 ≥ 100ms）** → 固件早就静默丢了、永不回完成，
+  **安全回收复用**（固件 DMA 早读完，覆盖无害）。
+
+100ms 这个阈值要**大于固件正常完成延迟**（实测 < 50ms），这样不会误回收
+一个只是“慢一点”的帧。
+
+**(b) desc_id 内嵌 generation——根除 desc 复用 UAF**
+
+固件会原样回显 desc_id。利用其高位编码（stock desc_id 是 0..63，bit15 空闲）：
+
+```
+desc_id = [ bit15 标记 | bits6-14 generation(9bit) | bits0-5 槽号(0..63) ]
+```
+
+每次复用槽位 generation +1。完成事件回来时，比对其 generation 与槽位
+**当前** generation：
+- **匹配** → 这个完成确实属于当前占用者，正常释放其 nbuf；
+- **不匹配** → 这是回收之后才迟到的“上一代”完成，**直接忽略**，绝不
+  去碰当前占用者那块还在飞的 nbuf。
+
+这一手彻底堵死了 r8 一直存在的“迟到完成误删在途 nbuf”UAF。
+
+**(c) 会话重建时清空 desc 环**
+
+`monstart`/换频道重建 helper vdev 时，遍历 64 个槽，把残留 valid 的 nbuf
+unmap+free、标 invalid、`next` 归零。新会话从干净状态起步，不把上一会话的
+僵尸槽带进来。
+
+#### 11.6.5 核心代码（`core/wma/src/wma_mgmt.c`）
+
+槽位获取（节选）：
+
+```c
+now = qdf_get_system_timestamp();
+qdf_spin_lock_bh(&g_wma_inj.lock);
+slot = g_wma_inj.next % WMA_INJ_SLOTS;
+if (g_wma_inj.slots[slot].valid &&
+    (now - g_wma_inj.slots[slot].ts) < WMA_INJ_STALE_MS) {
+    g_wma_inj.dropped++;                 /* 新鲜在途 → 真背压，丢弃 */
+    qdf_spin_unlock_bh(&g_wma_inj.lock);
+    qdf_nbuf_free(nbuf);
+    return QDF_STATUS_SUCCESS;
+}
+if (g_wma_inj.slots[slot].valid) {
+    old = g_wma_inj.slots[slot].nbuf;    /* 陈旧 → 固件已丢，回收复用 */
+    g_wma_inj.reclaimed++;
+}
+g_wma_inj.next++;
+g_wma_inj.slots[slot].gen = (g_wma_inj.slots[slot].gen + 1) & WMA_INJ_GEN_MASK;
+gen = g_wma_inj.slots[slot].gen;
+g_wma_inj.slots[slot].nbuf = nbuf;
+g_wma_inj.slots[slot].ts   = now;
+g_wma_inj.slots[slot].valid = true;
+qdf_spin_unlock_bh(&g_wma_inj.lock);
+
+desc_id = WMA_INJ_DESC_MARK | (gen << WMA_INJ_GEN_SHIFT) | slot;
+```
+
+完成处理（节选，generation 校验）：
+
+```c
+slot = desc_id & WMA_INJ_SLOT_MASK;
+gen  = (desc_id >> WMA_INJ_GEN_SHIFT) & WMA_INJ_GEN_MASK;
+qdf_spin_lock_bh(&g_wma_inj.lock);
+if (g_wma_inj.slots[slot].valid && g_wma_inj.slots[slot].gen == gen) {
+    nbuf = g_wma_inj.slots[slot].nbuf;   /* 当前占用者，正常释放 */
+    g_wma_inj.slots[slot].valid = false;
+} else if (g_wma_inj.slots[slot].valid) {
+    late = true;                         /* 上一代的迟到完成，忽略 */
+}
+qdf_spin_unlock_bh(&g_wma_inj.lock);
+```
+
+关键常量：`WMA_INJ_SLOTS=64`、`WMA_INJ_STALE_MS=100`、generation 9 位。
+
+#### 11.6.6 实测验证（ch149 5G 广播 deauth）
+
+```
+[completion] ... [submitted=10944 completed=10624 reclaimed=320 dropped=0]
+                  10624 + 320 = 10944  ← 正好等于 submitted
+```
+
+- **submitted 和 completed 一起持续增长**，不再冻结；
+- **`completed + reclaimed == submitted`**：每一帧都有归宿（要么固件回了
+  完成，要么超时回收），环里几乎零积压；
+- **gap 恒定且完全由 reclaimed 解释**：固件静默丢弃约 3%，被超时回收干净；
+- **`dropped=0`**：固件完成够快、回收够及时，连真背压丢弃都没触发；
+- 灌 **1 万+帧无 wedge**，**连测七八次稳定**，发包后 **0–4s 必断**，响应敏捷。
+
+#### 11.6.7 健康判据与排错
+
+刷入后先验明正身：
+
+```bash
+dmesg | grep NETHUNTER-INJ | grep build=
+#   期望：build=mon-inject-r8.1-stable
+
+dmesg | grep NETHUNTER-INJ | grep -E "completion|reclaim|drop" | tail -30
+```
+
+- ✅ **健康**：`submitted`、`completed` 一起涨；`completed + reclaimed ≈
+  submitted`；`dropped` 接近 0；夹杂少量 `[reclaim] stale slot`（固件静默
+  丢弃被回收，**正常**）。
+- ❌ **异常**：`completed` 冻住不动、`submitted` 停在某个值 → 还是旧模块
+  （没刷上 r8.1），或 helper vdev 没建起来。先确认 build tag。
+
+#### 11.6.8 经验教训
+
+1. **`submitted` vs `completed` 的差值是金矿**。两个计数器一拉开，立刻
+   知道固件在“吃帧不回话”。任何异步提交-完成的设计都该埋这种对账计数。
+2. **不回完成事件的硬件/固件，必须有超时兜底**。纯靠“等完成”会被一个
+   静默丢弃的帧永久锁死。
+3. **desc/句柄复用一定要带 generation**。否则迟到的完成会张冠李戴，
+   在高频下变成 use-after-free。这是所有 ring-buffer + 异步完成模型的通病。
+4. **“偶发能用”比“完全不能用”更危险**——r8 偶发卡死掩盖了固件静默丢弃
+   这个根本事实很久，直到无限灌帧的实战场景才把它逼出来。
+5. **会话边界要清状态**。跨 `monstart` 残留的在途槽位是 r9 自锁的元凶之一。
 
 ---
 
