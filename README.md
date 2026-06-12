@@ -6,12 +6,22 @@
 
 ```
 oplus/
-├── 补丁/inject/          # 内核补丁集（0001-0014）
-│   ├── 0001-0014.patch   # monitor + inject 完整补丁
-│   └── README.md         # 补丁应用说明
-├── out/                  # 编译输出
+├── 补丁/                 # 内核补丁
+│   ├── inject/           # 【主线】内置 WiFi monitor + 注入补丁集（0001-0015）
+│   │   ├── 0001-0015.patch   # monitor + inject + 稳定性修复
+│   │   └── README.md         # 补丁应用说明
+│   ├── 1.op13_bt_arsenal_msm_only.patch    # 蓝牙 arsenal 工具支持
+│   ├── 2.op13_usb_arsenal_gki.patch        # USB arsenal 通用支持
+│   ├── 3.op13_rt3070l_enable.patch         # 启用 RT3070L 外置 USB 网卡
+│   ├── 4.op13_add-wext-for-rt3070l.patch   # 外置卡 wext shim（aireplay/iwconfig 兼容）
+│   └── 5.op13_usb_zd1201_msm.patch         # 启用 ZD1201 外置 USB 网卡
+├── 说明/                 # 详细技术文档（实战记录、突破分析等）
+├── ak3/                  # KernelSU 模块包相关
 └── README.md             # 本文件
 ```
+
+> **两条线**：`inject/` 是**内置 WiFi**（peach_v2 qcacld-3.0）的 monitor + 注入主线成果；
+> 顶层 `1~5.*.patch` 是**外置 USB 网卡 / 蓝牙**支持（RT3070L、ZD1201、BT/USB arsenal），互相独立、按需应用。
 
 ## 功能实现
 
@@ -35,6 +45,12 @@ oplus/
 4. **vdev_restart 优化**（0014 r8）
    - 解决 AP 扫描时 vdev 递减问题
    - 提升注入稳定性
+
+5. **广播 Deauth 高频灌帧稳定性根治**（0015 r8.1）
+   - 修复"第一次能发、第二次卡死"的注入卡死问题
+   - 根因：固件静默丢弃约 3-6% 注入帧（不回完成事件）
+   - 方案：超时回收（timeout-reclaim）+ desc_id 内嵌 generation 防 UAF
+   - 实战验证：连续灌 2.8 万+帧无卡死，连测七八次稳定，发包后 0-4s 必断
 
 ### ⚠️ 已验证但未采用
 
@@ -128,6 +144,7 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 - **2026-06-09**：探索单播 deauth（r10），验证失败
 - **2026-06-10**：解锁 STA+Monitor 并存（r11），因不稳定未采用
 - **2026-06-10**：回退到 r8，发布稳定版补丁集 0001-0014
+- **2026-06-11**：实战暴露广播 deauth 高频灌帧卡死，根治后发布 r8.1（0015），补丁集更新为 0001-0015
 
 ## 技术细节
 
@@ -145,9 +162,10 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 
 ### 关键突破点
 
-1. **WMI test flag**（0013）：`wmi_unified_pdev_set_param(ALLOW_MON_VDEV_TRANSMIT_MGMT, 1)` 绕过固件广播限制
+1. **WMI test flag**（0013）：注入时设 `mgmt_params.tx_flags = 0x00000001`（`WMI_TX_SEND_FLAG_SET_WRONG_KEY`，WFA PMF 测试标志）让固件放行 monitor vdev 的广播 deauth
 2. **vdev_restart 时机**（0014 r8）：在 BSS 开始前调用，避免 vdev id 递减
 3. **接口组合表**：修改 cfg80211 iface_combinations 白名单
+4. **超时回收 + generation**（0015 r8.1）：注入槽位池按时效区分"真背压丢弃"与"固件已丢弃回收"，desc_id 高位编入 generation 防止迟到完成误删在途 nbuf（DMA-UAF）
 
 ## 构建和使用
 
@@ -156,8 +174,7 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 ## 下一步可能方向
 
 - [ ] 探索其他芯片平台（如 MT7921）的注入实现
-- [ ] 研究固件逆向，寻找单播放行的可能性
-- [ ] 优化注入性能和稳定性
+- [ ] 研究固件逆向，寻找单播放行的可能性（见 说明/ 中的单播修复方向）
 
 ## 贡献者
 
@@ -166,6 +183,6 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 
 ---
 
-**最后更新**：2026-06-10  
-**当前稳定版本**：r8 (ae508b19)  
-**补丁集版本**：0001-0014
+**最后更新**：2026-06-11  
+**当前稳定版本**：r8.1（广播 deauth 高频灌帧卡死已根治）  
+**补丁集版本**：0001-0015
