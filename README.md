@@ -7,7 +7,7 @@
 ```
 oplus/
 ├── 补丁/                 # 内核补丁
-│   ├── inject/           # 【主线】内置 WiFi monitor + 注入补丁集（0001-0015）
+│   ├── qca_inject/           # 【主线】内置 WiFi monitor + 注入补丁集（0001-0015）
 │   │   ├── 0001-0015.patch   # monitor + inject + 稳定性修复
 │   │   └── README.md         # 补丁应用说明
 │   ├── 1.op13_bt_arsenal_msm_only.patch    # 蓝牙 arsenal 工具支持
@@ -16,11 +16,11 @@ oplus/
 │   ├── 4.op13_add-wext-for-rt3070l.patch   # 外置卡 wext shim（aireplay/iwconfig 兼容）
 │   └── 5.op13_usb_zd1201_msm.patch         # 启用 ZD1201 外置 USB 网卡
 ├── 说明/                 # 详细技术文档（实战记录、突破分析等）
-├── ak3/                  # KernelSU 模块包相关
+├── ksu/                  # KernelSU 模块包相关
 └── README.md             # 本文件
 ```
 
-> **两条线**：`inject/` 是**内置 WiFi**（peach_v2 qcacld-3.0）的 monitor + 注入主线成果；
+> **两条线**：`qca_inject/` 是**内置 WiFi**（peach_v2 qcacld-3.0）的 monitor + 注入主线成果；
 > 顶层 `1~5.*.patch` 是**外置 USB 网卡 / 蓝牙**支持（RT3070L、ZD1201、BT/USB arsenal），互相独立、按需应用。
 
 ## 功能实现
@@ -169,7 +169,7 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 
 ## 构建和使用
 
-见 `补丁/inject/README.md` 完整说明。
+见 `补丁/qca_inject/README.md` 完整说明。
 
 ## 下一步可能方向
 
