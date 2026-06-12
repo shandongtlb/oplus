@@ -1,4 +1,4 @@
-# OnePlus 13 (peach_v2) NetHunter 开发记录
+# OnePlus 13 NetHunter 开发记录
 
 一加 13 内核的 NetHunter monitor 模式和帧注入功能实现记录。
 
