@@ -1802,6 +1802,79 @@ wma_inject_setup_ap_impersonation(uint8_t *target_ap_mac, uint32_t freq)
 
 ---
 
+### 11.5.7 单播 Deauth 实测攻坚 E1-E6 —— 六轮全败,固件硬限制实锤 (2026-06-15)
+
+> §11.5.2-11.5.6 是"未来方向"的纸面推演。本节是把其中两条(STA helper / AP 类型 vdev)
+> **真正落地实测**的完整记录。结论先行:**内置 qcacld 卡的单播 deauth,host 侧穷尽所有
+> 手段全部失败,是 peach_v2 签名固件的硬限制。** 六轮 `completed` 始终为 0。
+
+#### 11.5.7.1 六轮实验一览
+
+基线 r8.1。所有改动均在 `wma_mgmt.c`,严格 gate 在"单播 deauth/disassoc",广播路径零影响。
+每轮都在内置卡上实机刷机验证(用户自有设备/网络,授权测试)。
+
+| 轮 | 发送 vdev | 在前一轮上新增的手段 | dmesg 结果 | 实机 |
+|---|---|---|---|---|
+| **E1** | STA helper | 给目标 AP 建 peer(过单播 peer-lookup) | submitted 涨, **completed=0** | 不掉 |
+| **E2** | STA helper | + `vdev_up` 伪关联(BSS peer) | **completed=0** | 不掉 |
+| **E2.5** | STA helper | + `peer_assoc`(灌 legacy 速率集) | **completed=0** | 不掉 |
+| **E3** | STA helper | + `tx_param.retry_limit=1`(不等 ACK) | **completed=0** | 不掉 |
+| **E4** | **AP 类型** | 独立 AP vdev(MAC=AP BSSID)+ 最小 beacon 模板 + victim 作 client peer,发 RA=victim | AP vdev **成功起来没崩**, **completed=0** | 不掉 |
+| **E5** | **AP 类型** | + 给 victim peer 补 `peer_assoc` | **completed=0** | 不掉 |
+| (E6) | 真 STA 连接 | 真关联后从真实链路注入(未实施) | —— | —— |
+
+#### 11.5.7.2 决定性现象:固件"静默吞",连 DISCARD 都不回
+
+- 广播 deauth(同一套代码、同一 helper vdev、仅 `addr1=ff:ff:ff:ff:ff:ff`):
+  `submitted` 与 `completed` 一起涨,`status=0`,**设备秒下线**(对照测试实证)。
+- 单播 deauth(仅 `addr1=单播地址`):`submitted` 涨到填满 desc 池(~32-64)后
+  `wmi mgmt tx failed 16`(QDF_STATUS_E_FAILURE,desc 池耗尽),**`completed` 全程=0**。
+- **关键**:不是 `status=1 DISCARD`(那好歹是回执),而是**彻底无完成事件**——
+  固件收下帧、不发、不回音。这是固件层面对单播注入最干净的"封死"。
+
+#### 11.5.7.3 为什么 host 侧无解(三重证据)
+
+1. **现象对所有 host 改动免疫**:peer 存在性、vdev 关联态(vdev_up)、速率集(peer_assoc,
+   STA 侧和 AP 侧都试)、重传(retry_limit)、甚至换 AP 类型 vdev —— 六轮 completed 纹丝不动。
+2. **接口契约证实无旋钮**:`wmi_mgmt_tx_send_cmd_fixed_param`(fw-api)暴露给 host 的字段
+   (vdev_id/desc_id/chanfreq/tx_flags/tx_params_valid)中,**没有任何能影响"固件是否为单播
+   回 completion"的参数**。`WMI_TX_SEND_FLAG_*` 只有 4 个位,无 no-ack/force-tx。
+3. **计数器把沉默点夹死在固件边界**:`submitted++` 在 `wmi_mgmt_unified_cmd_send` 返回成功后
+   才加 → host 侧(TLV 打包/DMA 映射/HTC 推送)**全程成功**;`completed=0` → 固件再无回音。
+   两者之间没有任何 host 代码,全在签名 .bin 内。**沉默 100% 在固件内部,host 不可观测、不可改。**
+
+#### 11.5.7.4 根因理解
+
+- 固件对单播帧要求**真实 RF 链路 + 对方 ACK**;我们的 helper(无论 STA 伪关联还是 AP 伪 beacon)
+  **没有真实 OTA 关联**,ACK 永不到 → 固件在 PPDU 构造/发送环节静默丢弃。
+- 广播帧无需 ACK(fire-and-forget),所以唯一能过的就是广播。
+- **广播能用,本质是高通为 WFA PMF 合规测试预留的 `WMI_TX_SEND_FLAG_SET_WRONG_KEY`(0x1)后门
+  被我们复用**,并非真正突破固件。固件愿开的门(广播)我们能用,它锁死的门(单播)host 怎么敲都没用。
+- 旁证:`bettercap` 等 MITM 手段打其他设备同样失败 → 现代环境(PMF/802.11w)+ 本侧固件双重封死,
+  单播 deauth 在内置卡上整体不可行。
+
+#### 11.5.7.5 剩余理论方向(均不推荐在内置卡继续)
+
+- **E6 真连后注入**(未实施):手机真关联到 AP(需密码,仅限自有网络),从真实 STA 链路发
+  伪造 SA 的"client 离开"帧。补上了"真实链路/ACK"这一环,是唯一从根上对症的剩余路;但
+  (a) 只能打自己能连的 AP,(b) 真 STA 链路上固件**很可能强制 SA=自身 MAC** → 踢到自己而非
+  victim。评估成功率 30-40%,适用面窄,未做。
+- **固件逆向 + 绕签名**:secure boot 锁死,~5%,放弃。
+- **FTM/tx99 工厂测试模式**:理论可发任意帧,但会让正常 WiFi 停摆、极复杂,放弃。
+
+#### 11.5.7.6 最终决策
+
+- **内置卡单播 deauth 探索到此为止**,代码回退到 r8.1 干净稳定版(保住已验证的广播秒杀)。
+- E1-E5 实验代码存档为参考补丁:`oplus/说明/op13_unicast_deauth_E1-E5_实验_弃用.patch`
+  (带"勿应用"头注释,仅供未来固件逆向/换思路时参考)。
+- **单播需求 → 外置 USB 网卡**(RT3070L/rtl8187 等 SoftMAC,TX 在主机内核 mac80211,
+  无此固件限制,补丁 0003/0004 已支持)。详见 §11.5.6。
+
+> 经验法则补充(进 §10):**内置 FullMAC 卡能做的,是固件愿意开的门;它静默不回(completed=0,
+> 非 DISCARD)就是最硬的拒绝,host 侧任何 setup 都无效——别再往固件那头猜,转外置 SoftMAC 卡。**
+
+---
+
 ### 11.6 广播 Deauth 稳定性根治 (r8.1 / 补丁 0015) — 2026-06-11
 
 > 本节是 §11.1 广播突破之后的"稳定性篇"。广播 deauth 早就能踢人了，
