@@ -1,0 +1,175 @@
+From bd3946d73c1b4cc8d03b628961ac7787823ae1f6 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 18 Jun 2026 16:24:12 +0000
+Subject: [PATCH] =?UTF-8?q?peach=5Fv2:=20r12=20-=20=E9=98=B2=E5=91=86?=
+ =?UTF-8?q?=E5=AE=88=E5=8D=AB(monitor=20<->=20WiFi/=E7=83=AD=E7=82=B9/?=
+ =?UTF-8?q?=E5=85=B1=E4=BA=AB/=E6=8A=95=E5=B1=8F=20=E4=BA=92=E6=96=A5)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+背景: r8.1 稳定后,一次误操作暴露致命坑 - monitor/注入运行时,注入助手
+裸 WMI vdev 占住固件 vdev slot 2(P2P-GO/SoftAP 同一槽),此时若开启 OPLUS
+"与平板网络共享"(P2P-GO)/个人热点(SoftAP)/投屏(Wi-Fi Direct),host 会
+重新分配同一槽,WMI vdev_create 与活着的助手 vdev 撞槽 -> 固件 vdev 状态机
+wedge,monstop/reset/回退 stock 全部无效,只有冷重启能恢复。助手 vdev 是
+裸 WMI 建的,host objmgr/policy_mgr 看不见它(非对称失明),所以 host 侧
+并发检查放行了这条死亡组合。
+
+修复: 在 host 侧三个入口做"先来后到"互斥,monitor 活跃时直接拒绝会撞槽
+的操作,且全部返回前不触发框架自愈(避免 coldreset 反噬卸载模块):
+
+1. wlan_hdd_p2p.c __wlan_hdd_add_virtual_intf (+23):
+   monitor 活跃时拒绝 SAP/P2P_GO 虚拟接口创建(热点/共享建组的正向腿),
+   在 hdd_open_adapter 建 vdev 之前返回 -EBUSY。反向腿(SAP/GO 在时加
+   monitor)本就被 policy_mgr_check_mon_concurrency 挡住。
+
+2. wlan_hdd_cfg80211.c wlan_hdd_cfg80211_connect (+17):
+   monitor 活跃时拒绝 STA 连接,返回 -EBUSY。
+
+3. wlan_hdd_main.c wlan_hdd_state_ctrl_param_write (+36):
+   monitor 活跃时"吞掉"框架对 WLAN 栈的复位(WLAN_OFF/ON/DISABLE/
+   FORCE_DISABLE),return count 伪装成功 - 关键: 返回 -EBUSY 会让 OPLUS
+   WifiSelfRecovery 升级到 coldreset -> RMMOD qca 模块 -> 把 monitor 自己
+   干掉(自毁),所以必须假装成功稳住框架。这是堵住 OPLUS 共享在 monitor
+   期间 wedge 的那道闸。
+
+三条 hdd_err 文案统一带 NETHUNTER-MON 前缀(dmesg|grep NETHUNTER-MON 可查),
+内核层无法弹 UI,故配套脚本侧(monitor_control.sh)读 dmesg 真实并发原因
+(SAP/P2P/NAN concurrency)映射成中文提示,SAP/P2P 两支均设备实测通过。
+
+日常无 monitor 时所有路径不受影响。
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ .../core/hdd/src/wlan_hdd_cfg80211.c          | 17 +++++++++
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 36 +++++++++++++++++++
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c    | 23 ++++++++++++
+ .../core/hdd/src/wlan_hdd_rx_monitor.c        |  2 +-
+ 4 files changed, 77 insertions(+), 1 deletion(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 2fbc058a..72193f1e 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -28935,6 +28935,23 @@ static int wlan_hdd_cfg80211_connect(struct wiphy *wiphy,
+ {
+ 	int errno;
+ 	struct osif_vdev_sync *vdev_sync;
++	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
++
++	/*
++	 * NETHUNTER guard (reverse leg of monitor<->STA mutual exclusion).
++	 * Refuse a Wi-Fi STA association while a monitor/injection session is
++	 * active. Unlike SoftAP, a STA reuses the primary vdev (not the hidden
++	 * injection helper slot) so it does NOT wedge the firmware; this guard
++	 * just keeps STA off during capture to avoid the monitor<->STA DP
++	 * RX-ring contention ("connected but no internet"). monstop tears the
++	 * monitor adapter down before Wi-Fi is re-enabled, so normal connects
++	 * after monstop are unaffected; with no monitor session this is a
++	 * no-op (hdd_get_adapter returns NULL).
++	 */
++	if (hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE)) {
++		hdd_err("NETHUNTER-MON: refusing Wi-Fi connect while monitor/injection active; run monstop first");
++		return -EBUSY;
++	}
+ 
+ 	errno = osif_vdev_sync_op_start(ndev, &vdev_sync);
+ 	if (errno)
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index ff574c4f..e33afdd2 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -20847,6 +20847,42 @@ static ssize_t wlan_hdd_state_ctrl_param_write(struct file *filp,
+ 
+ 	id = hdd_validate_wlan_string(user_buf);
+ 
++	/*
++	 * NETHUNTER guard (real forward leg of monitor<->share/hotspot mutual
++	 * exclusion). OPLUS "share network to tablet" / hotspot does NOT create
++	 * an AP vdev through __wlan_hdd_add_virtual_intf; instead the framework
++	 * resets the whole WLAN stack via THIS sysfs node (WLAN_ON_STR ->
++	 * WLAN_OFF_STR / WLAN_DISABLE_STR). If that happens while a monitor
++	 * session is live, it tears the monitor vdev + the hidden injection
++	 * helper vdev (slot CFG_TGT_NUM_VDEV-2) down underneath us and a new
++	 * vdev grabs that same slot -> vdev state machine corrupts ("vdev 255
++	 * not active" / NULL vdev obj) -> stack wedges.
++	 *
++	 * We must NOT return an error here: returning -EBUSY makes the OPLUS
++	 * framework escalate its self-recovery (WifiSelfRecovery ->
++	 * sys.oplus.wifi.coldreset) which RMMODs qca_cld3_peach_v2 entirely -
++	 * that kills the monitor session too (wlan0mon vanishes), the exact
++	 * opposite of what this guard is protecting. Instead SILENTLY SWALLOW
++	 * the request (return count = "write succeeded" but do nothing): the
++	 * framework believes the toggle took effect, stays calm, never resets
++	 * or unloads the stack, and the monitor/helper vdevs survive intact.
++	 * Cost: the WiFi/share UI may show a fake "on" while nothing actually
++	 * happens - acceptable (the OPLUS share UI is already unreliable).
++	 * monstop deletes wlan0mon BEFORE its own svc wifi enable, so by then
++	 * no monitor adapter exists and this is a no-op; with no monitor
++	 * session it is also a no-op.
++	 */
++	if (id == WLAN_OFF_STR || id == WLAN_ON_STR ||
++	    id == WLAN_DISABLE_STR || id == WLAN_FORCE_DISABLE_STR) {
++		struct hdd_context *mon_ctx = cds_get_context(QDF_MODULE_ID_HDD);
++
++		if (mon_ctx && hdd_get_adapter(mon_ctx, QDF_MONITOR_MODE)) {
++			hdd_err("NETHUNTER-MON: swallowing framework WiFi stack reset (id=%d) while monitor active (faking success to keep framework calm; run monstop first)",
++				id);
++			return count;
++		}
++	}
++
+ 	switch (id) {
+ 	case WLAN_OFF_STR:
+ 		hdd_info("Wifi turning off from UI\n");
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
+index 5402d671..545ca3b1 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_p2p.c
+@@ -899,6 +899,29 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
+ 	if (wlan_hdd_is_mon_concurrency())
+ 		return ERR_PTR(-EINVAL);
+ 
++	/*
++	 * NETHUNTER guard (forward leg of monitor<->SAP mutual exclusion).
++	 * The monitor-injection path brings up a hidden raw-WMI STA helper
++	 * vdev (wma_inject_ensure_tx_vdev, firmware slot CFG_TGT_NUM_VDEV-2)
++	 * that is NOT registered in the host objmgr/policy_mgr, so the host
++	 * vdev allocator still treats that firmware slot as free. Starting a
++	 * SoftAP / P2P-GO (e.g. "share network to tablet" / hotspot) while
++	 * monitor is active makes the host re-assign that same firmware vdev
++	 * slot, and the WMI vdev_create collides with the live helper vdev ->
++	 * the firmware vdev state machine wedges and ONLY a cold reboot
++	 * recovers (host stop/reset cannot reach the firmware-only slot).
++	 * The reverse leg (adding monitor while a SAP/GO is up) is already
++	 * blocked by policy_mgr_check_mon_concurrency(); reject the forward
++	 * leg here, BEFORE hdd_open_adapter creates any vdev. Daily SoftAP
++	 * with no monitor session is unaffected. Run monstop before sharing.
++	 */
++	if ((mode == QDF_SAP_MODE || mode == QDF_P2P_GO_MODE) &&
++	    hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE)) {
++		hdd_err("NETHUNTER-MON: refusing %s(%d) while monitor/injection active (hidden-vdev slot collision would wedge WiFi); run monstop first",
++			qdf_opmode_str(mode), mode);
++		return ERR_PTR(-EBUSY);
++	}
++
+ 	if (!hdd_allow_new_intf(hdd_ctx, mode))
+ 		return ERR_PTR(-EOPNOTSUPP);
+ 
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+index 99fe9d4b..345c0e3b 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+@@ -43,7 +43,7 @@ int hdd_enable_monitor_mode(struct net_device *dev)
+ 	 * info level (not err) so it is greppable for version checks without
+ 	 * spamming the error log on every monitor start.
+ 	 */
+-	hdd_info("NETHUNTER-MON: enable_monitor_mode build=mon-inject-probe-r8");
++	hdd_info("NETHUNTER-MON: enable_monitor_mode build=r12-foolproof-guards");
+ 
+ 	vdev_id = cdp_get_mon_vdev_from_pdev(soc, OL_TXRX_PDEV_ID);
+ 	if (vdev_id < 0)
+-- 
+2.43.0
+

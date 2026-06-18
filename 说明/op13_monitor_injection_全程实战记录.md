@@ -6,7 +6,7 @@
 > 性质:本人设备授权渗透测试
 > 部署方式:KernelSU 模块热切 .ko(跑 OEM 原版内核,不刷完整 boot.img)
 > 编译命令:`./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf`(在 `/root/pt/kernel` 下跑)
-> **最终稳定版本**: r8.1 (补丁集 0001-0015, 2026-06-11) —— 在 r8(0014) 基础上根治了高频灌帧卡死，详见 §11.6
+> **最终稳定版本**: r12 (补丁集 0001-0016, 2026-06-18) —— 在 r8.1(0015) 基础上加防呆守卫(监听↔WiFi/热点/共享/投屏 互斥)，详见 §11.7；注入稳定性见 §11.6
 > **项目状态**: ✅ **已完成，生产就绪**
 > **后续探索**: r10(单播,失败) / r11(STA+MON并存,成功但未采用) —— 详见 §11.2-11.5
 > **稳定性修复**: r8.1(广播 deauth 高频灌帧卡死根治, 补丁 0015) —— 详见 §11.6
@@ -2081,6 +2081,97 @@ dmesg | grep NETHUNTER-INJ | grep -E "completion|reclaim|drop" | tail -30
 
 ---
 
+### 11.7 防呆守卫 —— monitor ↔ WiFi/热点/共享/投屏 互斥 (r12 / 补丁 0016) — 2026-06-18
+
+> r8.1 稳定后，一次误操作把"功能正确"和"系统健壮"的差距暴露得淋漓尽致。
+> 本节是"健壮性篇"：让监听与日常无线功能"先来后到"互斥，杜绝整机 WiFi
+> 被锁死到只能冷重启的灾难态。
+
+#### 事故现场
+
+监听/注入运行时，顺手开了 OPPO「与平板网络共享」。之后 monstop、monreset、
+KSU 里点"回退 stock 模块"——**共享全部不可用，且 WiFi 无法正常连接**。试遍所有
+软恢复手段都没用，**最后靠重启手机才恢复**。
+
+#### 根因：vdev slot 2 三方撞槽 + 非对称失明
+
+固件 vdev 槽位极有限：
+- **vdev 0** = STA / monitor
+- **vdev 2** = P2P-GO / SoftAP / **注入助手 vdev**（三方争抢同一槽）
+
+注入助手 vdev 是补丁用**裸 WMI**（`CFG_TGT_NUM_VDEV-2 = 2`）建的，**host 的
+objmgr / policy_mgr 完全看不见它**（称"非对称失明"）。于是当 monitor 在跑、助手
+vdev 活在 slot 2 时，host 侧并发检查**以为 slot 2 空闲**，放行了：
+- OPLUS「与平板网络共享」(P2P-GO，p2p0, vdevid-2, GroupCreatedState)
+- 个人热点 (SoftAP, wlan2 type AP)
+- Wi-Fi Direct 投屏（P2P，回退模式时）
+
+host 对同一槽发 WMI vdev_create → 与活着的助手 vdev 撞槽 → **固件 vdev 状态机
+wedge**。host 侧 stop/reset 够不到固件私有槽，所以软恢复全废，只有冷重启。
+
+> 关键澄清：OPLUS「投屏到平板」是**机会主义**的——两台都在同一路由器下时走
+> 普通 STA（不占 slot 2，安全）；不在同网络时回退 Wi-Fi Direct（占 slot 2，危险）。
+> 同一个"投屏"开关，两种载体，实测都抓到过。判断标准看 `iw dev` 有无 P2P/AP 口、
+> `dumpsys wifip2p` 是否 `GroupCreatedState`。
+
+#### 修复：host 侧三入口"先来后到"互斥（补丁 0016）
+
+| # | 文件:函数 | 行为 |
+|---|-----------|------|
+| ① | `wlan_hdd_p2p.c : __wlan_hdd_add_virtual_intf` | monitor 活跃时拒绝 SAP/P2P_GO 虚拟接口创建（热点/共享建组的**正向腿**），在 `hdd_open_adapter` 建 vdev 前返回 `-EBUSY` |
+| ② | `wlan_hdd_cfg80211.c : wlan_hdd_cfg80211_connect` | monitor 活跃时拒绝 STA 连接，返回 `-EBUSY` |
+| ③ | `wlan_hdd_main.c : wlan_hdd_state_ctrl_param_write` | monitor 活跃时**吞掉**框架对 WLAN 栈的复位（WLAN_OFF/ON/DISABLE/FORCE_DISABLE），`return count` 伪装成功 |
+
+**③ 的血泪教训**：最初 ③ 也返回 `-EBUSY`，结果 OPLUS `WifiSelfRecovery` 把它
+当成栈故障 → 升级到 `sys.oplus.wifi.coldreset` → **RMMOD qca 模块** → 把 monitor
+自己干掉（自毁）。所以这里必须 `return count` 假装成功，稳住框架不自愈。这道闸
+正是堵住"monitor 期间开 OPLUS 共享导致 wedge"的核心。
+
+**反向腿**（热点/共享/投屏已开时再 `monstart`）本就被内核
+`policy_mgr_check_mon_concurrency()` 拦下（`-EINVAL`/-22）。但内核层弹不出 UI，
+用户只看到光秃秃的 -22。故配套 `monitor_control.sh` 在 `iw add` 失败后读 dmesg
+真实并发原因，映射成中文提示：
+
+| dmesg 关键字 | 提示 | 实测 |
+|--------------|------|------|
+| `SAP concurrency` | 个人热点(SoftAP)开着，请先关闭 | ✅ |
+| `P2P GO/CLIENT concurrency` | 有活跃 P2P/Wi-Fi Direct 占用（共享/投屏） | ✅ |
+| `NAN concurrency` | NAN/Wi-Fi 感知占用 | 逻辑同上 |
+| (匹配不上) | 兜底：关热点/共享/投屏 + 给 dmesg 查法 | — |
+
+#### 配套脚本重构（同属 r12）
+
+- **monstop**：从盲目开 WiFi 改为**记忆/恢复进入前状态**——`monstart` 把
+  WiFi/scan 开关状态写进 `MON_FLAG`，`monstop` 按原状恢复（进监听前开着→恢复开，
+  关着→保持关）。并把固定 `sleep 5/12` 压到 `sleep 3 + 轮询`，耗时 17s→~6s。
+  monstop 走 idle-shutdown，能复位 STA/SoftAP，但**复位不了 P2P 共享**（脏状态
+  在内核驱动层）。
+- **monreset**：r8 的 vdev_restart 让原 monreset 失效，本版**重新定义为完整
+  reload**（`wlan_stack_control.sh nethunter` + 长间隔 enable 重试），专治
+  monitor 后 WiFi/热点/**共享**异常，~53s。要用平板共享前跑它。
+
+#### 验证
+
+- ③ count-fix：监听中开 OPLUS 共享/热点 → 表面操作但被静默挡住，monstop 后
+  设备不再 wedge（不用再冷重启）。
+- ①②：监听中开热点/连 WiFi → 静默失败，`dmesg | grep NETHUNTER-MON` 可见拒绝日志。
+- 反向提示：投屏(Wi-Fi Direct)开 → monstart → 命中 `P2P CLIENT concurrency` →
+  中文提示；个人热点开 → monstart → 命中 `SAP concurrency` → 中文提示。两支均
+  设备实测通过，且**投屏/热点本身不断、无 wedge**，纯优雅拒绝。
+
+#### 教训
+
+1. **"功能正确" ≠ "系统健壮"**。注入早能踢人了，但一个误触就能把整机 WiFi
+   锁死到冷重启——健壮性是独立的、必须补的一课。
+2. **裸 WMI 绕过 host 抽象 = 埋下非对称失明**。绕过 objmgr/policy_mgr 拿到的
+   隐藏 vdev，host 的并发保护对它失效，撞槽迟早爆。守卫本质是"替 host 把它看见"。
+3. **跟 OEM 自愈机制对抗，要顺毛而不是顶牛**。返回错误码触发 coldreset 自毁，
+   "假装成功"反而稳——堵框架的手要让框架觉得一切正常。
+4. **内核拦得住，不等于用户知道为什么**。-22 对用户毫无意义；提示信息要落到
+   "该去关哪个开关"，价值才兑现。
+
+---
+
 ## 12. 相关文档索引
 
 > 本目录（`oplus/说明/`）共 16 篇文档，按主题分类如下。
@@ -2112,15 +2203,17 @@ dmesg | grep NETHUNTER-INJ | grep -E "completion|reclaim|drop" | tail -30
 - **[op13_runtime_validation_checklist.md](op13_runtime_validation_checklist.md)** - 真机运行时验证清单
 
 ### 资源路径
-- 补丁集：`/root/pt/oplus/补丁/inject/`（**0001-0014**，含 README 应用说明）
+- 补丁集：`/root/pt/oplus/补丁/qca_inject/`（**0001-0016**，含 README 应用说明）
 - 代码仓库：`/root/pt/kernel/vendor/qcom/opensource/wlan/qcacld-3.0/`
 - 内存记录：`/root/.claude/projects/-root-pt/memory/nethunter-oneplus13-port.md`
 
 ### 关键 git 锚点
 - 基线：`0de73fc2`（一加13纯净同步代码）
-- r8 稳定版：`ae508b19`（**最终采用** = 补丁 0014）
+- r8 稳定版：`ae508b19`（补丁 0014）
+- r8.1 注入稳定：补丁 0015（广播 deauth 高频灌帧根治，§11.6）
 - r10 单播实验：已记录但未采用（§11.2）
 - r11 STA+MON 并存：已记录但未采用（§11.3）
+- **r12 防呆守卫**：`bd3946d7`（**最终采用** = 补丁 0016，监听↔WiFi/热点/共享/投屏 互斥 + build marker→r12，§11.7）
 
 ### 实用排查备忘
 - **airodump 在 5G 频道"跳回 2.4G"不是 bug**：airodump 默认只跳频 2.4G(CH1-14)，会覆盖预设的 5G 频道。

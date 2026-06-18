@@ -71,6 +71,12 @@ mon_on() {
   log_i "[monitor] using $PHY"
 
   iw dev wlan0mon del 2>/dev/null
+  # Remember the pre-monitor WiFi/scan state so monstop can restore it instead of
+  # blindly turning WiFi on (if WiFi was off before monstart, leave it off).
+  WIFI_WAS_ON=0
+  cmd wifi status 2>/dev/null | grep -qi "Wifi is enabled" && WIFI_WAS_ON=1
+  SCAN_WAS_ON=0
+  [ "$(settings get global wifi_scan_always_enabled 2>/dev/null)" = "1" ] && SCAN_WAS_ON=1
   svc wifi disable
   sleep 2
   settings put global wifi_scan_always_enabled 0
@@ -80,9 +86,20 @@ mon_on() {
   ADD=$(iw "$PHY" interface add wlan0mon type monitor 2>&1)
   if [ $? -ne 0 ] || ! iw dev wlan0mon info >/dev/null 2>&1; then
     log_i "[monitor] add wlan0mon FAILED: $ADD"
-    if dmesg 2>/dev/null | tail -60 | grep -q "P2P CLIENT concurrency"; then
-      log_i "[monitor] >>> 有活跃 P2P/Wi-Fi Direct 占用. 请关闭[手机->平板网络共享/跨设备互联/投屏]后重试."
-    fi
+    # iw only surfaces a bare -EINVAL (-22); the real reason is logged to dmesg by
+    # policy_mgr_check_mon_concurrency(). Map it to a human hint so the user knows
+    # WHAT to turn off (hotspot vs tablet-share vs NAN), not just "-22".
+    REASON=$(dmesg 2>/dev/null | tail -80 | grep "cannot add monitor mode, due to" | tail -1)
+    case "$REASON" in
+      *"SAP concurrency"*)
+        log_i "[monitor] >>> 个人热点(SoftAP)开着. 请先关闭[设置->个人热点]后重试." ;;
+      *"P2P GO concurrency"*|*"P2P CLIENT concurrency"*)
+        log_i "[monitor] >>> 有活跃 P2P/Wi-Fi Direct 占用. 请关闭[手机->平板网络共享/跨设备互联/投屏]后重试." ;;
+      *"NAN concurrency"*)
+        log_i "[monitor] >>> NAN/Wi-Fi 感知占用. 请关闭附近分享/Wi-Fi 感知后重试." ;;
+      *)
+        log_i "[monitor] >>> 可能有 WiFi 并发占用(SAP/P2P/NAN). 关掉热点/共享/投屏后重试; 详情: dmesg | grep -i 'add monitor mode'" ;;
+    esac
     settings put global wifi_scan_always_enabled 1
     cmd wifi set-scan-always-available enabled >/dev/null 2>&1 || true
     svc wifi enable
@@ -95,7 +112,7 @@ mon_on() {
   else
     log_i "[monitor] no channel locked -> capture/scan only (airodump can hop). For injection pass a channel."
   fi
-  : > "$MON_FLAG"
+  printf 'WIFI_WAS_ON=%s\nSCAN_WAS_ON=%s\n' "$WIFI_WAS_ON" "$SCAN_WAS_ON" > "$MON_FLAG"
   log_i "[monitor] ON. iface=wlan0mon $(iw dev wlan0mon info 2>/dev/null | awk '/channel/{print $0}')"
   log_i "  capture: airodump-ng wlan0mon | tcpdump -i wlan0mon"
   log_i "  inject : aireplay-ng -9 -a <BSSID> wlan0mon  (dmesg|grep NETHUNTER-INJ)"
@@ -103,48 +120,97 @@ mon_on() {
 }
 
 mon_off() {
+  # Fast exit: idle-shutdown path. This cleanly restores STA WiFi and SoftAP
+  # hotspot (their DP is reset by the idle-shutdown). It does NOT restore the
+  # OPLUS "share to tablet" P2P-GO: during monitor the injection helper vdev
+  # grabbed vdev slot 2 (the P2P-GO slot) and that dirty state lives in the
+  # kernel driver -- only a full module reload clears it. So if you need the
+  # tablet share after monitoring, run 'monreset' (full reload). Keeping monstop
+  # fast means you don't pay the ~60s reload on every exit, only when you
+  # actually want the share. See mon_reset() below.
+  # Restore the pre-monitor state recorded by mon_on (missing/old MON_FLAG ->
+  # default to "was on" so behaviour stays backward-compatible).
+  WIFI_WAS_ON=$(grep -oE 'WIFI_WAS_ON=[01]' "$MON_FLAG" 2>/dev/null | cut -d= -f2)
+  SCAN_WAS_ON=$(grep -oE 'SCAN_WAS_ON=[01]' "$MON_FLAG" 2>/dev/null | cut -d= -f2)
+  [ -z "$WIFI_WAS_ON" ] && WIFI_WAS_ON=1
+  [ -z "$SCAN_WAS_ON" ] && SCAN_WAS_ON=1
+
   ip link set wlan0mon down 2>/dev/null || true
   iw dev wlan0mon del 2>/dev/null || true
-  sleep 5
-  svc wifi enable
-  sleep 12
-  settings put global wifi_scan_always_enabled 1
-  cmd wifi set-scan-always-available enabled >/dev/null 2>&1 || true
+  # Wait for the forced idle-shutdown to fire + stop_modules to finish. Measured:
+  # it triggers ~1s after the del; the hard floor is the 200ms forced-shutdown
+  # schedule window -- if 'svc wifi enable' races in before that, it cancels the
+  # shutdown and the DP isn't reset. 3s safely covers trigger + stop_modules and
+  # is well past the 200ms window.
+  sleep 3
+  # Only bring WiFi back if it was on before monstart; otherwise leave it off and
+  # let the user turn it on themselves.
+  if [ "$WIFI_WAS_ON" = "1" ]; then
+    svc wifi enable
+    # WiFi comes back fast (measured: enabled ~1s, associated ~3s) -- poll
+    # instead of a fixed wait.
+    i=0
+    while [ "$i" -lt 10 ]; do
+      cmd wifi status 2>/dev/null | grep -qi "Wifi is enabled" && break
+      sleep 1; i=$((i + 1))
+    done
+    # Small settle before touching scan-always: too early lets the framework open
+    # an iface during the idle-restart window (Phase 1c issue).
+    sleep 3
+  fi
+  # Restore scan-always to its pre-monitor value (independent of WiFi on/off).
+  if [ "$SCAN_WAS_ON" = "1" ]; then
+    settings put global wifi_scan_always_enabled 1
+    cmd wifi set-scan-always-available enabled >/dev/null 2>&1 || true
+  fi
   rm -f "$MON_FLAG"
-  log_i "[monitor] OFF. normal WiFi restored."
+  if [ "$WIFI_WAS_ON" = "1" ]; then
+    log_i "[monitor] OFF. WiFi + hotspot restored (pre-monitor state)."
+  else
+    log_i "[monitor] OFF. WiFi left OFF (was off before monstart; turn it on yourself)."
+  fi
+  log_i "[monitor] 注意: 要用「与平板网络共享」请先运行 monreset (完整复位 P2P, 约60s)."
   return 0
 }
 
 mon_reset() {
-  ch_or_freq="$1"
-  if [ ! -f "$MON_FLAG" ]; then
-    log_i "[monitor] not in monitor mode, use 'monstart' first"
-    return 1
-  fi
-  log_i "[monitor] resetting wlan0mon (down->del->add->up)..."
-  PHY=$(get_phy)
-  [ -z "$PHY" ] && PHY=$(cat /sys/class/net/wlan0mon/phy80211/name 2>/dev/null)
-  [ -z "$PHY" ] && { log_i "[monitor] cannot find phy"; return 1; }
-
-  ip link set wlan0mon down 2>/dev/null
-  sleep 1
-  iw dev wlan0mon del 2>/dev/null
-  sleep 1
-
-  ADD=$(iw "$PHY" interface add wlan0mon type monitor 2>&1)
-  if [ $? -ne 0 ] || ! iw dev wlan0mon info >/dev/null 2>&1; then
-    log_i "[monitor] reset FAILED: $ADD"
-    rm -f "$MON_FLAG"
-    return 1
-  fi
-  ip link set wlan0mon up
-
-  if [ -n "$ch_or_freq" ]; then
-    freq=$(chan_to_freq "$ch_or_freq") || return 1
-    iw dev wlan0mon set freq "$freq" && log_i "[monitor] reset OK, locked ch/freq: $ch_or_freq -> $freq MHz" \
-      || log_i "[monitor] warn: set freq $freq failed"
+  # Full WLAN stack reload — recovery / un-wedge command.
+  #
+  # Use this when WiFi / hotspot / "share to tablet" misbehave after a monitor
+  # session, most importantly to make the OPLUS P2P tablet-share work again.
+  # Why a full reload (and not just monstop's idle-shutdown): during monitor the
+  # raw-WMI injection helper vdev occupies vdev slot 2 — the SAME firmware slot
+  # the P2P-GO share uses. After monitoring, that slot's state is left dirty in
+  # the KERNEL DRIVER. Tested escalation showed deleting wlan0mon, svc wifi
+  # disable/enable, and even restarting wificond/supplicant are all NOT enough;
+  # only unloading+reloading the qca/cfg80211/mac80211 modules clears it. That is
+  # exactly what the stack switch does. Works in any state (in monitor or not);
+  # it will leave monitor mode if active. ~60s (heavy reload + framework settle).
+  log_i "[monitor] RESET: full WLAN stack reload (fixes WiFi/hotspot/tablet-share after monitor, ~60s)..."
+  ip link set wlan0mon down 2>/dev/null || true
+  rm -f "$MON_FLAG"
+  sh "$MODDIR/wlan_stack_control.sh" nethunter
+  # The reload saw wifi/scan as disabled, so it won't re-enable them. After the
+  # heavy reload the framework/HAL needs a long settle window before
+  # 'svc wifi enable' takes effect; spamming enable every few seconds keeps
+  # resetting its init so it never completes -> enable once, wait patiently, then
+  # retry. Usually succeeds on the 1st or 2nd try.
+  i=0
+  while [ "$i" -lt 5 ]; do
+    svc wifi enable
+    sleep 15
+    if cmd wifi status 2>/dev/null | grep -qi "Wifi is enabled"; then
+      break
+    fi
+    log_i "[monitor] wifi still settling, retry enable ($i)..."
+    i=$((i + 1))
+  done
+  settings put global wifi_scan_always_enabled 1
+  cmd wifi set-scan-always-available enabled >/dev/null 2>&1 || true
+  if cmd wifi status 2>/dev/null | grep -qi "Wifi is enabled"; then
+    log_i "[monitor] RESET done. WiFi + hotspot + tablet-share restored."
   else
-    log_i "[monitor] reset OK (no channel lock, capture-only mode)"
+    log_i "[monitor] RESET: wifi still down, run 'svc wifi enable' manually."
   fi
   return 0
 }
@@ -152,7 +218,7 @@ mon_reset() {
 case "$1" in
   on|enable|start)  shift; mon_on "$1" ;;
   off|disable|stop) mon_off ;;
-  reset|restart)    shift; mon_reset "$1" ;;
+  reset|restart)    mon_reset ;;
   status|"")
     if [ -f "$MON_FLAG" ] && iw dev wlan0mon info >/dev/null 2>&1; then
       log_i "[monitor] status: ON"; iw dev wlan0mon info 2>/dev/null | grep -E "Interface|type|channel"
@@ -160,5 +226,5 @@ case "$1" in
       log_i "[monitor] status: OFF"
     fi
     ;;
-  *) echo "usage: $0 [on [freq]|off|reset [freq]|status]" >&2; exit 1 ;;
+  *) echo "usage: $0 [on [chan/freq]|off|reset|status]" >&2; exit 1 ;;
 esac

@@ -8,6 +8,7 @@
 - ✅ **帧注入**：mac80211 + qcacld 注入通路，支持 aireplay-ng
 - ✅ **广播 deauth**：通过 WMI test flag 绕过固件限制，稳定踢出全部 client
 - ✅ **vdev_restart 优化**：解决 AP 扫描时递减问题
+- ✅ **防呆守卫 (r12)**：monitor 活跃时拒绝 WiFi 连接 / 热点 / 共享 / 投屏，杜绝 vdev slot 撞槽导致的整机 WiFi wedge（须冷重启）
 
 ## 适用基线
 
@@ -20,14 +21,14 @@
 
 ## 应用步骤
 
-从基线 `0de73fc2` 开始，按序应用全部 15 个补丁：
+从基线 `0de73fc2` 开始，按序应用全部 16 个补丁：
 
 ```bash
 cd /path/to/oneplus13-kernel
 git checkout 0de73fc2   # 或你的基线 commit
 
-# 应用 0001-0015（完整功能 + 稳定性修复）
-for i in $(seq 1 15); do
+# 应用 0001-0016（完整功能 + 稳定性修复 + 防呆守卫）
+for i in $(seq 1 16); do
   git am /path/to/补丁/inject/$(printf "%04d" $i)-*.patch
 done
 ```
@@ -38,6 +39,7 @@ done
 - `0013`：广播 deauth 注入（关键功能）
 - `0014`：r8 - vdev_restart 优化
 - `0015`：r8.1 - 注入稳定性修复（超时回收 + generation 防 UAF）**强烈建议应用**
+- `0016`：r12 - 防呆守卫（monitor ↔ WiFi/热点/共享/投屏 互斥）**强烈建议应用**
 - `0004` 包含**跨仓库改动**：
   - `vendor/qcom/opensource/wlan/qcacld-3.0/` （驱动层）
   - `kernel_platform/msm-kernel/net/mac80211/` 等（内核侧）
@@ -49,7 +51,8 @@ done
 应用完成后，最终 HEAD 应该是：
 
 ```bash
-git log --oneline -5
+git log --oneline -6
+# (0016) peach_v2: r12 - 防呆守卫(monitor <-> WiFi/热点/共享/投屏 互斥)
 # (0015) peach_v2: r8.1 - 注入稳定性修复(超时回收 + generation 防 UAF)
 # ae508b19 peach_v2: r8 - vdev_restart优化解决AP递减问题
 # ca172e31 NETHUNTER: Enable broadcast deauth injection via WMI test flag
@@ -66,6 +69,19 @@ git log --oneline -5
 | 0013 | 广播 deauth 注入 | ✅ 已验证，可踢出全部 client |
 | 0014 | r8 - vdev_restart 优化 | ✅ 稳定 |
 | 0015 | r8.1 - 注入稳定性修复 | ✅ 已验证，连续灌 1 万+帧无卡死 |
+| 0016 | r12 - 防呆守卫（监听↔WiFi/热点/共享/投屏 互斥） | ✅ 已验证，SAP/P2P 两支提示设备实测通过 |
+
+## 防呆守卫 (0016 / r12)
+
+monitor/注入运行时，注入助手裸 WMI vdev 占住固件 **vdev slot 2**（与 P2P-GO/SoftAP 同槽，且 host objmgr/policy_mgr 看不见 = 非对称失明）。此时若开热点 / OPLUS 平板共享 / Wi-Fi Direct 投屏，host 重分配同槽 → WMI vdev_create 撞槽 → 固件 vdev 状态机 wedge，monstop/reset/回退 stock 全部无效，**只能冷重启恢复**。0016 在 host 侧三入口做"先来后到"互斥：
+
+| 入口 | 函数 | 行为 |
+|------|------|------|
+| 热点/共享建组(正向腿) | `__wlan_hdd_add_virtual_intf` | monitor 活跃时拒绝 SAP/P2P_GO 接口创建，返回 -EBUSY |
+| WiFi 连接 | `wlan_hdd_cfg80211_connect` | monitor 活跃时拒绝 STA 连接，返回 -EBUSY |
+| 框架栈复位 | `wlan_hdd_state_ctrl_param_write` | monitor 活跃时**吞掉**复位(return count 伪装成功)——返回 -EBUSY 会触发 OPLUS coldreset→RMMOD 自毁，必须假装成功 |
+
+反向腿（热点/共享/投屏在时加 monitor）由内核 `policy_mgr_check_mon_concurrency` 拦截（-EINVAL）；配套 `monitor_control.sh` 读 dmesg 真实并发原因映射成中文提示（SAP→个人热点 / P2P→共享/投屏 / NAN→感知）。日常无 monitor 时所有路径不受影响。
 
 ## 使用示例
 
@@ -146,7 +162,7 @@ dmesg | grep -iE "inject|deauth" | tail -20
 
 ---
 
-**最后更新**：2026-06-11  
+**最后更新**：2026-06-18  
 **测试设备**：OnePlus 13 (CPH2649) 16.0.7.201(EX01)  
 **内核版本**：Linux 6.6 + QCOM AU_LINUX_KERNEL.PLATFORM.4.0.R1  
-**稳定版本**：r8.1 (0015) - 广播 deauth 稳定性已根治，连续灌 1 万+帧、连测七八次无卡死
+**稳定版本**：r12 (0016) - 防呆守卫，监听↔WiFi/热点/共享/投屏 互斥已设备实测；注入稳定性见 r8.1 (0015)
