@@ -7,8 +7,8 @@
 ```
 oplus/
 ├── 补丁/                 # 内核补丁
-│   ├── qca_inject/           # 【主线】内置 WiFi monitor + 注入补丁集（0001-0015）
-│   │   ├── 0001-0015.patch   # monitor + inject + 稳定性修复
+│   ├── qca_inject/           # 【主线】内置 WiFi monitor + 注入补丁集（0001-0017）
+│   │   ├── 0001-0017.patch   # monitor + inject + 稳定性 + 防呆守卫(r12) + 选槽(r13)
 │   │   └── README.md         # 补丁应用说明
 │   ├── 1.op13_bt_arsenal_msm_only.patch    # 蓝牙 arsenal 工具支持
 │   ├── 2.op13_usb_arsenal_gki.patch        # USB arsenal 通用支持
@@ -51,6 +51,17 @@ oplus/
    - 根因：固件静默丢弃约 3-6% 注入帧（不回完成事件）
    - 方案：超时回收（timeout-reclaim）+ desc_id 内嵌 generation 防 UAF
    - 实战验证：连续灌 2.8 万+帧无卡死，连测七八次稳定，发包后 0-4s 必断
+
+6. **防呆守卫**（0016 r12）
+   - monitor 活跃时三入口互斥：拒绝 WiFi 连接 / 拒绝建热点·共享 / 吞掉框架复位
+   - 防止 vdev slot 撞槽把整机 WiFi 弄 wedge（旧版须冷重启）
+   - SAP / P2P 两支中文提示设备实测通过
+
+7. **注入助手改占 vdev slot 3**（0017 r13）
+   - 把裸 WMI 助手 vdev 从 slot 2 挪到顶部空槽，避让 P2P-GO/SoftAP
+   - 监听+共享物理无法共存（单天线），r13 不防崩溃而是让崩溃可恢复：
+     崩 → SSR 自恢复 + `monreset` 必恢复 → **永不需冷重启**（"怎么都弄不死"）
+   - 净室复刻验证：干净源码 + 0001-0017 套出的源码与设备实测源码逐字节一致
 
 ### ⚠️ 已验证但未采用
 

@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Fri, 19 Jun 2026 13:30:00 +0000
+Subject: [PATCH] peach_v2: r13 - inject helper vdev 改占 slot 3 (避让 P2P-GO/SAP)
+
+监听+注入运行时, 注入 helper(裸 WMI vdev) 原本选 CFG_TGT_NUM_VDEV-2=slot2,
+与 SoftAP / OPLUS"与平板网络共享"(P2P-GO) 抢同一 FW slot。helper 对 host
+objmgr 不可见(非对称失明) -> host 在 slot2 重发 WMI vdev_create 撞上活着的
+helper -> 固件 vdev 状态机 fault (MHI SYS ERROR / RAMDUMP, 实测 2026-06-19)。
+
+监听与 P2P 协商物理上无法共存(单射频), 崩溃无法根除; 但把 helper 挪到最高
+槽 CFG_TGT_NUM_VDEV-1(slot3) 让出 slot2 后, SSR 恢复时 vdev 账目不再缠绕
+(旧版崩后狂刷 can't find vdev_id 2 / vdev 255 -> scan=0 wedge 必须重启;
+新版崩后射频存活 -> monreset 必能恢复 WiFi+共享, 永不重启)。设备实测验证。
+
+build marker -> r13-helper-slot3 (便于 dmesg 验明加载版本)。
+---
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index b28fef9..1181c0c 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -3483,10 +3483,18 @@ QDF_STATUS wma_inject_ensure_tx_vdev(uint8_t mon_vdev_id, uint32_t chanfreq)
+ 	g_wma_inj.dropped = 0;
+
+ 	/*
+-	 * Find an unused vdev slot, skipping the monitor vdev. Ceiling is
+-	 * CFG_TGT_NUM_VDEV-2 so we never exceed the FW vdev array.
++	 * Find an unused vdev slot, skipping the monitor vdev, picking the
++	 * HIGHEST free slot first. Ceiling is CFG_TGT_NUM_VDEV-1 (top slot)
++	 * instead of -2: the raw-WMI helper is invisible to host objmgr, so
++	 * if it sits on the low slot (vdev 2) that the framework hands to a
++	 * SoftAP / OPLUS P2P-GO "share-to-tablet", the host re-issues
++	 * WMI vdev_create on that same FW slot -> slot collision -> the FW
++	 * vdev state machine faults (MHI SYS ERROR / RAMDUMP, observed
++	 * 2026-06-19). Parking the helper on the top slot leaves the low
++	 * slots free for SAP/P2P-GO so they no longer collide. The loop walks
++	 * downward, so if the top slot is taken (e.g. NAN) it falls back.
+ 	 */
+-	fw_max_vid = CFG_TGT_NUM_VDEV - 2;
++	fw_max_vid = CFG_TGT_NUM_VDEV - 1;
+ 	if (fw_max_vid >= (int)wma->max_bssid)
+ 		fw_max_vid = (int)wma->max_bssid - 1;
+ 	for (i = fw_max_vid; i >= 0; i--) {
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+index 345c0e3..a367437 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c
+@@ -43,7 +43,7 @@ int hdd_enable_monitor_mode(struct net_device *dev)
+ 	 * info level (not err) so it is greppable for version checks without
+ 	 * spamming the error log on every monitor start.
+ 	 */
+-	hdd_info("NETHUNTER-MON: enable_monitor_mode build=r12-foolproof-guards");
++	hdd_info("NETHUNTER-MON: enable_monitor_mode build=r13-helper-slot3");
+
+ 	vdev_id = cdp_get_mon_vdev_from_pdev(soc, OL_TXRX_PDEV_ID);
+ 	if (vdev_id < 0)
