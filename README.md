@@ -23,6 +23,12 @@ oplus/
 > **两条线**：`qca_inject/` 是**内置 WiFi**（peach_v2 qcacld-3.0）的 monitor + 注入主线成果；
 > 顶层 `1~5.*.patch` 是**外置 USB 网卡 / 蓝牙**支持（RT3070L、ZD1201、BT/USB arsenal），互相独立、按需应用。
 
+> **重做线（2026-09）**：`补丁/native_global/` 是新的 peach_v2 原生全局监听实验线。
+> 它使用 `con_mode=4` 和 `wlan0`，取消隐藏 STA/helper vdev。必须保留旧的
+> `qca_inject/0001-add-qcacldko.patch` 构建接入补丁；不混用旧 `0002-0017` 驱动补丁。
+> 按 `补丁/native_global/README.md` 统一编译、strip 三模块后打包。当前实现作为真机验证起点，注入完成状态、丢 completion 恢复和退出后的
+> Wi-Fi/P2P 恢复仍需在 OnePlus 13 上验收。
+
 ## 功能实现
 
 ### ✅ 已完成并稳定

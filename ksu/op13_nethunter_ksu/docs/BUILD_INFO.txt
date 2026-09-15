@@ -1,27 +1,102 @@
-Remote host: 39.99.33.163:7222
-Remote tree: /root/oneplus13_src
+OnePlus 13 peach_v2 native global monitor - integrated build
 
-Relevant remote commits:
-- kernel_platform/msm-kernel: bb0d8f037ce5 wireless: enable rt3070 usb support
-- kernel_platform/msm-kernel: 056bfd3eaf88 wireless: add usb wifi injection driver tweaks
-- kernel_platform/common modules used for system_dlkm carry scmversion g9f334ee47b7f
+Package version: 2026.09.15-peach-native-global-v2
+Package versionCode: 2026091502
+Source: /root/pt/oneplus13-kernel-b @ 4d69a3ed9a176152e85580352723c308f29cbfcb
+Started UTC: 2026-09-15T17:30:02Z
+Completed UTC: 2026_09_15 17:42:02
+Target: sun perf, peach_v2, arm64 4 KiB
 
-Post-processing:
-- Bundled .ko files were copied to /tmp/op13_usb_arsenal_strip on the NUC
-- Stripped with llvm-objcopy --strip-debug from clang-r510928
-- Strip reduces size substantially, especially the bundled USB Wi-Fi modules
+Applied patches (in order):
+- qca_inject/0001-add-qcacldko.patch (build integration only)
+- native_global/0001-peach-v2-native-global-monitor.patch
 
-Bundled modules:
-- system_dlkm/lib/modules/ch341.ko
-- system_dlkm/lib/modules/pl2303.ko
-- vendor_dlkm/lib/modules/zd1201.ko
-- vendor_dlkm/lib/modules/rt2x00lib.ko
-- vendor_dlkm/lib/modules/rt2x00usb.ko
-- vendor_dlkm/lib/modules/rt2800lib.ko
-- vendor_dlkm/lib/modules/rt2800usb.ko
+Environment: RECOMPILE_KERNEL=1
+Command: ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+qcacld was built inside prepare_vendor.sh via build_module.sh,
+using the main KERNEL_KIT/build_opts.txt and WLAN platform symbol versions.
+No separately invoked qcacld build was used for this package.
+Kernel, WLAN platform, qcacld and WLAN installation phases all completed.
+The wrapper exit code was checked together with phase markers and artifacts.
+Full build log: /root/pt/op13-native-global-integrated-20260915/build.log
+Validation details: /root/pt/op13-native-global-integrated-20260915/validation.json
 
-Runtime dependency modules expected from the running ROM:
-- /system_dlkm/lib/modules/usbserial.ko
-- /system_dlkm/lib/modules/libarc4.ko
-- /system_dlkm/lib/modules/rfkill.ko
-- vendor side keeps using the stock WLAN/cnss stack and base modules such as qmi_helpers, mhi, pinctrl-msm, smem, smem-mailbox, qcom_iommu_util, ipam, sched-walt, qcom_va_minidump
+Input directory: kernel_platform/out/msm-kernel-sun-perf/dist
+All three raw artifacts match device/qcom/sun-kernel/vendor_dlkm byte for byte.
+Strip: llvm-strip --strip-debug on KSU copies; original build outputs preserved.
+KSU contains exactly cfg80211, mac80211 and qca_cld3_peach_v2.
+CNSS/platform modules were build dependencies only; the phone keeps its ROM copies.
+
+Module manifest:
+- vendor_dlkm/lib/modules/cfg80211.ko: 2070456 bytes
+  sha256 488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626
+  vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
+  depends rfkill
+  Cross-module CRC matches: 0
+  Kernel/WLAN platform CRC matches: 195
+  Other dependency symbols not checked: 0
+- vendor_dlkm/lib/modules/mac80211.ko: 1963888 bytes
+  sha256 6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d
+  vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
+  depends cfg80211,libarc4
+  Cross-module CRC matches: 104
+  Kernel/WLAN platform CRC matches: 317
+  Other dependency symbols not checked: 0
+- vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko: 19729664 bytes
+  sha256 2c3967194c5ba110bb146c383f5798afe81765f662c7c388dfe0cce1100cf44a
+  vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
+  depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
+  Cross-module CRC matches: 43
+  Kernel/WLAN platform CRC matches: 561
+  Other dependency symbols not checked: 27
+
+Validation scope:
+- ARM64 relocatable ELF; no .debug_* sections; import/export CRCs unchanged by stripping.
+- Native monitor TX symbols are present; shell syntax and patch reverse checks passed.
+- Symbol checks validate build consistency, not compatibility with an unconnected phone.
+- qcacld UTS_RELEASE lacks the Git suffix found in cfg80211/mac80211.
+- build_module.sh logs missing repo/SCM version information; vermagic has not been edited.
+- CONFIG_MODVERSIONS=y: same_magic() ignores UTS_RELEASE for modules with __versions.
+- Remaining vermagic flags and module_layout CRC match across all three modules.
+- Existing gki_system_dlkm_modules lookup warnings remain in the build log.
+- Device load, con_mode=4 RX, TX completion/over-air capture and recovery are unverified.
+- Native global monitor uses wlan0; no virtual STA/helper vdev is created.
+
+Completed build phases:
+kpl-time-check kernel start 17:30:03
+kpl-time-check kernel end 17:30:30
+kpl-time-check oplus DDK start 17:30:30
+kpl-time-check oplus DDK end 17:36:41
+kpl-time-check kernel copy start 17:36:41
+kpl-time-check kernel copy end 17:36:43
+kpl-time-check Preparing UAPI headers start 17:36:47
+kpl-time-check Preparing UAPI headers end 17:36:48
+kpl-time-check setting up Android tree start 17:36:48
+kpl-time-check setting up Android tree end 17:36:50
+kpl-time-check Building WLAN platform start 17:36:50
+kpl-time-check Building WLAN platform end 17:37:00
+kpl-time-check Building WLAN qcacld start 17:37:00
+kpl-time-check Building WLAN qcacld end 17:40:10
+kpl-time-check Installing WLAN modules start 17:40:10
+kpl-time-check Installing WLAN modules end 17:40:10
+kpl-time-check Compiling vendor devicetree start 17:40:10
+kpl-time-check Compiling vendor devicetree end 17:40:15
+kpl-time-check Merging vendor devicetree start 17:40:15
+kpl-time-check Merging vendor devicetree end 17:41:27
+
+Direct device monitor test (2026-09-16, serial 3B1F5QE8WTX87GZQ):
+- `monitor_control.sh on 153` returned success and exposed `wlan0` as monitor with radiotap link type.
+- `/system/bin/tcpdump -i wlan0` captured real 5765 MHz Beacon/RTS/CTS frames; one run captured 5 packets with 0 kernel drops, a second captured 3 Beacons with 0 drops.
+- `monitor_control.sh off` returned success; `wlan0` returned to managed and con_mode=0.
+- The installed KSU module reports all three core modules loaded. No virtual `wlan0mon` or helper STA was present.
+- A temporary raw-socket probe was sent to a fabricated BSSID and removed afterwards; this probe did not reach ndo_start_xmit, so it is not counted as injection validation. The earlier user aireplay log did reach `hdd_mon_hard_start_xmit` but lacked a locked channel and was correctly rejected.
+- A real `aireplay-ng`/NetHunter injection test with a locked channel remains the next runtime check; no packet was sent to the user's connected AP.
+
+Source commits (peach_v2):
+- d20c69af build: integrate WLAN qcacld modules into sun package
+- 2fa5ca62 wlan: add peach v2 native global monitor injection
+- Exact mail patches exported under /root/pt/oplus/补丁/native_global/exported/.
+
+Kali chroot injection check (2026-09-16):
+- `/data/local/nhsystem/kalifs` was not usable from the ADB/KSU shell namespace; toybox chroot resolved to the Android root, while the real `kali-arm64` root was denied with `Operation not permitted`.
+- `aireplay-ng` exists in the mounted Kali tree, but no locked-channel aireplay run was executed from that namespace. This is an environment limitation, not a successful injection result.

@@ -1,6 +1,6 @@
 id=op13_coloros16_nethunter
 name=OnePlus 13 ColorOS16 NetHunter
-version=2026.06.19-r13
-versionCode=20260619130
+version=2026.09.15-peach-native-global-v2
+versionCode=2026091502
 author=shandongtlb
-description=mode:stock | bind:disabled | fw:missing
+description=peach_v2 native global monitor (con_mode=4), no helper STA

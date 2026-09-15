@@ -7,7 +7,7 @@ print_modname() {
   ui_print "*******************************"
   ui_print " OnePlus 13 ColorOS16 NH Mod  "
   ui_print "*******************************"
-  ui_print "- Installs NetHunter USB add-on modules"
+  ui_print "- Installs peach_v2 native global monitor WLAN modules"
   ui_print "- Firmware staging at boot only"
   ui_print "- Bind and WLAN stack switches are manual"
 }

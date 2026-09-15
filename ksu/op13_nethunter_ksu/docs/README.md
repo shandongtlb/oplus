@@ -1,15 +1,18 @@
 # OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
-This package is built from the NUC outputs described in `说明/op13_kernel_work_report_zh.md`.
-All bundled `.ko` files were processed with `llvm-objcopy --strip-debug`.
+This package is the OnePlus 13 `peach_v2` native-global rebuild from `补丁/native_global/`.
+The three WLAN `.ko` files come from the integrated `sun perf` build with
+`qca_inject/0001-add-qcacldko.patch` applied, and are processed with `llvm-strip --strip-debug`.
 
 Build markers:
-- `vendor_dlkm` modules carry `vermagic: 6.6.89-android15-8-o-gbb0d8f037ce5-4k`
-- `system_dlkm` modules carry `vermagic: 6.6.89-android15-8-o-g9f334ee47b7f-4k`
+- `cfg80211/mac80211` release: `6.6.118-android15-8-o-g6028f47fadda-4k`
+- `qca_cld3_peach_v2` release: `6.6.118-android15-8-o-4k`
+- The SCM suffix differs; module version flags and checked symbol CRCs match. See `BUILD_INFO.txt`.
+- `system_dlkm` dependency modules remain ROM-provided and may use a different vermagic
 
 Included modules:
-- `system_dlkm`: `ch341.ko`, `pl2303.ko`
-- `vendor_dlkm`: `cfg80211.ko`, `mac80211.ko`, `qca_cld3_peach_v2.ko`, `zd1201.ko`, `rt2x00lib.ko`, `rt2x00usb.ko`, `rt2800lib.ko`, `rt2800usb.ko`
+- `vendor_dlkm`: `cfg80211.ko`, `mac80211.ko`, `qca_cld3_peach_v2.ko`
+- This native-global package contains only those three `.ko` files. CNSS and other platform dependencies come from the ROM; USB add-on modules are optional and are not included in this build.
 - Additional `.ko` files placed under `system_dlkm/lib/modules/` or `vendor_dlkm/lib/modules/` are auto-loaded after the known WLAN/USB dependency order is applied
 
 Boot-time behavior:
@@ -24,12 +27,12 @@ Manual controls:
   - if current mode is stock: enable bind mounts, then switch to the NetHunter WLAN stack
   - if current mode is NetHunter: restore the stock WLAN stack and remove bind mounts
 - **Monitor mode + injection** (requires nethunter stack active)
-  - `monstart [freq_MHz]` — enter monitor mode
+  - `monstart [freq_MHz]` — switch `wlan0` into native global monitor mode
     - no freq: capture/scan only (airodump can hop all channels)
-    - with freq (e.g. `monstart 5745`): locks channel + builds injection helper vdev
+    - with freq (e.g. `monstart 5745`): locks the global monitor channel for injection
   - `monstop` — leave monitor, restore normal WiFi
   - See `docs/QUICK_MONITOR_GUIDE.md` for usage + injection notes
-  - **Note**: OnePlus 13's qcacld FullMAC requires a locked channel for injection (FW rejects TX on monitor vdev); the patched driver auto-creates a hidden STA helper vdev when freq is set
+  - **Note**: the peach_v2 path uses Qualcomm global monitor mode (`con_mode=4`) and submits TX directly on the monitor vdev; no `wlan0mon` or hidden STA/helper vdev is created
 - `runtime_status.txt`
   - generated runtime snapshot in the installed module directory
 - `show_status.sh`
