@@ -26,8 +26,7 @@ oplus/
 > **重做线（2026-09）**：`补丁/native_global/` 是新的 peach_v2 原生全局监听实验线。
 > 它使用 `con_mode=4` 和 `wlan0`，取消隐藏 STA/helper vdev。必须保留旧的
 > `qca_inject/0001-add-qcacldko.patch` 构建接入补丁；不混用旧 `0002-0017` 驱动补丁。
-> 按 `补丁/native_global/README.md` 统一编译、strip 三模块后打包。当前实现作为真机验证起点，注入完成状态、丢 completion 恢复和退出后的
-> Wi-Fi/P2P 恢复仍需在 OnePlus 13 上验收。
+> 按 `补丁/native_global/README.md` 统一编译、strip 三模块后打包。当前实现已加入 sam 验证过的 `MGMT_TX_USE_INCORRECT_KEY` 原生 monitor TX flag；设备端 RX/恢复已验证，带锁信道的 Kali aireplay completion 仍待在可用 chroot 会话中验收。
 
 ## 功能实现
 
@@ -203,3 +202,6 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 **最后更新**：2026-06-11  
 **当前稳定版本**：r8.1（广播 deauth 高频灌帧卡死已根治）  
 **补丁集版本**：0001-0015
+
+
+当前原生全局线的 KSU 包：`ksu/op13_nethunter_ksu-peach-native-global-v3-integrated-r4.zip`（SHA256 见同名 `.zip.sha256`）。
