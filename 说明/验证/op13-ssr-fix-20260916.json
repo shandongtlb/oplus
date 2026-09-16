@@ -1,0 +1,97 @@
+{
+  "base": "4d69a3ed9a176152e85580352723c308f29cbfcb",
+  "source_commit": "30426bf8a3e1b57596ee741086e2c491617c58d1",
+  "head_tree": "a3215426a531edd58dd9636b262da0296bac76e4",
+  "mail_patch_count": 13,
+  "replay_trees": {
+    "mail": "a3215426a531edd58dd9636b262da0296bac76e4",
+    "combined": "a3215426a531edd58dd9636b262da0296bac76e4"
+  },
+  "match": true,
+  "method": "isolated temporary index, git apply --cached; full tree comparison; no build",
+  "build_started": false,
+  "device_validated": false,
+  "host_checks": {
+    "at": "2026-09-16T17:32:55.294948+00:00",
+    "results": [
+      {
+        "test": "test_inject_recovery.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_inject_tx_status.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_mode_handoff.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_channel.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_channel_alloc.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_channel_serialization.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_host_queue.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_radiotap.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_restore_result.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_ssr_rebuild.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_ssr_stop.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_monitor_wext.py",
+        "returncode": 0
+      },
+      {
+        "test": "test_native_injection.py",
+        "returncode": 0
+      }
+    ],
+    "scope": "host regression only; no unified kernel build or device operations",
+    "files": {
+      "core/hdd/inc/wlan_hdd_main.h": "c56f8ba9a8655a9636606726fd56eef5971fd2e18f9b29ce69f13bab0ad72b9f",
+      "core/hdd/src/wlan_hdd_main.c": "f8f878718f4ec448b3d5dae880ff3afa4adc66db235fdcd7f8759b2de7d108c4",
+      "core/hdd/src/wlan_hdd_driver_ops.c": "5b738935011838f3d339d3cd32d9653ff39f30bbb84077400c0e218b143eec92",
+      "tests/test_inject_recovery.py": "1857a91f95d6ba1ba4ed10e0852a0aed1ddcb96477a73ab03c47ebbd5bc1b027",
+      "tests/test_monitor_ssr_rebuild.py": "74afc51c41203843fa0fd0121e780f79e8b1b2f6ffc03f8cdd3fdf09bede93e2",
+      "tests/test_monitor_ssr_stop.py": "d558956f472ba6ebb47e5c21961dcd831600088a81fbcf928b7f9b7262e88386",
+      "docs/peach-native-injection.md": "ba95d1db890ae725075a366383c65e44226882c3b91a5b16d36783eb7b65cb36"
+    },
+    "build_started": false,
+    "device_operations": false
+  },
+  "patch_sha256": {
+    "exported/0013-monitor-ssr-rebuild.patch": "8b2783c7a78a9c70fc689a1d53fd1ec0c2f7c28801f99d8000799cabe0db5c83",
+    "0001-peach-v2-native-global-monitor.patch": "c539c1ef09cc68390eb8350894f698ea2f8caa048108ce39db2025da606ab89c"
+  },
+  "checkpatch": {
+    "options": [
+      "--no-tree",
+      "--terse",
+      "--no-signoff"
+    ],
+    "returncode": 1,
+    "output": "/root/pt/oplus/\u8865\u4e01/native_global/exported/0013-monitor-ssr-rebuild.patch:451: WARNING: added, moved or deleted file(s), does MAINTAINERS need updating?\ntotal: 0 errors, 1 warnings, 712 lines checked\n",
+    "note": "Only new-file MAINTAINERS advisory remains; no source errors. DCO sign-off policy is not assessed."
+  }
+}

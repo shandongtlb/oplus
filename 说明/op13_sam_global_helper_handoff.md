@@ -272,3 +272,28 @@ monitor.center_freq1(offset16)会被station.roam_profile.SSIDs.SSIDList覆盖；
 持久证据见[摘要](验证/op13-v7-extended-20260916.json)，原始证据在
 `/root/pt/op13-v7-extended-20260916/`。本轮未改驱动、构建或重打包；
 内核HEAD仍524a92c0，正式邮件补丁仍至0012。
+
+## SSR 源码修复完成，待完整构建和真机验证
+
+用户随后要求“继续修ssr”，源码已提交为`30426bf8a3e1b57596ee741086e2c491617c58d1`。
+继续保留sam的helper/队列/回调与DMA生命周期，修正其前面的peach监听重建：
+
+- monitor context从station/AP union独立出来，保留所有link的freq/width/center/PHY。
+- 全局SSR重建依次创建vdev、关闭idle PS/PS/WoW、注册RX、启用DP monitor、恢复
+  频道及总线策略。分阶段报错，全部成功才允许后续TX restore；中心频率也需匹配。
+- STA共用初始化不覆盖monitor WEXT handlers；宽信道恢复消费丢弃路径，不创建TX
+  helper；IFF_UP原本关闭时保留主机暂停状态。
+- FW down时不等不可能返回的monitor UP/STOP确认，保留SME会话清理、引用与正常
+  vdev销毁。发送请求入队失败也不等待；没有放宽DMA回收边界。
+
+13项主机ASan/UBSan检查通过。新增回归提取生产context结构与STA初始化，旧union
+负向对照实际触发频道参数断言；还覆盖两link、20/40/80/160、无频道、恢复各阶段
+失败、WEXT、固件停止/活动/请求失败，以及TX恢复门槛与暂停接口。固件/DP为桩，
+不能替代上机。运行记录在`/root/pt/op13-ssr-fix-20260916/`。
+
+正式补丁新增`0013-monitor-ssr-rebuild.patch`，series及合并补丁同步。两条路线
+从4d69a3ed重放后完整tree都为`a3215426a531edd58dd9636b262da0296bac76e4`，
+等于源码HEAD。持久证据见[SSR修复校验](验证/op13-ssr-fix-20260916.json)。
+本轮没有完整构建、打包、部署或手机操作，已交付v7 ZIP哈希不变且不含修复。
+下一步经用户明确启动后仅进行一轮统一构建；结束先报告并停下。之后再strip/打包、
+上机先验空闲SSR，再验带流量SSR、WEXT/RX/宽信道队列和普通Wi-Fi恢复。

@@ -4,13 +4,15 @@
 （`con_mode=4`）及原生 `wlan0` monitor vdev。2026-09-16 按用户要求，
 以 sam 完整实现为主要依据：monitor 负责 RX/主机所有权，内部 STA helper 负责 TX。
 全局监听不要求直接由 monitor vdev 发包；旧 oplus 补丁仅作参考。
-当前为 v7：在 v6 helper 实现上接入 sam WEXT 兼容，并修复宽信道 RX-only 下
+已交付包为 v7：在 v6 helper 实现上接入 sam WEXT 兼容，并修复宽信道 RX-only 下
 主机 qdisc 留帧后跨频道补发。2026-09-16 真机三轮指定 AP Probe 均为 30/30，
 不加 `--ignore-negative-one`；40/80 MHz 留帧复现和 20 MHz 正向对照均通过。
 启停恢复、换频道、普通 Wi-Fi 和 128 帧短突发通过。随后10分钟跳频通过，
 单次空闲SSR自动恢复失败，160 MHz仅配置成功、RX未验收。
 详见 [v7 真机报告](../../说明/op13_v7_runtime_20260916.md) 和
 [专项结果与SSR定位](../../说明/op13_v7_extended_20260916.md)。
+当前源码另含0013 SSR重建修复，提交`30426bf8`，尚未完整构建或真机验收，
+已交付v7不含该修复。主机检查和补丁重放见[校验记录](../../说明/验证/op13-ssr-fix-20260916.json)。
 
 ## 应用与统一编译
 
@@ -25,7 +27,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 第一项只接入 `prepare_vendor.sh` 的 WLAN 统一构建，必需保留。第二项是当前
 原生全局实现的合并 diff。不要叠加旧 `qca_inject/0002-0017`。
 
-也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十二个邮件补丁。
+也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十三个邮件补丁。
 这与上面的两项应用方式二选一。对应源码提交：
 
 - `d20c69af`：WLAN 统一构建接入。
@@ -40,14 +42,17 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 - `cd811a61`：记录 v6 用户真机 Probe 成功与验证边界，仅修改文档。
 - `c79b6f65`：sam WEXT handlers/频道确认与主机 qdisc 切换边界；完整保留 v7 构建快照的 11 个文件。
 - `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
+- `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；待构建/真机验证。
 
 v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
 不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
-当前十二封邮件补丁和两项合并应用方案已从基线用隔离 index 重放，完整 tree
-均为 `422e8a00abf0521a986311b445c014a946a822ef`，与 `524a92c0` 一致。
-证据见 `op13-wext-qdisc-20260916/patch-replay-v7.json`。
+v7的十二封邮件补丁曾重放到`422e8a00abf0521a986311b445c014a946a822ef`。
+当前含0013的十三封邮件补丁和两项合并应用方案已从基线用隔离index重放，完整tree
+均为`a3215426a531edd58dd9636b262da0296bac76e4`，与`30426bf8`一致。
+证据见`op13-ssr-fix-20260916/patch-replay.json`。
 可随仓库保存的摘要见 [v7 收尾校验记录](../../说明/验证/op13-v7-closeout-20260916.json)。
-若已应用旧 v6 至 0010，仅追加 0011、0012；不要在旧补丁上重复叠加合并补丁。
+若已应用旧v6至0010，追加0011–0013；已应用v7至0012，只追加0013。
+不要在旧补丁上重复叠加合并补丁。
 
 构建日志必须包含 kernel、WLAN platform、WLAN qcacld、Installing WLAN modules
 及 DT 合并完成阶段；外层脚本退出码不能单独证明内部成功。
@@ -87,8 +92,10 @@ qcacld Build ID 为 `6f765b5dc0aeaafd1b5c71d23b95ca612ca153dd`，三模块安装
 WEXT 兼容和 RX-only qdisc 两项已修复并通过针对性真机回归。随后601.3秒完成
 517个频道阶段、6864帧，宽信道1768帧无跨频补发。backpressure仍0，未覆盖
 NETDEV_TX_BUSY、并发换频或长时间耐久性；160 MHz RX仍缺空口证据。
-空闲SSR暴露monitor重建-22和RX恢复缺口，完整退出重进可恢复。源码定位包括
-station初始化覆盖monitor union及SSR遗漏DP monitor启用；本补丁尚未修复。
+空闲SSR暴露monitor重建-22和RX恢复缺口，完整退出重进可恢复。0013将monitor
+context移出station union，补DP monitor/省电恢复，并阻止失败后的TX恢复；还保留
+monitor WEXT，跳过固件已停时的UP/STOP等待。13项主机检查通过，旧union负向对照
+可复现参数覆盖；这些修复尚未构建/上机，v7包仍有已记录的SSR问题。
 
 ### WEXT 兼容实现的来源
 

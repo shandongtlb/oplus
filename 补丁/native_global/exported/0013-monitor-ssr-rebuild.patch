@@ -1,0 +1,792 @@
+From 30426bf8a3e1b57596ee741086e2c491617c58d1 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 17:36:05 +0000
+Subject: [PATCH] wlan: restore monitor context and RX across global SSR
+
+Keep saved monitor channels outside the STA session union. Rebuild DP
+monitor and power policy before TX restore, preserve WEXT handlers and
+paused interfaces, and skip impossible monitor response waits when
+firmware is down.
+
+Add production-code host regressions with a failing old-layout control.
+Unified build and device validation remain pending.
+---
+ .../qcacld-3.0/core/hdd/inc/wlan_hdd_main.h   |  10 +-
+ .../core/hdd/src/wlan_hdd_driver_ops.c        |  29 ++-
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 113 ++++++--
+ .../qcacld-3.0/docs/peach-native-injection.md |  55 ++++
+ .../qcacld-3.0/tests/test_inject_recovery.py  |  31 ++-
+ .../tests/test_monitor_ssr_rebuild.py         | 245 ++++++++++++++++++
+ .../qcacld-3.0/tests/test_monitor_ssr_stop.py |  83 ++++++
+ 7 files changed, 537 insertions(+), 29 deletions(-)
+ create mode 100644 vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_rebuild.py
+ create mode 100644 vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_stop.py
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+index 7a47acb9..8561bcb9 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+@@ -1136,6 +1136,7 @@ struct hdd_monitor_ctx {
+  * @session: union of @ap and @station specific structs
+  * @session.station: station mode information
+  * @session.ap: ap mode specific information
++ * @monitor: saved monitor channel, independent of shared STA initialization
+  * @acs_complete_event: acs complete event
+  * @rssi: The signal strength (dBm)
+  * @snr: SNR measured from @rssi
+@@ -1165,8 +1166,11 @@ struct wlan_hdd_link_info {
+ 	union {
+ 		struct hdd_station_ctx station;
+ 		struct hdd_ap_ctx ap;
+-		struct hdd_monitor_ctx monitor;
+ 	} session;
++	/* Monitor vdev creation uses STA initialization, including roam_profile.
++	 * Keep the confirmed channel outside that union across an SSR rebuild.
++	 */
++	struct hdd_monitor_ctx monitor;
+ 
+ 	qdf_event_t acs_complete_event;
+ 
+@@ -1305,6 +1309,7 @@ struct get_station_client_info {
+  * @multi_ll_resp_expected: to decide whether host will wait for multi client
+  *                          event or not
+  * @monitor_mode_vdev_up_in_progress:
++ * @monitor_ssr_ready: RX and saved channel restored in the current SSR
+  * @rcpi: rcpi information
+  * @send_mode_change:
+  * @apf_context:
+@@ -1485,6 +1490,7 @@ struct hdd_adapter {
+ #endif
+ #ifdef FEATURE_MONITOR_MODE_SUPPORT
+ 	bool monitor_mode_vdev_up_in_progress;
++	bool monitor_ssr_ready;
+ #endif
+ 
+ 	struct rcpi_info rcpi;
+@@ -1557,7 +1563,7 @@ struct hdd_adapter {
+ 
+ #define WLAN_HDD_GET_STATION_CTX_PTR(link_info) (&(link_info)->session.station)
+ #define WLAN_HDD_GET_AP_CTX_PTR(link_info) (&(link_info)->session.ap)
+-#define WLAN_HDD_GET_MONITOR_CTX_PTR(link_info) (&(link_info)->session.monitor)
++#define WLAN_HDD_GET_MONITOR_CTX_PTR(link_info) (&(link_info)->monitor)
+ #define WLAN_HDD_GET_CTX(adapter) ((adapter)->hdd_ctx)
+ #define WLAN_HDD_GET_HOSTAP_STATE_PTR(link_info) \
+ 		(&(WLAN_HDD_GET_AP_CTX_PTR((link_info))->hostapd_state))
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_driver_ops.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_driver_ops.c
+index dbad5c94..9bfd598a 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_driver_ops.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_driver_ops.c
+@@ -926,6 +926,7 @@ static void hdd_restore_monitor_injection(struct hdd_context *hdd_ctx)
+ 		return;
+ 	adapter = hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE);
+ 	if (!adapter || !hdd_is_interface_up(adapter) ||
++	    !adapter->monitor_ssr_ready ||
+ 	    adapter->monitor_mode_vdev_up_in_progress)
+ 		return;
+ 	link = adapter->deflink;
+@@ -935,11 +936,24 @@ static void hdd_restore_monitor_injection(struct hdd_context *hdd_ctx)
+ 	mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(link);
+ 	chan = wlan_vdev_mlme_get_des_chan(link->vdev);
+ 	if (!mon_ctx->freq || !chan || chan->ch_freq != mon_ctx->freq ||
+-	    chan->ch_width != mon_ctx->bandwidth)
++	    chan->ch_width != mon_ctx->bandwidth ||
++	    (mon_ctx->center_freq1 && mon_ctx->center_freq1 !=
++	     (mon_ctx->bandwidth == CH_WIDTH_160MHZ ?
++	      chan->ch_cfreq2 : chan->ch_cfreq1)))
+ 		return;
+-	/* Wide capture is intentionally RX-only, including after SSR. */
+-	if (mon_ctx->bandwidth != CH_WIDTH_20MHZ)
++	/* Wide capture remains RX-only. Resume its host drop path so packets
++	 * cannot accumulate in a stopped qdisc and leak into a later channel.
++	 * An administratively paused interface must remain paused.
++	 */
++	if (mon_ctx->bandwidth != CH_WIDTH_20MHZ) {
++		if (netif_running(adapter->dev)) {
++			wlan_hdd_netif_queue_control(adapter,
++					WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
++					WLAN_CONTROL_PATH);
++			wma_inject_resume(adapter->dev);
++		}
+ 		return;
++	}
+ 
+ 	/* ensure also checks FW readiness and the mode-stop latch under its
+ 	 * lifecycle lock. An exit handed to SSR must not recreate injection.
+@@ -965,9 +979,12 @@ static void hdd_restore_monitor_injection(struct hdd_context *hdd_ctx)
+ 			 attempt, status);
+ 		msleep(HDD_MON_INJ_RESTORE_RETRY_MS);
+ 	}
+-	wlan_hdd_netif_queue_control(adapter,
+-				    WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
+-				    WLAN_CONTROL_PATH);
++	if (netif_running(adapter->dev)) {
++		wlan_hdd_netif_queue_control(adapter,
++					    WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
++					    WLAN_CONTROL_PATH);
++		wma_inject_resume(adapter->dev);
++	}
+ 	hdd_info("NETHUNTER-INJ: TX restored after SSR on %u MHz",
+ 		 mon_ctx->freq);
+ #endif
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index 04287527..5525eaa4 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -10753,22 +10753,31 @@ wlan_hdd_delete_mon_link(struct hdd_adapter *adapter,
+ 
+ 	wlan_hdd_scan_abort(link_info);
+ 
+-	status = hdd_monitor_mode_vdev_status(adapter);
+-	if (QDF_IS_STATUS_ERROR(status))
+-		hdd_err_rl("stop failed montior mode");
++	if (cds_is_fw_down()) {
++		/* No UP/STOP response can arrive from the crashed firmware. Keep
++		 * SME session cleanup and normal vdev destruction below; skipping
++		 * this wait is not a DMA completion or a platform reset fence.
++		 */
++		adapter->monitor_mode_vdev_up_in_progress = false;
++	} else {
++		status = hdd_monitor_mode_vdev_status(adapter);
++		if (QDF_IS_STATUS_ERROR(status))
++			hdd_err_rl("stop failed montior mode");
++	}
+ 
+ 	status = qdf_event_reset(&adapter->qdf_monitor_mode_vdev_stop_event);
+ 	if (QDF_IS_STATUS_ERROR(status))
+ 		hdd_err_rl("failed to reinit vdev stop event");
+ 
+-	sme_delete_mon_session(hdd_ctx->mac_handle, link_info->vdev_id);
++	status = sme_delete_mon_session(hdd_ctx->mac_handle, link_info->vdev_id);
+ 
+-	/* block until vdev stop success*/
+-	status =
+-		qdf_wait_for_event_completion(&adapter->qdf_monitor_mode_vdev_stop_event,
+-					      WLAN_MONITOR_MODE_VDEV_STOP_EVT);
++	/* Wait for a live target only, and only if the request was queued. */
++	if (QDF_IS_STATUS_SUCCESS(status) && !cds_is_fw_down())
++		status = qdf_wait_for_event_completion(
++				&adapter->qdf_monitor_mode_vdev_stop_event,
++				WLAN_MONITOR_MODE_VDEV_STOP_EVT);
+ 	if (QDF_IS_STATUS_ERROR(status))
+-		hdd_err_rl("monitor vdev stop event time out vdev id: %d status %d",
++		hdd_err_rl("monitor vdev stop failed vdev id: %d status %d",
+ 			   adapter->deflink->vdev_id, status);
+ 
+ 	if (vdev)
+@@ -10786,6 +10795,9 @@ static int hdd_stop_mon_adapter(struct hdd_adapter *adapter)
+ 	struct wlan_hdd_link_info *link_info;
+ 	int status;
+ 
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++	adapter->monitor_ssr_ready = false;
++#endif
+ 	/* Drop native injection references before deleting their monitor owner. */
+ 	wma_inject_destroy_tx_vdev();
+ 	hdd_adapter_for_each_active_link_info(adapter, link_info) {
+@@ -11766,6 +11778,77 @@ static void hdd_delete_sta(struct hdd_adapter *adapter)
+ }
+ #endif
+ 
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++static int hdd_restart_monitor_adapter(struct hdd_adapter *adapter)
++{
++	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
++	struct bbm_params param = {0};
++	const char *stage = "vdev";
++	QDF_STATUS status;
++	int ret;
++
++	if (hdd_get_conparam() != QDF_GLOBAL_MONITOR_MODE) {
++		ret = hdd_start_station_adapter(adapter);
++		if (!ret)
++			ret = hdd_set_mon_rx_cb(adapter->dev);
++		if (!ret)
++			ret = wlan_hdd_set_mon_chan(adapter);
++		return ret;
++	}
++
++	/* The SSR psoc transaction owns adapter/channel lifetime. Rebuild RX
++	 * before the post-recovery hook is allowed to recreate the TX helper.
++	 * DEVICE_IFACE_OPENED retains ownership even while IFF_UP is clear.
++	 */
++	adapter->monitor_ssr_ready = false;
++	adapter->monitor_mode_vdev_up_in_progress = false;
++	ret = hdd_start_station_adapter(adapter);
++	if (ret)
++		goto fail;
++
++	stage = "idle-ps";
++	status = hdd_set_idle_ps_config(hdd_ctx, false);
++	ret = qdf_status_to_os_return(status);
++	if (ret)
++		goto fail;
++	hdd_mon_turn_off_ps_and_wow(hdd_ctx);
++
++	stage = "rx-callback";
++	ret = hdd_set_mon_rx_cb(adapter->dev);
++	if (ret)
++		goto fail;
++	stage = "rx-enable";
++	ret = hdd_enable_monitor_mode(adapter->dev);
++	if (ret)
++		goto fail;
++	stage = "channel";
++	ret = wlan_hdd_set_mon_chan(adapter);
++	if (ret)
++		goto fail;
++
++	param.policy = BBM_DRIVER_MODE_POLICY;
++	param.policy_info.driver_mode = QDF_GLOBAL_MONITOR_MODE;
++	ucfg_dp_bbm_apply_independent_policy(hdd_ctx->psoc, &param);
++	ucfg_dp_set_current_throughput_level(hdd_ctx->psoc,
++					     PLD_BUS_WIDTH_VERY_HIGH);
++	adapter->monitor_ssr_ready = true;
++	hdd_info("[SSR] monitor RX and saved channel restored");
++	return 0;
++
++fail:
++	/* Keep queues stopped and TX restore gated. Normal mode exit still
++	 * owns teardown of any partially recreated vdev/monitor resources.
++	 */
++	hdd_err("[SSR] monitor restart failed at %s: %d", stage, ret);
++	return ret;
++}
++#else
++static int hdd_restart_monitor_adapter(struct hdd_adapter *adapter)
++{
++	return -EOPNOTSUPP;
++}
++#endif
++
+ QDF_STATUS hdd_start_all_adapters(struct hdd_context *hdd_ctx, bool rtnl_held)
+ {
+ 	struct hdd_adapter *adapter, *next_adapter = NULL, *sta_adapter = NULL;
+@@ -11871,11 +11954,7 @@ QDF_STATUS hdd_start_all_adapters(struct hdd_context *hdd_ctx, bool rtnl_held)
+ 				hdd_map_monitor_interface_vdev(sta_adapter);
+ 				break;
+ 			}
+-			ret = hdd_start_station_adapter(adapter);
+-			if (!ret)
+-				ret = hdd_set_mon_rx_cb(adapter->dev);
+-			if (!ret)
+-				ret = wlan_hdd_set_mon_chan(adapter);
++			ret = hdd_restart_monitor_adapter(adapter);
+ 			if (ret) {
+ 				hdd_err("[SSR] Failed to restart monitor adapter: %d", ret);
+ 				hdd_adapter_dev_put_debug(adapter, dbgid);
+@@ -16700,7 +16779,11 @@ int hdd_start_station_adapter(struct hdd_adapter *adapter)
+ 
+ 	hdd_adapter_reset_station_ctx(adapter);
+ 
+-	hdd_register_wext(adapter->dev);
++	/* A monitor netdev already owns Radiotap/WEXT setup. Re-registering
++	 * station handlers here would overwrite it during SSR (without ndo_open).
++	 */
++	if (adapter->device_mode != QDF_MONITOR_MODE)
++		hdd_register_wext(adapter->dev);
+ 	hdd_set_netdev_flags(adapter);
+ 
+ 	hdd_register_tx_flow_control(adapter,
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+index ac30e7a7..9266ad2a 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+@@ -91,6 +91,8 @@ python3 tests/test_monitor_restore_result.py
+ python3 tests/test_mode_handoff.py
+ python3 tests/test_monitor_wext.py
+ python3 tests/test_monitor_host_queue.py
++python3 tests/test_monitor_ssr_rebuild.py
++python3 tests/test_monitor_ssr_stop.py
+ ```
+ 
+ They cover parsing, helper TX parameters/flags, queue pressure, ordered peer
+@@ -168,3 +170,56 @@ mount namespace made the same test pass 30/30. Use a prepared chroot when
+ repeating these tests; do not classify this first environment failure as a
+ driver regression. Full evidence is in `/root/pt/op13-v7-runtime-20260916/`
+ and the workspace report `oplus/说明/op13_v7_runtime_20260916.md`.
++
++## v7 extended testing and SSR follow-up (not yet built)
++
++Further device testing on 2026-09-16 completed 601.3 seconds of mixed-width
++hopping: 517 phases, 6864 submitted/completed Probe frames, 1768 RX-only host
++send attempts without qdisc backlog or replay on a later channel. TX was
++drained before each retune; concurrent retuning and NETDEV_TX_BUSY remain
++unvalidated. 160 MHz configuration/readback succeeded on primaries 36/40/44/48
++with center 5250, but no frames were captured: RF reception remains unverified.
++
++One idle firmware SSR failed to restore monitor mode. Firmware became ready,
++but monitor restart returned -22 and TX remained stopped. Manual retuning
++restored TX completions without RX; full mode exit/re-entry restored Beacons
++and Probe responses. The phone did not reboot. Normal Wi-Fi recovered, and
++testing ended in mode 0/Wi-Fi off. No inflight SSR was attempted after this
++failure. See `oplus/说明/op13_v7_extended_20260916.md` in the workspace.
++
++The follow-up source fixes the monitor rebuild before sam's TX restore hook:
++
++- Store the saved monitor context outside `session`'s STA/AP union. Monitor
++  vdev creation calls STA initialization; its roam profile previously aliased
++  the monitor PHY/center fields. v7 DWARF places both center_freq1 and the STA
++  SSIDList pointer at offset 16. Moving the context preserves all link channel
++  fields without a temporary restore over live STA bookkeeping.
++- Recreate the global monitor vdev, disable idle PS/PS/WoW, register RX,
++  enable DP monitor, restore the validated channel and reapply monitor bus
++  policy. Report the failing stage. Only successful RX/channel reconstruction
++  marks this SSR eligible for subsequent TX-helper restoration, which still
++  runs after recovery state is cleared inside the existing psoc transaction.
++- Preserve monitor WEXT handlers during shared STA initialization. Do not
++  rerun Ethernet setup on a registered, possibly administratively down netdev.
++- Require the confirmed primary/width/full center to match. Wide channels
++  resume the rejecting host TX path without creating a helper; paused netdevs
++  stay paused. WMA's existing mode-stop latch and DMA ownership rules remain.
++- When firmware is down, skip monitor UP/STOP response waits while retaining
++  SME session cleanup, object references and normal vdev destruction. Failed
++  STOP enqueue does not wait for an impossible response either. This is not
++  a DMA fence and does not free injection memory on a timer.
++
++Thirteen host ASan/UBSan checks pass. The new rebuild test runs production
++STA initialization and the new monitor restart function with an extracted
++production context layout; a negative control using the old union fails the
++saved-channel assertion. It covers both links, 20/40/80/160 fields, no saved
++channel, each restart failure, WEXT and the non-global fallback. The teardown
++test covers live/dead firmware, failed enqueue, wait failure and missing vdev.
++The TX restore test covers the new readiness gate, full centers, RX-only
++queues and paused interfaces. Firmware/DP calls are modeled, not device proof.
++
++This follow-up has not undergone the unified kernel build, packaging or
++device validation. The shipped v7 ZIP still contains the demonstrated SSR
++failure. Next, build once via the authorized unified entry, then validate
++idle SSR before inflight SSR, including WEXT, RX, queue draining, DMA recovery
++and ordinary Wi-Fi. Do not infer a firmware fix from host tests alone.
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py
+index 0cc40f92..f90f3f17 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py
+@@ -41,6 +41,7 @@ pre = r'''
+ #define QDF_GLOBAL_MONITOR_MODE 4
+ #define QDF_MONITOR_MODE 4
+ #define CH_WIDTH_20MHZ 20
++#define CH_WIDTH_160MHZ 160
+ #define WLAN_START_ALL_NETIF_QUEUE_N_CARRIER 1
+ #define WLAN_CONTROL_PATH 2
+ #define QDF_MODULE_ID_WMA 1
+@@ -50,11 +51,13 @@ pre = r'''
+ #define hdd_info(...) ((void)0)
+ #define WLAN_HDD_GET_MONITOR_CTX_PTR(l) (&(l)->monitor)
+ typedef int QDF_STATUS;
+-struct hdd_monitor_ctx { unsigned freq, bandwidth; };
+-struct wlan_channel { unsigned ch_freq, ch_width; } channel;
++struct hdd_monitor_ctx { unsigned freq, bandwidth, center_freq1; };
++struct wlan_channel { unsigned ch_freq, ch_width, ch_cfreq1, ch_cfreq2; } channel;
+ struct vdev { bool active; } vdev;
+ struct wlan_hdd_link_info { struct vdev *vdev; unsigned vdev_id; struct hdd_monitor_ctx monitor; } link;
+-struct hdd_adapter { bool up, monitor_mode_vdev_up_in_progress; struct wlan_hdd_link_info *deflink; } adapter;
++struct net_device { bool running; } dev;
++struct hdd_adapter { bool up, monitor_mode_vdev_up_in_progress, monitor_ssr_ready;
++ struct wlan_hdd_link_info *deflink; struct net_device *dev; } adapter;
+ struct hdd_context { int unused; } ctx;
+ struct wlan_lmac_if_mlme_rx_ops {
+  void *vdev_mgr_start_response_override, *vdev_mgr_stop_response_override, *vdev_mgr_delete_response_override;
+@@ -68,12 +71,14 @@ static struct {
+ } inj;
+ static int inj_lifecycle, inj_lock, locked, spinlocked;
+ static int mode, ensure_count, ensure_error, queue_starts, retired, destroyed;
+-static int fail_attempts, sleeps;
++static int fail_attempts, sleeps, resumes;
+ static bool stop_during_retry, down_during_retry;
+ static bool recovering, fw_down, present, channel_present;
+ static int hdd_get_conparam(void) { return mode; }
+ static struct hdd_adapter *hdd_get_adapter(void *c, int m) { assert(c==&ctx && m==4); return present ? &adapter : NULL; }
+ static bool hdd_is_interface_up(struct hdd_adapter *a) { return a->up; }
++static bool netif_running(struct net_device *d) { return d->running; }
++static void wma_inject_resume(struct net_device *d) { assert(d==&dev && d->running); resumes++; }
+ static int wlan_vdev_is_up_active_state(struct vdev *v) { return !v->active; }
+ static struct wlan_channel *wlan_vdev_mlme_get_des_chan(struct vdev *v) { assert(v==&vdev); return channel_present ? &channel : NULL; }
+ static int wma_inject_ensure_tx_vdev(unsigned id, unsigned freq) {
+@@ -105,10 +110,12 @@ static void reset(void) {
+  memset(&inj,0,sizeof(inj)); memset(&adapter,0,sizeof(adapter));
+  mode=4; present=channel_present=true; recovering=fw_down=false;
+  adapter.up=true; adapter.deflink=&link; link.vdev=&vdev; link.vdev_id=7;
++ adapter.monitor_ssr_ready=true; adapter.dev=&dev; dev.running=true;
+  vdev.active=true; link.monitor.freq=channel.ch_freq=2417;
+  link.monitor.bandwidth=channel.ch_width=20;
++ link.monitor.center_freq1=channel.ch_cfreq1=2417; channel.ch_cfreq2=0;
+  ensure_count=ensure_error=queue_starts=retired=destroyed=0;
+- fail_attempts=sleeps=0; stop_during_retry=down_during_retry=false;
++ fail_attempts=sleeps=resumes=0; stop_during_retry=down_during_retry=false;
+  wma_ctx.psoc=&ctx; inj.wq=&ctx;
+ }
+ '''
+@@ -118,6 +125,10 @@ int main(void) {
+  reset(); mode=0; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
+  reset(); present=false; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
+  reset(); adapter.up=false; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
++ reset(); adapter.monitor_ssr_ready=false;
++ hdd_restore_monitor_injection(&ctx); assert(!ensure_count && !queue_starts && !resumes);
++ reset(); dev.running=false;
++ hdd_restore_monitor_injection(&ctx); assert(ensure_count==1 && !queue_starts && !resumes);
+  reset(); adapter.monitor_mode_vdev_up_in_progress=true; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
+  reset(); adapter.deflink=NULL; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
+  reset(); link.vdev=NULL; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
+@@ -126,10 +137,18 @@ int main(void) {
+  reset(); link.monitor.freq=0; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
+  reset(); channel.ch_freq=5180; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
+  reset(); channel.ch_width=80; hdd_restore_monitor_injection(&ctx); assert(!ensure_count);
++ reset(); channel.ch_cfreq1=2427; hdd_restore_monitor_injection(&ctx); assert(!ensure_count && !queue_starts);
+  for(unsigned width=40;width<=160;width*=2) {
+   reset();link.monitor.bandwidth=channel.ch_width=width;
+-  hdd_restore_monitor_injection(&ctx);assert(!ensure_count && !queue_starts);
++  if(width==160) {link.monitor.center_freq1=channel.ch_cfreq2=5250;channel.ch_cfreq1=5210;}
++  hdd_restore_monitor_injection(&ctx);assert(!ensure_count && queue_starts==1 && resumes==1);
++  reset();link.monitor.bandwidth=channel.ch_width=width;dev.running=false;
++  if(width==160) {link.monitor.center_freq1=channel.ch_cfreq2=5250;channel.ch_cfreq1=5210;}
++  hdd_restore_monitor_injection(&ctx);assert(!ensure_count && !queue_starts && !resumes);
+  }
++ reset();link.monitor.bandwidth=channel.ch_width=160;link.monitor.center_freq1=5250;
++ channel.ch_cfreq1=5250;channel.ch_cfreq2=0;
++ hdd_restore_monitor_injection(&ctx);assert(!ensure_count && !queue_starts);
+  reset(); ensure_error=QDF_STATUS_E_NOMEM; fail_attempts=2;
+  hdd_restore_monitor_injection(&ctx); assert(ensure_count==3 && queue_starts==1 && sleeps==2);
+  reset(); ensure_error=QDF_STATUS_E_RESOURCES; fail_attempts=9;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_rebuild.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_rebuild.py
+new file mode 100644
+index 00000000..ef7c1e15
+--- /dev/null
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_rebuild.py
+@@ -0,0 +1,245 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: GPL-2.0-only
++"""Exercise real STA initialization and monitor SSR restart with host FW stubs.
++
++The production link/session layout and monitor accessor are extracted from the
++header. Firmware/DP operations are modeled, so this is not device validation.
++"""
++from pathlib import Path
++import re
++import subprocess
++import tempfile
++
++ROOT = Path(__file__).resolve().parents[1]
++main = (ROOT / 'core/hdd/src/wlan_hdd_main.c').read_text()
++header = (ROOT / 'core/hdd/inc/wlan_hdd_main.h').read_text()
++assoc = (ROOT / 'core/hdd/src/wlan_hdd_assoc.c').read_text()
++
++def block(source, signature):
++    start = source.index(signature)
++    end = source.index('{', start) + 1
++    depth = 1
++    while depth:
++        depth += (source[end] == '{') - (source[end] == '}')
++        end += 1
++    return source[start:end]
++
++# Real union and accessor: a fixture reverting just this layout must fail.
++link = header[header.index('struct wlan_hdd_link_info {'):]
++link = link[:link.index('\n\tqdf_event_t acs_complete_event;')] + '\n};\n'
++monitor = block(header, 'struct hdd_monitor_ctx {') + ';\n'
++station = block(header, 'struct hdd_station_ctx {') + ';\n'
++accessors = '\n'.join(re.findall(r'^#define WLAN_HDD_GET_(?:MONITOR|STATION)_CTX_PTR.*$', header, re.M))
++caller = block(main, 'QDF_STATUS hdd_start_all_adapters(')
++assert 'ret = hdd_restart_monitor_adapter(adapter);' in caller
++stopper = block(main, 'static int hdd_stop_mon_adapter(')
++assert stopper.index('monitor_ssr_ready = false') < stopper.index('wma_inject_destroy_tx_vdev')
++
++pre = r'''
++#include <assert.h>
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include <errno.h>
++#define FEATURE_MONITOR_MODE_SUPPORT
++#define CONFIG_WIRELESS_EXT
++#define QDF_STATUS_SUCCESS 0
++#define QDF_STATUS_E_NULL_VALUE 2
++#define QDF_IS_STATUS_ERROR(s) ((s)!=0)
++#define QDF_IS_STATUS_SUCCESS(s) ((s)==0)
++#define QDF_MONITOR_MODE 6
++#define QDF_STA_MODE 0
++#define QDF_P2P_DEVICE_MODE 1
++#define QDF_NAN_DISC_MODE 2
++#define QDF_GLOBAL_MONITOR_MODE 4
++#define SME_SESSION_OPENED 0
++#define WMM_INIT_DONE 1
++#define WLAN_INIT_DEINIT_ID 1
++#define WLAN_ROAMING_ALLOWED_WITHIN_ESS 1
++#define eCSR_AUTH_TYPE_OPEN_SYSTEM 1
++#define eCSR_BSS_TYPE_INFRASTRUCTURE 1
++#define eCSR_DOT11_MODE_AUTO 0
++#define eSIR_ACTIVE_SCAN 1
++#define CH_WIDTH_INVALID 0xff
++#define QDF_MAC_ADDR_SIZE 6
++#define PMO_PS_ADVANCED_POWER_SAVE_DISABLE 0
++#define PMO_WOW_DISABLE_BOTH 0
++#define BBM_DRIVER_MODE_POLICY 1
++#define PLD_BUS_WIDTH_VERY_HIGH 6
++#define hdd_enter() ((void)0)
++#define hdd_enter_dev(...) ((void)0)
++#define hdd_exit() ((void)0)
++#define hdd_debug(...) ((void)0)
++#define hdd_err(...) ((void)0)
++#define hdd_info(...) ((void)0)
++#define QDF_BUG(x) assert(x)
++#define qdf_mem_zero(p,n) memset(p,0,n)
++#define WLAN_HDD_GET_CTX(a) ((a)->hdd_ctx)
++typedef int QDF_STATUS;
++typedef void *mac_handle_t;
++typedef uint32_t qdf_freq_t;
++typedef int eCsrPhyMode;
++typedef int qdf_spinlock_t;
++struct completion { int unused; };
++struct qdf_mac_addr { uint8_t bytes[6]; };
++enum phy_ch_width { CH_WIDTH_20MHZ=20, CH_WIDTH_40MHZ=40, CH_WIDTH_80MHZ=80, CH_WIDTH_160MHZ=160 };
++struct hdd_connection_info { unsigned chan_freq,auth_type; char ssid[33]; unsigned char bssid[6]; };
++/* The production roam initializer only touches these fields. The first
++ * pointer offsets match the v7 ARM64 DWARF (roam_profile+8 = SSIDList).
++ */
++struct csr_roam_profile {
++ struct { uint32_t numOfSSIDs; void *SSIDList; } SSIDs;
++ struct { uint32_t numOfBSSIDs; void *bssid; } BSSIDs;
++ uint32_t phyMode,BSSType;
++ struct { unsigned numOfChannels; void *freq_list; } ChannelInfo;
++};
++struct hdd_ap_ctx { char opaque[256]; };
++struct wlan_objmgr_vdev { bool active; } vdevs[2];
++struct hdd_context { void *mac_handle,*psoc; struct {unsigned operating_chan_freq;} *config; } ctx;
++struct net_device { const void *wireless_handlers; } dev;
++static int mon_handlers,sta_handlers;
++'''
++model = r'''
++struct hdd_adapter {
++ int device_mode; struct hdd_context *hdd_ctx; struct net_device *dev;
++ struct wlan_hdd_link_info *deflink; struct wlan_hdd_link_info links[2];
++ unsigned long event_flags; struct {unsigned scan_mode;} scan_info;
++ char rcpi[8]; bool monitor_ssr_ready; bool monitor_mode_vdev_up_in_progress;
++} adapter;
++struct bbm_params {int policy; struct {int driver_mode;} policy_info;};
++static struct hdd_monitor_ctx expected[2];
++static int mode=4,fail_stage,stage,ps_off,wow_off,dp_enable,policy,throughput,cleanups;
++#define hdd_adapter_for_each_active_link_info(a,l) for(unsigned i=0;i<2 && ((l)=&(a)->links[i]);i++)
++#define hdd_adapter_for_each_link_info(a,l) hdd_adapter_for_each_active_link_info(a,l)
++static bool test_bit(unsigned b,unsigned long *f) {return *f & (1ul<<b);}
++static void set_bit(unsigned b,unsigned long *f) {*f |= 1ul<<b;}
++static int qdf_status_to_os_return(int s) {return s ? -s : 0;}
++static int hdd_get_conparam(void) {return mode;}
++static void hdd_clear_roam_profile_ie(void *a) {(void)a;}
++static struct csr_roam_profile *hdd_roam_profile(struct wlan_hdd_link_info *l) {return &WLAN_HDD_GET_STATION_CTX_PTR(l)->roam_profile;}
++static int hdd_vdev_create(struct wlan_hdd_link_info *l) {
++ stage=1;if(fail_stage==1)return -EIO;
++ l->vdev=&vdevs[l-adapter.links];return 0;
++}
++static int hdd_vdev_destroy(struct wlan_hdd_link_info *l) {l->vdev=NULL;cleanups++;return 0;}
++static struct wlan_objmgr_vdev *hdd_objmgr_get_vdev_by_user(struct wlan_hdd_link_info *l,int id) {(void)id;return l->vdev;}
++#define hdd_objmgr_put_vdev_by_user(...) ((void)0)
++#define hdd_vdev_set_ht_vht_ies(...) ((void)0)
++#define hdd_wmm_adapter_init(...) 0
++#define hdd_wmm_adapter_close(...) ((void)0)
++#define ucfg_mlme_get_roaming_triggers(...) 0
++#define mlme_set_roam_trigger_bitmap(...) ((void)0)
++#define mlme_set_roam_policy(...) ((void)0)
++#define hdd_vdev_configure_rtt_params(...) 0
++#define hdd_tsf_auto_report_init(...) ((void)0)
++#define wlan_hdd_lpc_del_monitor_interface(...) ((void)0)
++#define hdd_adapter_fill_link_address(...) 0
++#define hdd_adapter_check_duplicate_session(...) 0
++#define hdd_cm_clear_ieee_link_id(...) ((void)0)
++#define hdd_set_netdev_flags(...) ((void)0)
++#define hdd_register_tx_flow_control(...) ((void)0)
++#define hdd_register_hl_netdev_fc_timer(...) ((void)0)
++#define hdd_get_multi_client_ll_support(...) false
++#define wlan_hdd_init_multi_client_info_table(...) ((void)0)
++#define hdd_adapter_set_wlm_client_latency_level(...) ((void)0)
++#define hdd_adapter_update_mlo_mgr_mac_addr(...) ((void)0)
++#define hdd_restore_info_for_ssr(...) ((void)0)
++static void hdd_register_wext(struct net_device *d) {d->wireless_handlers=&sta_handlers;}
++static int hdd_set_idle_ps_config(struct hdd_context *c,bool enable) {
++ assert(c==&ctx && !enable && stage==1);stage=2;ps_off++;return fail_stage==2 ? EIO : 0;
++}
++static void ucfg_pmo_set_power_save_mode(void *p,int v) {(void)p;assert(!v);}
++static void ucfg_pmo_set_wow_enable(void *p,int v) {(void)p;assert(!v);wow_off++;}
++static int hdd_set_mon_rx_cb(struct net_device *d) {
++ assert(d==&dev && (stage==2 || mode!=4));stage=3;return fail_stage==3 ? -EIO : 0;
++}
++static int hdd_enable_monitor_mode(struct net_device *d) {
++ assert(d==&dev && stage==3);stage=4;dp_enable++;return fail_stage==4 ? -EIO : 0;
++}
++static int wlan_hdd_set_mon_chan(struct hdd_adapter *a) {
++ assert(a==&adapter && (stage==4 || mode!=4));stage=5;
++ for(unsigned i=0;i<2;i++) {
++  struct hdd_monitor_ctx *m=WLAN_HDD_GET_MONITOR_CTX_PTR(&a->links[i]);
++  assert(m->freq==expected[i].freq && m->bandwidth==expected[i].bandwidth);
++  assert(m->cb_mode==expected[i].cb_mode && m->phy_mode==expected[i].phy_mode);
++  assert(m->center_freq1==expected[i].center_freq1);
++ }
++ return fail_stage==5 ? -EINVAL : 0;
++}
++static void ucfg_dp_bbm_apply_independent_policy(void *p,struct bbm_params *b) {
++ (void)p;assert(stage==5 && b->policy==1 && b->policy_info.driver_mode==4);policy++;
++}
++static void ucfg_dp_set_current_throughput_level(void *p,int level) {(void)p;assert(level==6);throughput++;}
++static void reset(unsigned width,unsigned center) {
++ memset(&adapter,0,sizeof(adapter));memset(&dev,0,sizeof(dev));
++ adapter.device_mode=6;adapter.hdd_ctx=&ctx;adapter.dev=&dev;adapter.deflink=&adapter.links[0];
++ adapter.monitor_mode_vdev_up_in_progress=true;
++ static typeof(*ctx.config) config;ctx.config=&config;
++ dev.wireless_handlers=&mon_handlers;
++ mode=4;fail_stage=stage=ps_off=wow_off=dp_enable=policy=throughput=cleanups=0;
++ for(unsigned i=0;i<2;i++) {
++  adapter.links[i].adapter=&adapter;
++  expected[i]=(struct hdd_monitor_ctx){.freq=width==160?5180:(width==80?5745:2412),.bandwidth=width,.cb_mode=3,.phy_mode=7,.center_freq1=center};
++  *WLAN_HDD_GET_MONITOR_CTX_PTR(&adapter.links[i])=expected[i];
++ }
++}
++'''
++tests = r'''
++int main(void) {
++ const unsigned widths[]={20,40,80,160},centers[]={2412,2422,5775,5250};
++ for(unsigned i=0;i<4;i++) {
++  reset(widths[i],centers[i]);assert(!hdd_restart_monitor_adapter(&adapter));
++ assert(adapter.monitor_ssr_ready && ps_off==1 && wow_off==1 && dp_enable==1 && policy==1 && throughput==1);
++  assert(!adapter.monitor_mode_vdev_up_in_progress);
++  assert(dev.wireless_handlers==&mon_handlers);
++ }
++ /* No configured channel must remain zero; STA initialization must not
++  * manufacture a pointer-derived center for a monitor that has never tuned.
++  */
++ reset(20,0);for(unsigned i=0;i<2;i++)expected[i]=*WLAN_HDD_GET_MONITOR_CTX_PTR(&adapter.links[i])=(struct hdd_monitor_ctx){0};
++ assert(!hdd_restart_monitor_adapter(&adapter));
++ for(int fail=1;fail<=5;fail++) {
++  reset(20,2412);adapter.monitor_ssr_ready=true;fail_stage=fail;
++  assert(hdd_restart_monitor_adapter(&adapter)<0 && !adapter.monitor_ssr_ready);
++  assert(!policy && !throughput && stage==fail);
++  assert(dev.wireless_handlers==&mon_handlers);
++  fail_stage=0;assert(!hdd_restart_monitor_adapter(&adapter) && adapter.monitor_ssr_ready);
++ }
++ reset(20,2412);adapter.device_mode=QDF_STA_MODE;
++ assert(!hdd_start_station_adapter(&adapter));assert(dev.wireless_handlers==&sta_handlers);
++ reset(20,2412);mode=0;assert(!hdd_restart_monitor_adapter(&adapter));
++ assert(!ps_off && !wow_off && !dp_enable && !policy && !adapter.monitor_ssr_ready);
++ puts("SSR rebuild: real STA initialization preserves all monitor fields; RX/order/failure gates/WEXT/non-global cases passed");
++}
++'''
++functions = [
++    block(assoc, 'void hdd_roam_profile_init('),
++    block(main, 'hdd_init_station_context(struct wlan_hdd_link_info *link_info)'),
++    block(main, 'QDF_STATUS hdd_init_station_mode('),
++    block(main, 'void hdd_adapter_reset_station_ctx('),
++    block(main, 'int hdd_start_station_adapter('),
++    block(main, 'static void hdd_mon_turn_off_ps_and_wow('),
++    block(main, 'static int hdd_restart_monitor_adapter('),
++]
++functions[1] = 'static void\n' + functions[1]
++with tempfile.TemporaryDirectory() as temp:
++    c=Path(temp)/'test.c';exe=Path(temp)/'test'
++    code=pre+monitor+station+link+accessors+'\n'+model+'\n'.join(functions)+tests
++    # The production link prefix includes link_flags later in the full type.
++    code=code.replace('struct hdd_monitor_ctx monitor;','struct hdd_monitor_ctx monitor;\n unsigned long link_flags;')
++    c.write_text(code)
++    flags=['cc','-std=gnu11','-Wall','-Wextra','-Werror','-Wno-unused-but-set-variable','-Wno-unused-variable','-fsanitize=address,undefined','-fno-pie','-no-pie']
++    subprocess.run(flags+[str(c),'-o',str(exe)],check=True)
++    subprocess.run([str(exe)],check=True)
++    # Negative control: restoring v7's shared union must break channel
++    # preservation under the same production station initializer.
++    old=link.replace('struct hdd_ap_ctx ap;','struct hdd_ap_ctx ap;\n struct hdd_monitor_ctx monitor;').replace('\n\tstruct hdd_monitor_ctx monitor;','')
++    old=old.replace('} session;','} session;\n unsigned long link_flags;')
++    bad=pre+monitor+station+old+accessors.replace('->monitor','->session.monitor')+'\n'+model+'\n'.join(functions)+tests
++    c.write_text(bad)
++    subprocess.run(flags+[str(c),'-o',str(exe)],check=True)
++    r=subprocess.run([str(exe)],capture_output=True,text=True)
++    assert r.returncode!=0 and 'm->' in r.stderr, r.stderr
++    print('Negative control: old shared union fails saved-channel assertion as expected')
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_stop.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_stop.py
+new file mode 100644
+index 00000000..ae015ad5
+--- /dev/null
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_stop.py
+@@ -0,0 +1,83 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: GPL-2.0-only
++"""Run production monitor deletion: FW-down skips waits, keeps host cleanup."""
++from pathlib import Path
++import subprocess
++import tempfile
++ROOT=Path(__file__).resolve().parents[1]
++src=(ROOT/'core/hdd/src/wlan_hdd_main.c').read_text()
++a=src.index('wlan_hdd_delete_mon_link(struct hdd_adapter *adapter,')
++b=src.index('{',a)+1;depth=1
++while depth:
++    depth+=(src[b]=='{')-(src[b]=='}');b+=1
++fn='static int\n'+src[a:b]
++shim=r'''
++#include <assert.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <errno.h>
++#define QDF_STATUS_SUCCESS 0
++#define QDF_IS_STATUS_ERROR(s) ((s)!=0)
++#define QDF_IS_STATUS_SUCCESS(s) ((s)==0)
++#define WLAN_INIT_DEINIT_ID 1
++#define WLAN_OSIF_ID 2
++#define QDF_STA_MODE 0
++#define PACKET_CAPTURE_MODE_DISABLE 0
++#define WLAN_MONITOR_MODE_VDEV_STOP_EVT 9000
++#define WLAN_HDD_GET_CTX(a) ((a)->hdd_ctx)
++#define hdd_err(...) ((void)0)
++#define hdd_err_rl(...) ((void)0)
++typedef int QDF_STATUS;
++struct wlan_objmgr_vdev {int unused;} vdev;
++struct hdd_context {void *psoc,*mac_handle;} ctx;
++struct wlan_hdd_link_info {struct hdd_adapter *adapter;struct wlan_objmgr_vdev *vdev;unsigned vdev_id;} link;
++struct hdd_adapter {int device_mode;struct hdd_context *hdd_ctx;struct wlan_hdd_link_info *deflink;
++ bool monitor_mode_vdev_up_in_progress;int qdf_monitor_mode_vdev_stop_event;} adapter;
++static bool fw_down,missing,crash_during_send;
++static int up_waits,stop_waits,send_status,wait_status,reset_count,deletes,destroys,puts_count,releases,aborts;
++static struct wlan_objmgr_vdev *hdd_objmgr_get_vdev_by_user(struct wlan_hdd_link_info *l,int id) {
++ assert(l==&link && id==1);return missing?NULL:&vdev;
++}
++static void hdd_objmgr_put_vdev_by_user(struct wlan_objmgr_vdev *v,int id) {assert(v==&vdev && id==1);puts_count++;}
++static bool wlan_hdd_is_session_type_monitor(int mode) {(void)mode;return false;}
++#define ucfg_pkt_capture_get_mode(...) 0
++#define ucfg_pkt_capture_deregister_callbacks(...) ((void)0)
++static struct hdd_adapter *hdd_get_adapter(struct hdd_context *c,int mode) {(void)c;(void)mode;return &adapter;}
++#define hdd_reset_monitor_interface(...) ((void)0)
++static void wlan_hdd_scan_abort(struct wlan_hdd_link_info *l) {assert(l==&link);aborts++;}
++static bool cds_is_fw_down(void) {return fw_down;}
++static int hdd_monitor_mode_vdev_status(struct hdd_adapter *a) {assert(a==&adapter && !fw_down);up_waits++;return 0;}
++static int qdf_event_reset(int *e) {assert(e==&adapter.qdf_monitor_mode_vdev_stop_event);reset_count++;return 0;}
++static int sme_delete_mon_session(void *m,unsigned id) {
++ (void)m;assert(id==7);deletes++;if(crash_during_send)fw_down=true;return send_status;
++}
++static int qdf_wait_for_event_completion(int *e,int ms) {
++ assert(!fw_down && !send_status && e==&adapter.qdf_monitor_mode_vdev_stop_event && ms==9000);
++ stop_waits++;return wait_status;
++}
++static void hdd_vdev_destroy(struct wlan_hdd_link_info *l) {assert(l==&link && puts_count==1 && deletes==1);destroys++;}
++static void hdd_monitor_mode_release_wakelock(struct hdd_adapter *a) {assert(a==&adapter && destroys==1);releases++;}
++static void reset(void) {
++ link.adapter=&adapter;link.vdev=&vdev;link.vdev_id=7;
++ adapter.hdd_ctx=&ctx;adapter.deflink=&link;adapter.monitor_mode_vdev_up_in_progress=true;
++ fw_down=missing=crash_during_send=false;
++ up_waits=stop_waits=send_status=wait_status=reset_count=deletes=destroys=puts_count=releases=aborts=0;
++}
++static void cleaned(void) {assert(deletes==1 && destroys==1 && puts_count==1 && releases==1 && aborts==1);}
++'''
++tests=r'''
++int main(void) {
++ reset();fw_down=true;assert(!wlan_hdd_delete_mon_link(&adapter,&link));cleaned();
++ assert(!up_waits && !stop_waits && !adapter.monitor_mode_vdev_up_in_progress);
++ reset();assert(!wlan_hdd_delete_mon_link(&adapter,&link));cleaned();assert(up_waits==1 && stop_waits==1);
++ reset();crash_during_send=true;assert(!wlan_hdd_delete_mon_link(&adapter,&link));cleaned();assert(up_waits==1 && !stop_waits);
++ reset();send_status=ENOMEM;assert(!wlan_hdd_delete_mon_link(&adapter,&link));cleaned();assert(!stop_waits);
++ reset();wait_status=ETIMEDOUT;assert(!wlan_hdd_delete_mon_link(&adapter,&link));cleaned();assert(stop_waits==1);
++ reset();missing=true;assert(!wlan_hdd_delete_mon_link(&adapter,&link));assert(!puts_count && !deletes && !destroys && !releases);
++ puts("Monitor teardown: FW-down/live/send-failure/wait-failure/missing-vdev cases passed; cleanup retained");
++}
++'''
++with tempfile.TemporaryDirectory() as tmp:
++    c=Path(tmp)/'test.c';exe=Path(tmp)/'test';c.write_text(shim+fn+tests)
++    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-pie','-no-pie',str(c),'-o',str(exe)],check=True)
++    subprocess.run([str(exe)],check=True)
+-- 
+2.53.0
+
