@@ -17,13 +17,15 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 第一项只接入 `prepare_vendor.sh` 的 WLAN 统一构建，必需保留。第二项是当前
 原生全局实现的合并 diff。不要叠加旧 `qca_inject/0002-0017`。
 
-也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用四个邮件补丁。
+也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用六个邮件补丁。
 这与上面的两项应用方式二选一。对应源码提交：
 
 - `d20c69af`：WLAN 统一构建接入。
 - `2fa5ca62`：原生全局 monitor TX 初版。
 - `f5bb38df`：实验性 PMF TX flag。
 - `8e21acf0`：Radiotap、队列、回调竞态和 DMA 生命周期保护。
+- `afc425eb`：查询实际 monitor 频道、跳过同频道重复启动、固件 TX 标志对照。
+- `9fddc162`：deauth/disassoc 始终保留 wrong-key 标志，probe 默认普通 flags。
 
 构建日志必须包含 kernel、WLAN platform、WLAN qcacld、Installing WLAN modules
 及 DT 合并完成阶段；外层脚本退出码不能单独证明内部成功。
@@ -50,6 +52,8 @@ CNSS 只作为构建依赖，包内不放 CNSS 模块。校验记录见包内 `d
 `tests/test_native_injection.py` 对真实 TX/回调代码注入分配失败、发送失败、
 提前/重复/丢失完成事件。两者均使用 ASan/UBSan，不能代替固件与空口测试。
 
-当前新包尚未热切：ADB 无设备连接。此前 Kali chroot 调用失败的原因未确认，
-不能据此断定是 SELinux 或 namespace 限制。恢复连接后应通过设备脚本进入
-`/data/local/nhsystem/kalifs`，用锁定信道的管理帧测试验证提交、完成和空口。
+2026-09-16 已在连接设备复现 aireplay 失败：安装包版本与已加载模块不一致；
+重新加载 v4 后，Kali 缺少 /sys 挂载导致 aireplay 发送裸帧；补齐 /sys 后
+Radiotap 管理帧到达 WMI，但记录的完成状态为 DISCARD，探测响应为零。
+不能将 Found APs 当作 Injection is working。新版真机结果见 KSU 包内
+`docs/AIREPLAY_DEBUG.md`。新增 `aireplay_test.sh` 在测试期间临时补挂 /sys。

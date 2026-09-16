@@ -2,3 +2,5 @@
 0002-peach-v2-native-global-monitor.patch
 0003-monitor-injection-flag.patch
 0004-native-monitor-tx-hardening.patch
+0005-monitor-channel-and-tx-diagnostics.patch
+0006-preserve-deauth-wrong-key.patch

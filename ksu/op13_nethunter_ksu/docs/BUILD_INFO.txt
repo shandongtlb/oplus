@@ -1,13 +1,13 @@
 OnePlus 13 peach_v2 native global monitor + management TX (experimental)
 
-Package: 2026.09.15-peach-native-global-v4 / versionCode 2026091504
-Source commit: 8e21acf0a4fb5e063a1721a6565349a8a524309d
-Started UTC: 2026-09-16T00:50:17.499471+00:00
-Build script end timestamp: 2026_09_16 01:01:45
+Package: 2026.09.16-peach-native-global-v5 / versionCode 2026091605
+Source commit: 2cbfb99ff1848517870b7cf2b3e6d8a8a7a82014
+Started UTC: 2026-09-16T05:29:46+00:00
+Build script end timestamp: 2026_09_16 05:35:45
 Target: sun perf, peach_v2, ARM64 4 KiB
 Command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 WLAN platform and qcacld were built within prepare_vendor.sh; no separate qcacld build.
-Build log: /root/pt/op13-native-global-hardening/build.log
+Build log: /root/pt/op13-native-global-hardening/build-current.log
 ELF/CRC validation: /root/pt/op13-native-global-hardening/validation.json
 Patch replay: /root/pt/op13-native-global-hardening/patch-replay.json
 
@@ -16,6 +16,9 @@ d20c69af build integration
 2fa5ca62 native global monitor TX
 f5bb38df experimental PMF TX flag
 8e21acf0 Radiotap, TX queues and DMA ownership
+afc425eb channel diagnostics
+9fddc162 deauth wrong-key flag
+2cbfb99f compile fix
 Exported series and build+aggregate patches both reproduce 10 source files exactly.
 
 Payload: exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko.
@@ -40,13 +43,13 @@ mac80211.ko: 1963888 bytes
   Cross-module CRC matches: 104
   Kernel/platform CRC matches: 317
   Other dependency symbols unchecked: 0
-qca_cld3_peach_v2.ko: 19729192 bytes
-  sha256 d279bc397e7371432f256c798b3886b8fb014143e533b60e6627431c3ec6761b
-  raw sha256 577a54dd9461886b97400448ccf791265ef3a3d24e08b1728ec9214c92beed37
+qca_cld3_peach_v2.ko: 19731088 bytes
+  sha256 06b0d3028c6f62dbb5fc835265e528902a7aa6dd61cd9eec7cbab1e603aebdc8
+  raw sha256 46d03119d29e525fc5bb106e6d2a6234197c3e8996f05a09e6ecb5464b882665
   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
-  Cross-module CRC matches: 45
-  Kernel/platform CRC matches: 565
+  Cross-module CRC matches: 46
+  Kernel/platform CRC matches: 566
   Other dependency symbols unchecked: 27
 
 Validation:
@@ -64,8 +67,8 @@ Validation:
 Runtime evidence and limits:
 - Older v2 package: real Beacon/RTS/CTS capture at channel 153, zero kernel drops in short runs.
 - Older v2 package: monitor exit returned managed/con_mode=0. Wi-Fi was enabled but not associated.
-- v4 has NOT been loaded on the device. ADB was disconnected during this build.
-- Earlier Kali chroot invocation failed; cause is unconfirmed. No chroot injection result exists.
+- v5 has NOT been loaded on the device. This package was not device-tested.
+- Earlier v4 probe tests reached firmware but returned DISCARD; this version needs retest.
 - TX supports Radiotap + management frames only, 24-2048 bytes after optional FCS removal.
 - DATAPAD and control/data frames are rejected. TX hints do not configure firmware rate/NOACK.
 - Keep channel fixed during injection; concurrent retuning is not validated.
@@ -76,23 +79,23 @@ Runtime evidence and limits:
 - Automatic recovery of quarantined DMA, RF tests, hotspot/P2P recovery remain unverified.
 
 Completed build phases:
-kpl-time-check kernel start 00:50:17
-kpl-time-check kernel end 00:50:42
-kpl-time-check oplus DDK start 00:50:42
-kpl-time-check oplus DDK end 00:56:44
-kpl-time-check kernel copy start 00:56:44
-kpl-time-check kernel copy end 00:56:45
-kpl-time-check Preparing UAPI headers start 00:56:49
-kpl-time-check Preparing UAPI headers end 00:56:49
-kpl-time-check setting up Android tree start 00:56:49
-kpl-time-check setting up Android tree end 00:56:52
-kpl-time-check Building WLAN platform start 00:56:52
-kpl-time-check Building WLAN platform end 00:57:01
-kpl-time-check Building WLAN qcacld start 00:57:01
-kpl-time-check Building WLAN qcacld end 01:00:05
-kpl-time-check Installing WLAN modules start 01:00:05
-kpl-time-check Installing WLAN modules end 01:00:05
-kpl-time-check Compiling vendor devicetree start 01:00:05
-kpl-time-check Compiling vendor devicetree end 01:00:10
-kpl-time-check Merging vendor devicetree start 01:00:10
-kpl-time-check Merging vendor devicetree end 01:01:22
+kpl-time-check kernel start 05:29:46
+kpl-time-check kernel end 05:30:11
+kpl-time-check oplus DDK start 05:30:11
+kpl-time-check oplus DDK end 05:31:18
+kpl-time-check kernel copy start 05:31:18
+kpl-time-check kernel copy end 05:31:19
+kpl-time-check Preparing UAPI headers start 05:31:21
+kpl-time-check Preparing UAPI headers end 05:31:21
+kpl-time-check setting up Android tree start 05:31:21
+kpl-time-check setting up Android tree end 05:31:23
+kpl-time-check Building WLAN platform start 05:31:23
+kpl-time-check Building WLAN platform end 05:31:25
+kpl-time-check Building WLAN qcacld start 05:31:25
+kpl-time-check Building WLAN qcacld end 05:34:20
+kpl-time-check Installing WLAN modules start 05:34:20
+kpl-time-check Installing WLAN modules end 05:34:20
+kpl-time-check Compiling vendor devicetree start 05:34:20
+kpl-time-check Compiling vendor devicetree end 05:34:25
+kpl-time-check Merging vendor devicetree start 05:34:25
+kpl-time-check Merging vendor devicetree end 05:35:36

@@ -1,0 +1,81 @@
+From 9fddc16245322333a2941ab3d62f6e7d439ccd08 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 04:58:37 +0000
+Subject: [PATCH] wlan: preserve required wrong-key flag for deauth and
+ disassoc
+
+---
+ .../opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c   | 9 +++++----
+ .../wlan/qcacld-3.0/docs/peach-native-injection.md       | 8 +++++---
+ .../wlan/qcacld-3.0/tests/test_native_injection.py       | 6 ++++++
+ 3 files changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index 5d57d4d7..4e003cde 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -3154,12 +3154,12 @@ static inline void wma_mgmt_pktdump_rx_handler(
+ #define WMA_INJ_SLOTS      64
+ #define WMA_INJ_MAX_FRAME  2048
+ 
+-/* Diagnostic A/B switch for the previous unconditional PMF test flag.
+- * Ordinary unprotected probe requests use the normal flags by default.
++/* Force the PMF test flag on other management frames for A/B diagnosis.
++ * Deauthentication/disassociation always retain the required test flag.
+  */
+ static bool mon_tx_wrong_key;
+ module_param_named(mon_tx_wrong_key, mon_tx_wrong_key, bool, 0600);
+-MODULE_PARM_DESC(mon_tx_wrong_key, "Use experimental PMF wrong-key flag for native monitor TX");
++MODULE_PARM_DESC(mon_tx_wrong_key, "Force PMF wrong-key flag on other native monitor management TX");
+ 
+ 
+ static DEFINE_SPINLOCK(wma_inj_lock);
+@@ -3387,7 +3387,8 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, struct net_device *dev,
+ 	mgmt_params.pdata = data;
+ 	mgmt_params.qdf_ctx = qdf_ctx;
+ 	/* This toggle only changes WMI flags, never the native monitor vdev. */
+-	mgmt_params.tx_flags = READ_ONCE(mon_tx_wrong_key) ?
++	mgmt_params.tx_flags = (frame[0] == 0xc0 || frame[0] == 0xa0 ||
++				READ_ONCE(mon_tx_wrong_key)) ?
+ 		MGMT_TX_USE_INCORRECT_KEY : 0;
+ 
+ 	status = wmi_mgmt_unified_cmd_send(wma->wmi_handle, &mgmt_params);
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+index 3e278852..78472af1 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+@@ -1,9 +1,11 @@
+ # peach_v2 native global monitor TX (experimental)
+ 
+ Only `con_mode=4` on `wlan0` is supported. No helper STA is created.
+-TX uses the existing monitor vdev and WMI management-TX command. The PMF test
+-flag copied from sam remains an experiment: sam's helper-vdev results do not
+-establish firmware acceptance on peach_v2's native monitor vdev.
++TX uses the existing monitor vdev and WMI management-TX command.
++Deauthentication/disassociation retain MGMT_TX_USE_INCORRECT_KEY. Other
++management frames use ordinary flags by default; the root-only boolean
++`mon_tx_wrong_key` sysfs parameter forces that flag on them for A/B diagnosis.
++Sam's helper-vdev results do not establish peach_v2 native monitor TX support.
+ 
+ Input is Radiotap followed by a management frame (24–2048 bytes excluding FCS).
+ Raw callers must prepend an empty 8-byte Radiotap header. FLAGS.FCS removes
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+index 4f88acd0..b9332096 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+@@ -91,6 +91,12 @@ int main(void) {
+  assert(!allocated && !refs && !dev.refs && unmaps==1);
+ 
+  wma_inject_handle_completion(&wma,old,0);assert(g_wma_inj.stale==1 && !allocated);
++ /* Deauth/disassoc keep their required flag without changing probe flags.
++  * Inject immediate send failures to test flags without shifting counters. */
++ mon_tx_wrong_key=false;expected_flags=MGMT_TX_USE_INCORRECT_KEY;fail=true;
++ frame[0]=0xc0;assert(wma_inject_mon_frame(0,&dev,frame,24)==QDF_STATUS_E_FAILURE);
++ frame[0]=0xa0;assert(wma_inject_mon_frame(0,&dev,frame,24)==QDF_STATUS_E_FAILURE);
++ frame[0]=0x40;expected_flags=0;fail=false;unmaps-=2;
+  /* A completion can run synchronously inside WMI send. */
+  mon_tx_wrong_key=true;expected_flags=MGMT_TX_USE_INCORRECT_KEY;
+  early=true;assert(wma_inject_mon_frame(0,&dev,frame,24)==0);early=false;
+-- 
+2.53.0
+

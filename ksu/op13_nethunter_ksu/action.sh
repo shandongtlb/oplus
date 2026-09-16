@@ -2,6 +2,7 @@
 
 MODDIR=${0%/*}
 STATE_FLAG=$MODDIR/.nethunter_enabled
+. "$MODDIR/module_identity.sh" || exit 1
 
 log() {
   echo "$*"
@@ -12,7 +13,7 @@ if [ ! -x "$MODDIR/wlan_stack_control.sh" ]; then
   exit 1
 fi
 
-if [ -f "$STATE_FLAG" ]; then
+if [ "$(payload_stack_mode)" = nethunter ]; then
   log "[toggle] current mode: nethunter"
   log "[toggle] switching back to stock"
   if ! sh "$MODDIR/wlan_stack_control.sh" stock; then
@@ -23,7 +24,7 @@ if [ -f "$STATE_FLAG" ]; then
   exit 0
 fi
 
-log "[toggle] current mode: stock"
+log "[toggle] current mode: $(payload_stack_mode)"
 if [ -x "$MODDIR/bind_mount_control.sh" ]; then
   log "[1/2] enable bind mounts"
   if ! sh "$MODDIR/bind_mount_control.sh" on; then

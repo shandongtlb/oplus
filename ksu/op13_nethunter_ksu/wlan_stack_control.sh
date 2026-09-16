@@ -5,6 +5,7 @@ LOGTAG=op13_usb_arsenal
 STAGED_FW_DIR=/mnt/vendor/persist/copy
 STAGED_FW_FILE=$STAGED_FW_DIR/rt2870.bin
 STATE_FLAG=$MODDIR/.nethunter_enabled
+. "$MODDIR/module_identity.sh" || exit 1
 
 log_i() {
   log -t "$LOGTAG" "$*"
@@ -127,8 +128,12 @@ load_module_strict() {
   rel="$2"
 
   if is_loaded "$name"; then
-    log_i "$name already loaded"
-    return 0
+    if [ "$(module_identity "$name")" = payload ]; then
+      log_i "$name already loaded and Build ID verified"
+      return 0
+    fi
+    log_e "$name is loaded from a different or unverified build"
+    return 1
   fi
 
   path=$(resolve_moddir_file "$rel")
@@ -137,7 +142,7 @@ load_module_strict() {
     return 1
   fi
 
-  if insmod "$path" 2>/dev/null; then
+  if insmod "$path" && [ "$(module_identity "$name")" = payload ]; then
     log_i "loaded $name from $path"
     return 0
   fi
@@ -434,8 +439,7 @@ wait_for_wifi_to_quiesce() {
   while [ "$retries" -gt 0 ]; do
     if ! process_running wificond && \
        ! process_running wpa_supplicant && \
-       ! process_running hostapd && \
-       ! is_loaded qca_cld3_peach_v2; then
+       ! process_running hostapd; then
       return 0
     fi
     sleep 1
@@ -465,7 +469,8 @@ prepare_switch() {
   set_wifi_disabled
   stop_wifi_userspace
   if ! wait_for_wifi_to_quiesce; then
-    log_e "wifi stack did not quiesce after disable request"
+    log_e "wifi userspace did not quiesce after disable request"
+    return 1
   fi
   sleep 2
 
@@ -479,9 +484,9 @@ prepare_switch() {
   unload_module rt2x00usb || true
   unload_module rt2x00lib || true
 
-  unload_module qca_cld3_peach_v2 || true
-  unload_module mac80211 || true
-  unload_module cfg80211 || true
+  unload_module qca_cld3_peach_v2 || return 1
+  unload_module mac80211 || return 1
+  unload_module cfg80211 || return 1
 }
 
 finish_switch() {
@@ -508,16 +513,20 @@ switch_to_nethunter() {
   if [ -x "$MODDIR/bind_mount_control.sh" ]; then
     "$MODDIR/bind_mount_control.sh" apply_if_enabled || true
   fi
-  prepare_switch
+  rm -f "$STATE_FLAG"
+  if ! prepare_switch; then
+    finish_switch
+    return 1
+  fi
   sleep 2
 
   load_module_relaxed rfkill /system_dlkm/lib/modules/rfkill.ko || true
   load_module_relaxed libarc4 /system_dlkm/lib/modules/libarc4.ko || true
   load_module_relaxed usbserial /system_dlkm/lib/modules/usbserial.ko || true
 
-  load_module_strict cfg80211 "vendor_dlkm/lib/modules/cfg80211.ko" || return 1
-  load_module_strict mac80211 "vendor_dlkm/lib/modules/mac80211.ko" || return 1
-  load_module_strict qca_cld3_peach_v2 "vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko" || return 1
+  load_module_strict cfg80211 "vendor_dlkm/lib/modules/cfg80211.ko" || { finish_switch; return 1; }
+  load_module_strict mac80211 "vendor_dlkm/lib/modules/mac80211.ko" || { finish_switch; return 1; }
+  load_module_strict qca_cld3_peach_v2 "vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko" || { finish_switch; return 1; }
 
   # Load known and newly bundled add-on drivers only after WLAN core is ready.
   load_module_relaxed zd1201 "$MODDIR/vendor_dlkm/lib/modules/zd1201.ko" || true
@@ -528,6 +537,7 @@ switch_to_nethunter() {
   load_extra_modules_from_rel "system_dlkm/lib/modules" || true
   load_extra_modules_from_rel "vendor_dlkm/lib/modules" || true
 
+  verify_payload_stack || { finish_switch; return 1; }
   finish_switch
   : > "$STATE_FLAG"
   if [ -x "$MODDIR/update_runtime_status.sh" ]; then
@@ -539,16 +549,20 @@ switch_to_nethunter() {
 
 switch_to_stock() {
   log_i "restoring stock wlan stack"
-  prepare_switch
+  rm -f "$STATE_FLAG"
+  if ! prepare_switch; then
+    finish_switch
+    return 1
+  fi
   sleep 2
 
   if [ -x "$MODDIR/bind_mount_control.sh" ]; then
     "$MODDIR/bind_mount_control.sh" remove || true
   fi
 
-  load_stock_module cfg80211 /vendor_dlkm/lib/modules/cfg80211.ko || return 1
-  load_stock_module mac80211 /vendor_dlkm/lib/modules/mac80211.ko || return 1
-  load_stock_module qca_cld3_peach_v2 /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko || return 1
+  load_stock_module cfg80211 /vendor_dlkm/lib/modules/cfg80211.ko || { finish_switch; return 1; }
+  load_stock_module mac80211 /vendor_dlkm/lib/modules/mac80211.ko || { finish_switch; return 1; }
+  load_stock_module qca_cld3_peach_v2 /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko || { finish_switch; return 1; }
 
   finish_switch
   rm -f "$STATE_FLAG"
@@ -563,11 +577,7 @@ print_status() {
   if [ -x "$MODDIR/update_runtime_status.sh" ]; then
     "$MODDIR/update_runtime_status.sh" >/dev/null 2>&1 || true
   fi
-  if [ -f "$STATE_FLAG" ]; then
-    log_i "wlan stack mode: nethunter"
-  else
-    log_i "wlan stack mode: stock"
-  fi
+  log_i "wlan stack mode: $(payload_stack_mode)"
   if is_loaded cfg80211; then
     log_i "cfg80211 loaded"
   else

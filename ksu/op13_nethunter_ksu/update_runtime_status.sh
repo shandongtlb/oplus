@@ -6,6 +6,7 @@ STAGED_FW_FILE=/mnt/vendor/persist/copy/rt2870.bin
 BIND_FLAG=$MODDIR/.bind_mount_enabled
 STATE_FLAG=$MODDIR/.nethunter_enabled
 MODULE_PROP=$MODDIR/module.prop
+. "$MODDIR/module_identity.sh" || exit 1
 
 is_loaded() {
   grep -q "^$1 " /proc/modules 2>/dev/null
@@ -16,15 +17,11 @@ is_bound() {
   awk -v target="$target" '$2 == target { found = 1 } END { exit(found ? 0 : 1) }' /proc/mounts 2>/dev/null
 }
 
-stack_mode="stock"
+stack_mode=$(payload_stack_mode)
 bind_mode="disabled"
 fw_mode="missing"
 
-if [ -f "$STATE_FLAG" ]; then
-  stack_mode="nethunter"
-fi
-
-if [ -f "$STATE_FLAG" ] && [ -f "$BIND_FLAG" ]; then
+if [ "$stack_mode" = nethunter ] && [ -f "$BIND_FLAG" ]; then
   bind_mode="enabled"
 fi
 
@@ -56,6 +53,9 @@ update_module_description() {
 
 {
   echo "stack_mode=$stack_mode"
+  for identity_name in cfg80211 mac80211 qca_cld3_peach_v2; do
+    echo "${identity_name}_identity=$(module_identity "$identity_name")"
+  done
   echo "bind_mode=$bind_mode"
   echo "firmware_rt2870=$fw_mode"
   echo "cfg80211_loaded=$(is_loaded cfg80211 && echo yes || echo no)"

@@ -7,6 +7,7 @@ MODDIR=${0%/*}
 LOGTAG=op13_global_monitor
 MODE=/sys/module/qca_cld3_peach_v2/parameters/con_mode
 STATE=$MODDIR/.global_monitor_enabled
+. "$MODDIR/module_identity.sh" || exit 1
 
 log_i() { log -t "$LOGTAG" "$*" 2>/dev/null; echo "$*"; }
 die() { log_i "[global-monitor] ERROR: $*"; return 1; }
@@ -39,6 +40,7 @@ chan_to_freq() {
 }
 
 mon_on() {
+  verify_payload_stack || { die "运行模块与本包不匹配，请先重新切换 WLAN 栈"; return 1; }
   [ -r "$MODE" ] || { die "peach_v2 con_mode 参数不存在，请先加载 nethunter WLAN 栈"; return 1; }
   [ "$(cat "$MODE" 2>/dev/null)" = 4 ] || printf '4\n' > "$MODE" || { die "无法切换 con_mode=4"; return 1; }
   wait_for_iface monitor || { die "全局 monitor 未启动，查看 dmesg | grep -i monitor"; return 1; }

@@ -1,0 +1,334 @@
+From afc425ebb627d93fa0c94be5eee44843c5440533 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 04:56:24 +0000
+Subject: [PATCH] wlan: report native monitor channel and diagnose firmware TX
+ discard
+
+---
+ .../core/hdd/src/wlan_hdd_cfg80211.c          | 64 +++++++++++++++++++
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   |  2 +-
+ .../wlan/qcacld-3.0/core/wma/src/wma_mgmt.c   | 23 +++++--
+ .../qcacld-3.0/docs/peach-native-injection.md | 13 ++++
+ .../qcacld-3.0/tests/test_monitor_channel.py  | 59 +++++++++++++++++
+ .../qcacld-3.0/tests/test_native_injection.py |  9 ++-
+ 6 files changed, 161 insertions(+), 9 deletions(-)
+ create mode 100644 vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel.py
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 773110f4..8b377dc9 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31310,6 +31310,20 @@ int wlan_hdd_change_hw_mode_for_given_chnl(struct hdd_adapter *adapter,
+  *
+  * Return: 0 success or error code on failure.
+  */
++static int hdd_mon_get_chandef(struct wiphy *wiphy,
++			       struct hdd_adapter *adapter,
++			       struct cfg80211_chan_def *chandef);
++
++/* 20 MHz legacy/HT requests share the same monitor tuning. */
++static bool hdd_mon_same_channel(const struct cfg80211_chan_def *a,
++				const struct cfg80211_chan_def *b)
++{
++	return a->chan == b->chan &&
++		hdd_map_nl_chan_width(a->width) == hdd_map_nl_chan_width(b->width) &&
++		a->center_freq1 == b->center_freq1 &&
++		a->center_freq2 == b->center_freq2;
++}
++
+ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 				       struct cfg80211_chan_def *chandef)
+ {
+@@ -31321,6 +31335,7 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 	struct qdf_mac_addr bssid;
+ 	struct channel_change_req *req;
+ 	struct ch_params ch_params = {0};
++	struct cfg80211_chan_def current = {0};
+ 	int ret;
+ 	enum channel_state chan_freq_state;
+ 	uint8_t max_fw_bw;
+@@ -31374,6 +31389,18 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 		return -EINVAL;
+ 	}
+ 
++	if (adapter->monitor_mode_vdev_up_in_progress)
++		return -EBUSY;
++
++	/* Repeating a fixed channel must not restart the vdev and wait for
++	 * an UP event that firmware need not emit for a no-op restart.
++	 */
++	if (!hdd_mon_get_chandef(wiphy, adapter, &current) &&
++	    hdd_mon_same_channel(&current, chandef)) {
++		wma_inject_resume(adapter->dev);
++		return 0;
++	}
++
+ 	mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
+ 
+ 	if (WLAN_REG_IS_24GHZ_CH_FREQ(chandef->chan->center_freq) &&
+@@ -32881,6 +32908,39 @@ wlan_hdd_cfg80211_get_channel_sta(struct wiphy *wiphy,
+ 	return ret;
+ }
+ 
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++static int hdd_mon_get_chandef(struct wiphy *wiphy,
++			       struct hdd_adapter *adapter,
++			       struct cfg80211_chan_def *chandef)
++{
++	struct wlan_objmgr_vdev *vdev;
++	struct wlan_channel *channel;
++	int ret = -ENODATA;
++
++	if (!adapter->deflink || adapter->monitor_mode_vdev_up_in_progress)
++		return -ENODATA;
++	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_OSIF_ID);
++	if (!vdev)
++		return -ENODATA;
++	if (!QDF_IS_STATUS_SUCCESS(wlan_vdev_is_up_active_state(vdev)))
++		goto out;
++	channel = wlan_vdev_mlme_get_des_chan(vdev);
++	if (!channel || !channel->ch_freq)
++		goto out;
++	chandef->chan = ieee80211_get_channel(wiphy, channel->ch_freq);
++	if (!chandef->chan)
++		goto out;
++	chandef->center_freq1 = channel->ch_cfreq1;
++	chandef->center_freq2 = 0;
++	wlan_hdd_update_chandef(chandef, channel->ch_width,
++				channel->ch_cfreq2, false);
++	ret = cfg80211_chandef_valid(chandef) ? 0 : -ENODATA;
++out:
++	hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_ID);
++	return ret;
++}
++#endif
++
+ static int __wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
+ 					   struct wireless_dev *wdev,
+ 					   struct cfg80211_chan_def *chandef,
+@@ -32904,6 +32964,10 @@ static int __wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
+ 	hdd_reg_wait_for_country_change(hdd_ctx);
+ 
+ 	switch (adapter->device_mode) {
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++	case QDF_MONITOR_MODE:
++		return hdd_mon_get_chandef(wiphy, adapter, chandef);
++#endif
+ 	case QDF_SAP_MODE:
+ 	case QDF_P2P_GO_MODE:
+ 		ret = wlan_hdd_cfg80211_get_channel_sap(wiphy, chandef,
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index 9b76faae..882f9757 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -23415,10 +23415,10 @@ void hdd_sme_monitor_mode_callback(uint8_t vdev_id, bool is_up)
+ 		return;
+ 	}
+ 	if (is_up) {
++		adapter->monitor_mode_vdev_up_in_progress = false;
+ 		qdf_event_set(&adapter->qdf_monitor_mode_vdev_up_event);
+ 		hdd_debug("monitor mode vdev up completed for vdev %d",
+ 			  vdev_id);
+-		adapter->monitor_mode_vdev_up_in_progress = false;
+ 	} else {
+ 		qdf_event_set(&adapter->qdf_monitor_mode_vdev_stop_event);
+ 		hdd_debug("monitor mode vdev stop completed for vdev %d",
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index d3dd55da..5d57d4d7 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -3154,6 +3154,14 @@ static inline void wma_mgmt_pktdump_rx_handler(
+ #define WMA_INJ_SLOTS      64
+ #define WMA_INJ_MAX_FRAME  2048
+ 
++/* Diagnostic A/B switch for the previous unconditional PMF test flag.
++ * Ordinary unprotected probe requests use the normal flags by default.
++ */
++static bool mon_tx_wrong_key;
++module_param_named(mon_tx_wrong_key, mon_tx_wrong_key, bool, 0600);
++MODULE_PARM_DESC(mon_tx_wrong_key, "Use experimental PMF wrong-key flag for native monitor TX");
++
++
+ static DEFINE_SPINLOCK(wma_inj_lock);
+ static struct wma_inject_ctx {
+ 	tp_wma_handle owner;
+@@ -3172,6 +3180,7 @@ static struct wma_inject_ctx {
+ 	uint32_t busy;
+ 	uint32_t stale;
+ 	bool retired;
++	uint32_t last_status;
+ } g_wma_inj;
+ 
+ #define wma_inj_should_log(n) ((n) <= 8 || ((n) % 256) == 0)
+@@ -3246,11 +3255,13 @@ static void wma_inject_release(tp_wma_handle wma, uint32_t slot,
+ 		g_wma_inj.completed++;
+ 		/* NO_ACK is distinct from DISCARD; neither proves no RF TX.
+ 		 * COMPLETE_OK is a firmware report, not an independent RF capture. */
+-		if (wma_inj_should_log(g_wma_inj.completed))
++		if (wma_inj_should_log(g_wma_inj.completed) ||
++		    status != g_wma_inj.last_status)
+ 			wma_info("NETHUNTER-INJ: [completion] desc=%u status=%u(%s) submitted=%u completed=%u inflight=%u busy=%u stale=%u",
+ 				 desc_id, status, wma_get_status_str(status),
+ 				 g_wma_inj.submitted, g_wma_inj.completed,
+ 				 g_wma_inj.used - 1, g_wma_inj.busy, g_wma_inj.stale);
++		g_wma_inj.last_status = status;
+ 	}
+ 	qdf_nbuf_free(nbuf);
+ 	g_wma_inj.slots[slot].nbuf = NULL;
+@@ -3375,9 +3386,9 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, struct net_device *dev,
+ 	mgmt_params.desc_id = desc_id;
+ 	mgmt_params.pdata = data;
+ 	mgmt_params.qdf_ctx = qdf_ctx;
+-	/* Match the PMF test flag used by sam. Its effect on peach_v2 global
+-	 * monitor TX must be measured; it is not proof of firmware support. */
+-	mgmt_params.tx_flags = MGMT_TX_USE_INCORRECT_KEY;
++	/* This toggle only changes WMI flags, never the native monitor vdev. */
++	mgmt_params.tx_flags = READ_ONCE(mon_tx_wrong_key) ?
++		MGMT_TX_USE_INCORRECT_KEY : 0;
+ 
+ 	status = wmi_mgmt_unified_cmd_send(wma->wmi_handle, &mgmt_params);
+ 	spin_lock_bh(&wma_inj_lock);
+@@ -3388,9 +3399,9 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, struct net_device *dev,
+ 	} else {
+ 		g_wma_inj.submitted++;
+ 		if (wma_inj_should_log(g_wma_inj.submitted))
+-			wma_info("NETHUNTER-INJ: [submit] #%u vdev=%u desc=%u chan=%u len=%u fc=0x%02x",
++			wma_info("NETHUNTER-INJ: [submit] #%u vdev=%u desc=%u chan=%u len=%u fc=0x%02x flags=%u",
+ 				 g_wma_inj.submitted, vdev_id, desc_id, chanfreq,
+-				 frame_len, frame[0]);
++				 frame_len, frame[0], mgmt_params.tx_flags);
+ 		if (g_wma_inj.slots[slot].done)
+ 			wma_inject_release(wma, slot, true,
+ 					   g_wma_inj.slots[slot].status);
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+index 410cd700..3e278852 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+@@ -41,3 +41,16 @@ The first uses this kernel's real Radiotap iterator with ASan/UBSan. The second
+ runs the production TX/complete/close code against a WMI stub with injected
+ allocation/send failures, early/duplicate completions and missing completions.
+ They validate host ownership and input handling, not RF or firmware behavior.
++
++Device investigation (2026-09-16): the installed v4 payload initially differed
++from the loaded qcacld Build ID. After explicit reload the v4 Build ID matched.
++The Kali chroot had no /sys mount: aircrack-ng 1.7 therefore missed the phy80211
++sysfs check and sent raw frames, which this Radiotap interface rejects. With
++/sys visible, broadcast probes reached WMI and the logged completions were
++DISCARD, not successful RF injection. The 5 GHz directed test also returned
++zero replies. Local outgoing tcpdump capture is not an independent RF capture.
++
++Monitor get_channel now reports the active vdev's channel, and repeating an
++identical tuning avoids the no-op restart that previously waited for an UP
++notification and timed out. The callback publishes its state before waking
++waiters. Run tests/test_monitor_channel.py for the channel reporting checks.
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel.py
+new file mode 100644
+index 00000000..bedd78c7
+--- /dev/null
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel.py
+@@ -0,0 +1,59 @@
++#!/usr/bin/env python3
++"""Check live monitor channel reporting and repeated 20 MHz tuning."""
++from pathlib import Path
++import subprocess, tempfile
++r=Path(__file__).resolve().parents[1]
++s=(r/'core/hdd/src/wlan_hdd_cfg80211.c').read_text()
++def function(marker):
++    start=s.rindex(marker); end=s.index('\n}',start)+2
++    return s[start:end]
++shim=r'''
++#include <assert.h>
++#include <stdbool.h>
++#include <errno.h>
++#include <stdio.h>
++#define WLAN_OSIF_ID 1
++#define QDF_IS_STATUS_SUCCESS(x) ((x)==0)
++struct wiphy {int unused;};
++struct channel {unsigned freq;};
++struct cfg80211_chan_def {struct channel *chan; unsigned width,center_freq1,center_freq2;};
++struct wlan_objmgr_vdev {int unused;};
++struct wlan_channel {unsigned ch_freq,ch_cfreq1,ch_cfreq2,ch_width;};
++struct hdd_adapter {void *deflink; bool monitor_mode_vdev_up_in_progress;};
++static struct wlan_objmgr_vdev vdev;
++static struct wlan_channel desired={5765,5765,0,20};
++static struct channel chan={5765};
++static int refs; static bool absent,down,missing;
++static unsigned hdd_map_nl_chan_width(unsigned w) {return w==21?20:w;}
++static struct wlan_objmgr_vdev *hdd_objmgr_get_vdev_by_user(void *p,int id) {if(absent)return NULL;refs++;return &vdev;}
++static void hdd_objmgr_put_vdev_by_user(void *p,int id) {assert(refs==1);refs--;}
++static int wlan_vdev_is_up_active_state(void *p) {return down;}
++static struct wlan_channel *wlan_vdev_mlme_get_des_chan(void *p) {return missing?NULL:&desired;}
++static struct channel *ieee80211_get_channel(void *p,unsigned f) {return f==5765?&chan:NULL;}
++static void wlan_hdd_update_chandef(struct cfg80211_chan_def *c,unsigned w,unsigned f,bool legacy) {c->width=w;c->center_freq2=f;}
++static bool cfg80211_chandef_valid(struct cfg80211_chan_def *c) {return c->chan && c->center_freq1!=0;}
++'''
++test=r'''
++int main(void) {
++ struct wiphy w={0};struct hdd_adapter a={(void *)1,false};struct cfg80211_chan_def c={0};
++ assert(!hdd_mon_get_chandef(&w,&a,&c) && !refs && c.chan==&chan && c.width==20 && c.center_freq1==5765);
++ struct cfg80211_chan_def req=c;assert(hdd_mon_same_channel(&req,&c));
++ req.width=21;assert(hdd_mon_same_channel(&req,&c));
++ req.width=40;assert(!hdd_mon_same_channel(&req,&c));
++ req=c;req.center_freq1+=10;assert(!hdd_mon_same_channel(&req,&c));
++ req=c;req.center_freq2=5530;assert(!hdd_mon_same_channel(&req,&c));
++ req=c;req.chan=NULL;assert(!hdd_mon_same_channel(&req,&c));
++ a.monitor_mode_vdev_up_in_progress=true;assert(hdd_mon_get_chandef(&w,&a,&c)==-ENODATA && !refs);a.monitor_mode_vdev_up_in_progress=false;
++ down=true;assert(hdd_mon_get_chandef(&w,&a,&c)==-ENODATA && !refs);down=false;
++ missing=true;assert(hdd_mon_get_chandef(&w,&a,&c)==-ENODATA && !refs);missing=false;
++ absent=true;assert(hdd_mon_get_chandef(&w,&a,&c)==-ENODATA && !refs);absent=false;
++ desired.ch_freq=0;assert(hdd_mon_get_chandef(&w,&a,&c)==-ENODATA && !refs);
++ desired.ch_freq=1000;assert(hdd_mon_get_chandef(&w,&a,&c)==-ENODATA && !refs);
++ desired.ch_freq=5765;desired.ch_cfreq1=0;assert(hdd_mon_get_chandef(&w,&a,&c)==-ENODATA && !refs);
++ puts("Monitor channel reporting, inactive/missing vdev, reference release and retune comparisons passed");
++}
++'''
++with tempfile.TemporaryDirectory() as tmp:
++    p=Path(tmp);(p/'test.c').write_text(shim+function('static bool hdd_mon_same_channel(')+function('static int hdd_mon_get_chandef(')+test)
++    subprocess.run(['cc','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-fsanitize=address,undefined',str(p/'test.c'),'-o',str(p/'test')],check=True)
++    subprocess.run([str(p/'test')],check=True)
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+index 52e54ab3..4f88acd0 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+@@ -14,6 +14,9 @@ shim = r'''
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#define module_param_named(...)
++#define MODULE_PARM_DESC(...)
++#define READ_ONCE(x) (x)
+ #define DEFINE_SPINLOCK(n) int n
+ static void spin_lock_bh(int *p) {assert(!*p);*p=1;}
+ static void spin_unlock_bh(int *p) {assert(*p);*p=0;}
+@@ -33,7 +36,7 @@ struct wmi_mgmt_params {qdf_nbuf_t tx_frame;unsigned frm_len,vdev_id,chanfreq,de
+ static struct wma_handle wma={1,{{(void *)1,true,WMI_VDEV_TYPE_MONITOR,5765}},(void *)1,(void *)1};
+ static int mode=QDF_GLOBAL_MONITOR_MODE,refs,allocated,unmaps,sends;
+ static bool early,fail,alloc_fail;
+-static unsigned last_desc;
++static unsigned last_desc,expected_flags;
+ static uint8_t captured[2048];
+ static void *cds_get_context(int id) {return id==QDF_MODULE_ID_WMA?&wma:(void *)1;}
+ static int cds_get_conparam(void) {return mode;}
+@@ -63,7 +66,7 @@ static void log_stub(const char *f,...) {}
+ static void wma_inject_handle_completion(tp_wma_handle,unsigned,unsigned);
+ static QDF_STATUS wmi_mgmt_unified_cmd_send(void *w,struct wmi_mgmt_params *p) {
+  sends++;last_desc=p->desc_id;memcpy(captured,p->pdata,p->frm_len);
+- assert(p->tx_flags==MGMT_TX_USE_INCORRECT_KEY && p->chanfreq==5765 && p->vdev_id==0);
++ assert(p->tx_flags==expected_flags && p->chanfreq==5765 && p->vdev_id==0);
+  p->tx_frame->mapped=true;
+  if(early) {
+   int before=allocated;
+@@ -86,8 +89,10 @@ int main(void) {
+  assert(allocated==1 && refs==1 && dev.refs==1 && !memcmp(frame,captured,24));
+  wma_inject_handle_completion(&wma,last_desc,0);
+  assert(!allocated && !refs && !dev.refs && unmaps==1);
++
+  wma_inject_handle_completion(&wma,old,0);assert(g_wma_inj.stale==1 && !allocated);
+  /* A completion can run synchronously inside WMI send. */
++ mon_tx_wrong_key=true;expected_flags=MGMT_TX_USE_INCORRECT_KEY;
+  early=true;assert(wma_inject_mon_frame(0,&dev,frame,24)==0);early=false;
+  assert(!allocated && !refs && !g_wma_inj.used && g_wma_inj.submitted==2 && g_wma_inj.completed==2);
+  /* Send failure has already unmapped; freeing must not unmap twice. */
+-- 
+2.53.0
+
