@@ -4,15 +4,16 @@
 （`con_mode=4`）及原生 `wlan0` monitor vdev。2026-09-16 按用户要求，
 以 sam 完整实现为主要依据：monitor 负责 RX/主机所有权，内部 STA helper 负责 TX。
 全局监听不要求直接由 monitor vdev 发包；旧 oplus 补丁仅作参考。
-已交付包为 v7：在 v6 helper 实现上接入 sam WEXT 兼容，并修复宽信道 RX-only 下
+此前 v7：在 v6 helper 实现上接入 sam WEXT 兼容，并修复宽信道 RX-only 下
 主机 qdisc 留帧后跨频道补发。2026-09-16 真机三轮指定 AP Probe 均为 30/30，
 不加 `--ignore-negative-one`；40/80 MHz 留帧复现和 20 MHz 正向对照均通过。
 启停恢复、换频道、普通 Wi-Fi 和 128 帧短突发通过。随后10分钟跳频通过，
 单次空闲SSR自动恢复失败，160 MHz仅配置成功、RX未验收。
 详见 [v7 真机报告](../../说明/op13_v7_runtime_20260916.md) 和
 [专项结果与SSR定位](../../说明/op13_v7_extended_20260916.md)。
-当前源码另含0013 SSR重建修复，提交`30426bf8`，尚未完整构建或真机验收，
-已交付v7不含该修复。主机检查和补丁重放见[校验记录](../../说明/验证/op13-ssr-fix-20260916.json)。
+最新v8已完成一轮统一构建与strip/打包，包含0013 SSR重建修复，提交`30426bf8`。
+v8尚未部署/真机验收。构建和包身份见[v8校验记录](../../说明/验证/op13-v8-build-20260916.json)，
+主机检查和补丁重放见[源码校验](../../说明/验证/op13-ssr-fix-20260916.json)。
 
 ## 应用与统一编译
 
@@ -42,7 +43,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 - `cd811a61`：记录 v6 用户真机 Probe 成功与验证边界，仅修改文档。
 - `c79b6f65`：sam WEXT handlers/频道确认与主机 qdisc 切换边界；完整保留 v7 构建快照的 11 个文件。
 - `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
-- `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；待构建/真机验证。
+- `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；v8构建通过，待真机验证。
 
 v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
 不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
@@ -80,7 +81,7 @@ CNSS 只作为构建依赖，包内不放 CNSS 模块。校验记录见包内 `d
 `/root/pt/op13-wext-qdisc-20260916/host-tests.json`；收尾时五项受影响检查再次通过。
 源码文档 `qcacld-3.0/docs/peach-native-injection.md` 列出全部测试与限制。
 成功构建结果见 `/root/pt/op13-wext-qdisc-20260916/build-result.json`。
-当前包为 `op13_nethunter_ksu-peach-native-global-v7-integrated.zip`，SHA-256
+此前已测包为 `op13_nethunter_ksu-peach-native-global-v7-integrated.zip`，SHA-256
 `3a32b8975076861d43285b0bab25c7a8f92e79cefe6da7e614eab851e12401f2`。
 qcacld Build ID 为 `6f765b5dc0aeaafd1b5c71d23b95ca612ca153dd`，三模块安装文件
 与实际加载 notes 均在真机测试前后核对。收尾只提交代码、补丁和文档，没有重新构建或打包。
@@ -95,7 +96,7 @@ NETDEV_TX_BUSY、并发换频或长时间耐久性；160 MHz RX仍缺空口证�
 空闲SSR暴露monitor重建-22和RX恢复缺口，完整退出重进可恢复。0013将monitor
 context移出station union，补DP monitor/省电恢复，并阻止失败后的TX恢复；还保留
 monitor WEXT，跳过固件已停时的UP/STOP等待。13项主机检查通过，旧union负向对照
-可复现参数覆盖；这些修复尚未构建/上机，v7包仍有已记录的SSR问题。
+可复现参数覆盖；修复已随v8构建/打包，尚未上机，v7包仍有已记录的SSR问题。
 
 ### WEXT 兼容实现的来源
 
@@ -111,3 +112,12 @@ oplus 原补丁也有对应历史修复：[0011 WEXT 查询桥](../qca_inject/00
 记录了 `wireless_handlers` 接线及 aireplay channel -1 的原因；
 [0012 WEXT 补充](../qca_inject/0012-fix-wext+waittime.patch) 增加了设置入口等处理。
 这两项仅作平台历史参考，当前全局路线以 sam 的查询/同频道确认和 nl80211 换频道语义为准。
+
+## v8 构建产物（2026-09-16）
+
+`op13_nethunter_ksu-peach-native-global-v8-integrated.zip`（7064244字节），SHA-256：
+`ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a`。
+qcacld Build ID：`ff0f34e4ea4eba64f788c495b3a9eabb401d3157`。
+从已提交的`30426bf8`统一构建，源码前后未变；仅三模块副本strip-debug并打包。
+全部装载段、模块元数据、导入CRC和Build ID保留，ZIP内容/权限校验通过。
+本轮未部署或测试手机，SSR修复仍待上机验收；未执行第二轮构建。

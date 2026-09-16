@@ -1,36 +1,38 @@
 OnePlus 13 peach_v2 native global monitor + sam-derived helper TX package
 
-Package: 2026.09.16-peach-native-global-v7 / versionCode 2026091607
-Source base commit: cd811a615772f4c144118f6215ab0d8972544959
-Source status: working-tree WEXT compatibility and RX-only host-qdisc fixes included
-Build started UTC: 2026-09-16T14:47:27Z
-Build finished UTC: 2026-09-16T14:59:02Z
+Package: 2026.09.16-peach-native-global-v8 / versionCode 2026091608
+Source commit: 30426bf8a3e1b57596ee741086e2c491617c58d1
+Source tree: a3215426a531edd58dd9636b262da0296bac76e4
+Source status: WLAN worktree clean; source unchanged throughout the build.
+Existing oplus_modules_variant.bzl workspace configuration was retained.
+Build started UTC: 2026-09-16T18:10:43+00:00
+Build finished UTC: 2026-09-16T18:22:15+00:00
+Elapsed seconds: 692.45
 Target: sun perf, peach_v2, ARM64 4 KiB
 Build command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
-The single unified build completed successfully; no rebuild was run for packaging.
-Build evidence: /root/pt/op13-wext-qdisc-20260916/build.log
-Host tests: /root/pt/op13-wext-qdisc-20260916/host-tests.json
+One unified build completed successfully; no rebuild was run for packaging.
+Build evidence: /root/pt/op13-ssr-build-20260916/build.log
+Host tests: /root/pt/op13-ssr-fix-20260916/host-tests.json
 Implementation: global con_mode=4 monitor wlan0 owns RX; sam-derived internal STA helper owns TX.
-This package contains the post-v6 WEXT compatibility and host qdisc transition fixes.
+v8 includes the 0013 monitor SSR reconstruction fix, plus all v7 WEXT/qdisc changes.
+The bounded queue, completion-driven worker and DMA recovery boundaries remain.
 
 Payload: exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko.
-Input: kernel_platform/out/msm-kernel-sun-perf/dist; each raw module comes from this build.
+Input: kernel_platform/out/msm-kernel-sun-perf/dist from this unified build.
 Strip: llvm-strip --strip-debug on package copies; raw build outputs preserved.
 CNSS modules are build dependencies only and are not packaged.
+Unchanged cfg80211/mac80211 may be reused by the unified build cache.
 
 Validation:
 - ARM64 relocatable ELF; no debug sections remain after strip.
-- Build ID note preserved through strip.
-- Module metadata and modversion imports remain present.
-- qca_cld3_peach_v2 contains wma_inject_ensure_tx_vdev, wma_inject_mon_frame, wma_inject_resume,
-  wma_inject_set_host_blocked and wma_inject_tx_ready.
-- Eleven host ASan/UBSan checks passed; these do not establish firmware or RF success.
-- No device deployment or phone test was performed for this package.
+- Every allocated ELF section, .modinfo, __versions and Build ID note matches raw input.
+- Required helper/WEXT symbols and new SSR diagnostics are present.
+- All 13 host ASan/UBSan checks passed on the identical source files.
+- ZIP CRC, payload bytes, binary Build ID notes and executable permissions verified.
+- No device deployment or phone test was performed for v8; SSR still needs device validation.
+- These checks do not validate every ROM dependency CRC or firmware/RF behavior.
 
-Source patch SHA-256: bb5fe84e07b5b0a0da6a1f83f644c24c362c1f121b5edbb7ab6f284d9971b1fc
-cfg80211/mac80211 were reused from the unified build cache; their older mtimes are expected.
-All allocated ELF sections, .modinfo, __versions and Build ID note bytes match raw inputs.
-This validates stripping; it does not validate every ROM dependency CRC or runtime behavior.
+Combined source patch SHA-256: c539c1ef09cc68390eb8350894f698ea2f8caa048108ce39db2025da606ab89c
 
 Module manifest:
 - cfg80211.ko: 2070456 bytes stripped (raw 10201736)
@@ -45,31 +47,31 @@ Module manifest:
   Build ID abacfa26d25bc862a3383f8f21c4f3eccd333778
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,libarc4
-- qca_cld3_peach_v2.ko: 19784112 bytes stripped (raw 513201880)
-  sha256 d4dc7f0d6788638373cf69ef83943c5e6867722e53c1ed08b455d4f8ec09e611
-  raw_sha256 4f4864d80be3489d652931033075dc0de9ab7d917fe66e1471dddd377e008ab7
-  Build ID 6f765b5dc0aeaafd1b5c71d23b95ca612ca153dd
+- qca_cld3_peach_v2.ko: 19785976 bytes stripped (raw 513212536)
+  sha256 a504e2d440037a241c07748f9076c36f9c39aa194e5977c66f5e903f6d974ea7
+  raw_sha256 f23d88a5121e2fe31753f564365c94d907002a9a6ab63e19bdb76a8619161d4d
+  Build ID ff0f34e4ea4eba64f788c495b3a9eabb401d3157
   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
 
 Completed unified build phases:
-kpl-time-check kernel start 14:47:28
-kpl-time-check kernel end 14:47:51
-kpl-time-check oplus DDK start 14:47:51
-kpl-time-check oplus DDK end 14:53:57
-kpl-time-check kernel copy start 14:53:57
-kpl-time-check kernel copy end 14:53:58
-kpl-time-check Preparing UAPI headers start 14:54:02
-kpl-time-check Preparing UAPI headers end 14:54:02
-kpl-time-check setting up Android tree start 14:54:02
-kpl-time-check setting up Android tree end 14:54:05
-kpl-time-check Building WLAN platform start 14:54:05
-kpl-time-check Building WLAN platform end 14:54:14
-kpl-time-check Building WLAN qcacld start 14:54:14
-kpl-time-check Building WLAN qcacld end 14:57:18
-kpl-time-check Installing WLAN modules start 14:57:18
-kpl-time-check Installing WLAN modules end 14:57:18
-kpl-time-check Compiling vendor devicetree start 14:57:18
-kpl-time-check Compiling vendor devicetree end 14:57:23
-kpl-time-check Merging vendor devicetree start 14:57:23
-kpl-time-check Merging vendor devicetree end 14:58:35
+kpl-time-check kernel start 18:10:43
+kpl-time-check kernel end 18:11:08
+kpl-time-check oplus DDK start 18:11:08
+kpl-time-check oplus DDK end 18:17:13
+kpl-time-check kernel copy start 18:17:13
+kpl-time-check kernel copy end 18:17:14
+kpl-time-check Preparing UAPI headers start 18:17:18
+kpl-time-check Preparing UAPI headers end 18:17:18
+kpl-time-check setting up Android tree start 18:17:18
+kpl-time-check setting up Android tree end 18:17:21
+kpl-time-check Building WLAN platform start 18:17:21
+kpl-time-check Building WLAN platform end 18:17:30
+kpl-time-check Building WLAN qcacld start 18:17:30
+kpl-time-check Building WLAN qcacld end 18:20:36
+kpl-time-check Installing WLAN modules start 18:20:36
+kpl-time-check Installing WLAN modules end 18:20:36
+kpl-time-check Compiling vendor devicetree start 18:20:36
+kpl-time-check Compiling vendor devicetree end 18:20:41
+kpl-time-check Merging vendor devicetree start 18:20:41
+kpl-time-check Merging vendor devicetree end 18:21:53

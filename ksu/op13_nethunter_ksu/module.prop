@@ -1,6 +1,6 @@
 id=op13_coloros16_nethunter
 name=OnePlus 13 ColorOS16 NetHunter
-version=2026.09.16-peach-native-global-v7
-versionCode=2026091607
+version=2026.09.16-peach-native-global-v8
+versionCode=2026091608
 author=shandongtlb
-description=peach_v2 global monitor with sam-derived internal STA TX helper and WEXT-qdisc fixes
+description=peach_v2 global monitor with sam-derived STA TX helper, WEXT-qdisc fixes and monitor SSR rebuild

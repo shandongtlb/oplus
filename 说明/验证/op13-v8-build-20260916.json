@@ -1,0 +1,178 @@
+{
+  "archive": "/root/pt/oplus/ksu/op13_nethunter_ksu-peach-native-global-v8-integrated.zip",
+  "bytes": 7064244,
+  "sha256": "ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a",
+  "files": 91,
+  "modules": {
+    "cfg80211.ko": {
+      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/cfg80211.ko",
+      "raw_bytes": 10201736,
+      "raw_sha256": "b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c",
+      "bytes": 2070456,
+      "sha256": "488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626",
+      "build_id": "40533847cea5b0e9aeac19849b37f1dfc7dc9f44",
+      "build_id_note_sha256": "14f9436fa03a8da75c11059705c7599df9d4ae81a8fd7049455472cf94173140",
+      "vermagic": "6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64",
+      "depends": "rfkill",
+      "modversions": 195,
+      "allocated_sections_preserved": 43
+    },
+    "mac80211.ko": {
+      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/mac80211.ko",
+      "raw_bytes": 17277376,
+      "raw_sha256": "3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0",
+      "bytes": 1963888,
+      "sha256": "6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d",
+      "build_id": "abacfa26d25bc862a3383f8f21c4f3eccd333778",
+      "build_id_note_sha256": "d34583b9ac9aecb9b14208822628ba2cc995241386d0d708c76425a4d992b880",
+      "vermagic": "6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64",
+      "depends": "cfg80211,libarc4",
+      "modversions": 317,
+      "allocated_sections_preserved": 43
+    },
+    "qca_cld3_peach_v2.ko": {
+      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/qca_cld3_peach_v2.ko",
+      "raw_bytes": 513212536,
+      "raw_sha256": "f23d88a5121e2fe31753f564365c94d907002a9a6ab63e19bdb76a8619161d4d",
+      "bytes": 19785976,
+      "sha256": "a504e2d440037a241c07748f9076c36f9c39aa194e5977c66f5e903f6d974ea7",
+      "build_id": "ff0f34e4ea4eba64f788c495b3a9eabb401d3157",
+      "build_id_note_sha256": "54f54d0a8a516a55c475efa2b3719993a3202c9e5658e92a6ce52ace43abc4e8",
+      "vermagic": "6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64",
+      "depends": "cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers",
+      "modversions": 600,
+      "allocated_sections_preserved": 41,
+      "verified_symbols": [
+        "wma_inject_ensure_tx_vdev",
+        "wma_inject_mon_frame",
+        "wma_inject_resume",
+        "wma_inject_set_host_blocked",
+        "wma_inject_tx_ready",
+        "hdd_mon_wext_giwfreq",
+        "hdd_mon_wext_handler_def",
+        "wlan_hdd_mon_wext_get_freq",
+        "wlan_hdd_mon_wext_set_freq"
+      ],
+      "ssr_diagnostics_present": [
+        "[SSR] monitor RX and saved channel restored",
+        "[SSR] monitor restart failed at %s: %d"
+      ]
+    }
+  },
+  "source_commit": "30426bf8a3e1b57596ee741086e2c491617c58d1",
+  "source_tree": "a3215426a531edd58dd9636b262da0296bac76e4",
+  "combined_patch_sha256": "c539c1ef09cc68390eb8350894f698ea2f8caa048108ce39db2025da606ab89c",
+  "build": {
+    "command": "RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf",
+    "cwd": "/root/pt/oneplus13-kernel-b",
+    "started_utc": "2026-09-16T18:10:43+00:00",
+    "log": "/root/pt/op13-ssr-build-20260916/build.log",
+    "exit_code": 0,
+    "finished_utc": "2026-09-16T18:22:15+00:00",
+    "elapsed_seconds": 692.45,
+    "source_unchanged": true
+  },
+  "device_tested": false,
+  "validation": {
+    "zip_crc_and_contents": true,
+    "exactly_three_modules": true,
+    "binary_notes_match": true,
+    "allocated_sections_preserved": true,
+    "no_debug_sections": true,
+    "permissions_preserved": true
+  },
+  "packaged_at": "2026-09-16T18:22:40.345235+00:00",
+  "build_validation": {
+    "passed": true,
+    "phases": [
+      "kpl-time-check kernel start 18:10:43",
+      "kpl-time-check kernel end 18:11:08",
+      "kpl-time-check oplus DDK start 18:11:08",
+      "kpl-time-check oplus DDK end 18:17:13",
+      "kpl-time-check kernel copy start 18:17:13",
+      "kpl-time-check kernel copy end 18:17:14",
+      "kpl-time-check Preparing UAPI headers start 18:17:18",
+      "kpl-time-check Preparing UAPI headers end 18:17:18",
+      "kpl-time-check setting up Android tree start 18:17:18",
+      "kpl-time-check setting up Android tree end 18:17:21",
+      "kpl-time-check Building WLAN platform start 18:17:21",
+      "kpl-time-check Building WLAN platform end 18:17:30",
+      "kpl-time-check Building WLAN qcacld start 18:17:30",
+      "kpl-time-check Building WLAN qcacld end 18:20:36",
+      "kpl-time-check Installing WLAN modules start 18:20:36",
+      "kpl-time-check Installing WLAN modules end 18:20:36",
+      "kpl-time-check Compiling vendor devicetree start 18:20:36",
+      "kpl-time-check Compiling vendor devicetree end 18:20:41",
+      "kpl-time-check Merging vendor devicetree start 18:20:41",
+      "kpl-time-check Merging vendor devicetree end 18:21:53"
+    ],
+    "outer_exit_code": 0,
+    "source_unchanged": true,
+    "qcacld_bazel_success": true,
+    "unexpected_build_errors": [],
+    "known_preexisting_diagnostics": [
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory",
+      "awk: fatal: cannot open file `/root/pt/oneplus13-kernel-b/kernel_platform/./msm-kernel/android/gki_system_dlkm_modules' for reading: No such file or directory"
+    ],
+    "outputs": {
+      "Image": {
+        "bytes": 36801024,
+        "mtime_utc": "2026-09-15T16:53:21.651444+00:00"
+      },
+      "vmlinux": {
+        "bytes": 327142168,
+        "mtime_utc": "2026-09-15T16:53:21.624444+00:00"
+      },
+      "cfg80211.ko": {
+        "bytes": 10201736,
+        "mtime_utc": "2026-09-15T16:55:02.077022+00:00"
+      },
+      "mac80211.ko": {
+        "bytes": 17277376,
+        "mtime_utc": "2026-09-15T16:55:02.060021+00:00"
+      },
+      "qca_cld3_peach_v2.ko": {
+        "bytes": 513212536,
+        "mtime_utc": "2026-09-16T18:20:36.158594+00:00"
+      }
+    },
+    "log_sha256": "3b1a66df1bb84b01cd117224de845145b0efbfe9a046ac66f557a77908c05fe7"
+  },
+  "source_before": {
+    "head": "30426bf8a3e1b57596ee741086e2c491617c58d1",
+    "tree": "a3215426a531edd58dd9636b262da0296bac76e4",
+    "wlan_status": "",
+    "files": {
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h": "c56f8ba9a8655a9636606726fd56eef5971fd2e18f9b29ce69f13bab0ad72b9f",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_driver_ops.c": "5b738935011838f3d339d3cd32d9653ff39f30bbb84077400c0e218b143eec92",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c": "f8f878718f4ec448b3d5dae880ff3afa4adc66db235fdcd7f8759b2de7d108c4",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md": "ba95d1db890ae725075a366383c65e44226882c3b91a5b16d36783eb7b65cb36",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py": "1857a91f95d6ba1ba4ed10e0852a0aed1ddcb96477a73ab03c47ebbd5bc1b027",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_rebuild.py": "74afc51c41203843fa0fd0121e780f79e8b1b2f6ffc03f8cdd3fdf09bede93e2",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_stop.py": "d558956f472ba6ebb47e5c21961dcd831600088a81fbcf928b7f9b7262e88386",
+      "kernel_platform/oplus/bazel/oplus_modules_variant.bzl": "19271c80cd0870c0400eedcd29a9ac860728e7b10ee50d348789812e51664fef"
+    }
+  },
+  "host_checks_evidence": "op13-ssr-fix-20260916.json",
+  "raw_evidence_directory": "/root/pt/op13-ssr-build-20260916"
+}

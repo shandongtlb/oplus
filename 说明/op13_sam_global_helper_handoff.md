@@ -297,3 +297,19 @@ monitor.center_freq1(offset16)会被station.roam_profile.SSIDs.SSIDList覆盖；
 本轮没有完整构建、打包、部署或手机操作，已交付v7 ZIP哈希不变且不含修复。
 下一步经用户明确启动后仅进行一轮统一构建；结束先报告并停下。之后再strip/打包、
 上机先验空闲SSR，再验带流量SSR、WEXT/RX/宽信道队列和普通Wi-Fi恢复。
+
+## v8 SSR 修复统一构建与打包完成
+
+用户随后明确要求“构建吧，构建完打包”：已完成一轮统一sun perf构建并交付v8，
+包含`30426bf8`的0013 SSR重建修复。构建2026-09-16T18:10:43+00:00至
+2026-09-16T18:22:15+00:00，耗时692.45秒，全部阶段完成；
+源码前后哈希一致，WLAN工作区干净。三模块副本strip-debug，原始产物保留，未加CNSS。
+包：`oplus/ksu/op13_nethunter_ksu-peach-native-global-v8-integrated.zip`，7064244字节，SHA-256：
+`ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a`。
+qcacld Build ID：`ff0f34e4ea4eba64f788c495b3a9eabb401d3157`。
+ELF装载段/元数据/CRC/Build ID与raw一致、ZIP完整性/权限/三模块范围均通过。
+之前13项主机检查对应源码哈希未变；v8尚未部署/上机，SSR修复效果仍待真机验收。
+证据`op13-ssr-build-20260916/`和`oplus/说明/验证/op13-v8-build-20260916.json`。
+本轮没有启动第二次构建；下一步先验空闲SSR，再验带流量SSR与RX/WEXT/普通Wi-Fi。
+下方“等待构建”和“v7为最新包”为历史状态。
+本次用户同时授权构建和打包，因此单轮成功后接着strip/打包，没有重新构建。

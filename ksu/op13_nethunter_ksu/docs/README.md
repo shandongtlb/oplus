@@ -1,17 +1,18 @@
 # OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
-This v7 package uses native global monitor (`con_mode=4`, `wlan0`) with
-sam-derived internal STA helper TX. It adds monitor WEXT compatibility and
-host qdisc cleanup across channel transitions to the tested v6 baseline.
+This v8 package uses native global monitor (`con_mode=4`, `wlan0`) with
+sam-derived internal STA helper TX. It retains the WEXT and host qdisc fixes
+and adds monitor SSR reconstruction: a separate saved channel context,
+DP RX/power/channel restoration, guarded TX restart and firmware-down teardown.
 WEXT queries and current 20 MHz channel confirmation are supported; use
 nl80211 (`iw`) for actual channel changes. Loaded module identities are
 checked against the binary ELF notes bundled under `module_build_ids/`.
 
-The v6 baseline passed Probe tests on 2.4/5 GHz, authentication, repeated
-start/stop and channel switching; the user also reported unicast/broadcast
-working. v7 passed the unified build and eleven host ASan/UBSan checks.
-The new v7 changes have not yet been tested on the phone. See
-`NATIVE_INJECTION.md` and `BUILD_INFO.txt` for scope and module identity.
+v7 passed Probe, WEXT, 40/80 MHz RX/queue, mode transitions, ordinary Wi-Fi
+and ten-minute hopping checks, but failed automatic monitor recovery after
+an idle SSR. v8 contains the source fix, passed the unified build and has
+13 passing host ASan/UBSan checks; it still needs device validation.
+See `NATIVE_INJECTION.md` and `BUILD_INFO.txt` for scope and module identity.
 
 The three WLAN `.ko` files come from the integrated `sun perf` build with
 `qca_inject/0001-add-qcacldko.patch` plus the sam-derived helper TX port, and are processed with `llvm-strip --strip-debug`.
