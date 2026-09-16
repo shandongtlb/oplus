@@ -133,3 +133,29 @@ cat /sys/module/qca_cld3_peach_v2/parameters/inject_tx_status
 仍在。没有重新构建、打包或操作手机，交付哈希沿用已存的打包证据。
 内核仓库已有的 `.repo`、构建缓存、子仓库状态和 `oplus_modules_variant.bzl`
 差异保留在工作区，未纳入本次文档提交。
+
+## v6 后续真机检查与用户确认
+
+用户后来明确授权连接手机测试，之前仅打包阶段“不操作手机”的记录属于历史。
+已核对 v6 三模块文件哈希和加载 Build ID，完成 1/6/11/149 频道 Probe、40/80 MHz
+Beacon RX、重复启动、down/up、完整退出重进、普通 Wi-Fi 连接/扫描与输入格式检查。
+授权热点 Redmi K20 Pro 在 161 频道 Probe 30/30，认证收到 AP status 0 回复。
+最终 accepted/submitted/completed=1134，DISCARD=0，NO_ACK=552；无超时/在途残留，
+DMA 池分配/释放 5/5。结束时 con_mode=0、Wi-Fi 关闭，模块仍匹配 v6。
+
+agent 的三帧单播 deauth/disassoc 分别得到 NO_ACK，三帧广播 deauth 得到 OK；
+没有独立观察客户端断线。用户随后自行测试并确认“单播和广播都没问题”，记录为
+用户另行实测通过，不将其混作 agent 当时抓包的结论。
+完整结果见 [真机报告](op13_v6_runtime_20260916.md)，原始证据在
+`/root/pt/op13-v6-runtime-20260916/`。本轮没有修改驱动、重新编译或重打包。
+
+下一步两项问题：WEXT 查询得到 channel -1；宽信道 RX-only 下 qdisc 留帧，切回
+20 MHz 后旧帧被提交到新频道（复现 1057→1058，无新发包）。需修主机队列边界。
+
+WEXT 修复已有明确来源：[sam 主补丁](../../sam/补丁/0001-wlan-native-monitor-injection.patch) 中的
+`hdd_mon_wext_giwname/giwmode/siwmode/giwfreq/siwfreq/giwrange`、
+`hdd_mon_wext_handler_def`，以及 `hdd_mon_mode_ether_setup()` 的
+`dev->wireless_handlers` 接线；`wlan_hdd_mon_wext_set_freq()` 负责频道并发语义。
+当前 peach v6 尚未移植这段；sam 的同频道确认不会等待固件，实际换频道走 nl80211。
+另参考 oplus 原补丁 [0011](../补丁/qca_inject/0011-fix-wext-for-qcamonitor.patch) /
+[0012](../补丁/qca_inject/0012-fix-wext+waittime.patch)，当前路线仍以 sam 为主。

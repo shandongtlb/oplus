@@ -6,7 +6,9 @@
 全局监听不要求直接由 monitor vdev 发包；旧 oplus 补丁仅作参考。
 2026-09-16 v6 已有用户真机证据：`aireplay-ng --test wlan0` 在 2.4 GHz
 信道 1 报告 Injection working，三个 AP 的定向 Probe 响应为 29/30、25/30、11/30。
-这确认该次 Probe 空口链路工作；其他管理帧、频道切换、长时间稳定性及 SSR 仍待验证。
+随后 ADB 真机检查通过频道切换、启停恢复、其他频道 Probe 及认证响应；用户另行
+实测确认单播/广播正常。长时间稳定性及 SSR 仍待验证，详见
+[真机报告](../../说明/op13_v6_runtime_20260916.md)。
 
 ## 应用与统一编译
 
@@ -73,6 +75,20 @@ CNSS 只作为构建依赖，包内不放 CNSS 模块。校验记录见包内 `d
 此次优先修正发送端点与生命周期，不把 flags 当作上述故障的修复。
 `submitted`、`completed`、固件 OK 和独立空口接收是不同证据，不可混为成功。
 
-后续设备验证优先顺序：固定 v6 包，短时重复 Probe 并采集 `inject_stats` /
-`inject_tx_status`；验证 `monstop`/重进及允许的 20 MHz 换频道后再 Probe；最后再扩大
-到 auth/deauth，并保留原始 dmesg。暂不改驱动或重新编译。
+后续先处理真机复现的 WEXT 兼容和 RX-only qdisc 留帧问题，再安排对应回归。
+本轮仅记录结果和实现引用，没有更改补丁代码或重新编译。
+
+### WEXT 兼容实现的来源
+
+v6 的 `iwconfig` 显示 no wireless extensions，指定 AP 的 aireplay 读到 channel -1。
+完整 WEXT monitor 参考代码已在 [sam 主补丁](../../../sam/补丁/0001-wlan-native-monitor-injection.patch) 中：
+包括 `hdd_mon_wext_giwname/giwmode/siwmode/giwfreq/siwfreq/giwrange`、
+`hdd_mon_wext_handler_def`，以及 `hdd_mon_mode_ether_setup()` 设置
+`dev->wireless_handlers`。它还通过 `wlan_hdd_mon_wext_set_freq()` 复用频道并发
+保护；仅接受同一 20 MHz 频道确认，实际换频道返回 EOPNOTSUPP，由 nl80211 完成。
+当前 peach v6 尚未接入这段；下一轮按该补丁移植并做 aireplay 查询回归。
+
+oplus 原补丁也有对应历史修复：[0011 WEXT 查询桥](../qca_inject/0011-fix-wext-for-qcamonitor.patch)
+记录了 `wireless_handlers` 接线及 aireplay channel -1 的原因；
+[0012 WEXT 补充](../qca_inject/0012-fix-wext+waittime.patch) 增加了设置入口等处理。
+这两项仅作平台历史参考，当前全局路线以 sam 的查询/同频道确认和 nl80211 换频道语义为准。
