@@ -1,0 +1,36 @@
+From 2cbfb99ff1848517870b7cf2b3e6d8a8a7a82014 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 05:18:56 +0000
+Subject: [PATCH] wlan: avoid current macro collision in monitor channel helper
+
+---
+ .../wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c        | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 8b377dc9..767448e2 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31335,7 +31335,7 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 	struct qdf_mac_addr bssid;
+ 	struct channel_change_req *req;
+ 	struct ch_params ch_params = {0};
+-	struct cfg80211_chan_def current = {0};
++	struct cfg80211_chan_def current_chandef = {0};
+ 	int ret;
+ 	enum channel_state chan_freq_state;
+ 	uint8_t max_fw_bw;
+@@ -31395,8 +31395,8 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 	/* Repeating a fixed channel must not restart the vdev and wait for
+ 	 * an UP event that firmware need not emit for a no-op restart.
+ 	 */
+-	if (!hdd_mon_get_chandef(wiphy, adapter, &current) &&
+-	    hdd_mon_same_channel(&current, chandef)) {
++	if (!hdd_mon_get_chandef(wiphy, adapter, &current_chandef) &&
++	    hdd_mon_same_channel(&current_chandef, chandef)) {
+ 		wma_inject_resume(adapter->dev);
+ 		return 0;
+ 	}
+-- 
+2.53.0
+

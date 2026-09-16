@@ -19,7 +19,7 @@ f5bb38df experimental PMF TX flag
 afc425eb channel diagnostics
 9fddc162 deauth wrong-key flag
 2cbfb99f compile fix
-Exported series and build+aggregate patches both reproduce 10 source files exactly.
+Exported series and build+aggregate patches both reproduce 11 source files exactly.
 
 Payload: exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko.
 Input: kernel_platform/out/msm-kernel-sun-perf/dist; matches installed vendor_dlkm artifacts.
@@ -32,6 +32,7 @@ cfg80211.ko: 2070456 bytes
   raw sha256 b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
   depends rfkill
+  Build ID 40533847cea5b0e9aeac19849b37f1dfc7dc9f44
   Cross-module CRC matches: 0
   Kernel/platform CRC matches: 195
   Other dependency symbols unchecked: 0
@@ -40,6 +41,7 @@ mac80211.ko: 1963888 bytes
   raw sha256 3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,libarc4
+  Build ID abacfa26d25bc862a3383f8f21c4f3eccd333778
   Cross-module CRC matches: 104
   Kernel/platform CRC matches: 317
   Other dependency symbols unchecked: 0
@@ -48,6 +50,7 @@ qca_cld3_peach_v2.ko: 19731088 bytes
   raw sha256 46d03119d29e525fc5bb106e6d2a6234197c3e8996f05a09e6ecb5464b882665
   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
+  Build ID f99c48339d6efd71557d863cceb02cd8ebac51c9
   Cross-module CRC matches: 46
   Kernel/platform CRC matches: 566
   Other dependency symbols unchecked: 27
@@ -59,9 +62,10 @@ Validation:
 - Other dependency symbols listed above are outside the static CRC validation scope.
 - Existing build warnings about gki_system_dlkm_modules and SCM metadata remain.
 - Shell syntax and patch reverse/replay checks passed.
-- ASan/UBSan: 66,091 production Radiotap input cases, 4,096 malformed-header probes;
+- Historical ASan/UBSan checks from v4 (not rerun for this packaging):
+  66,091 production Radiotap input cases, 4,096 malformed-header probes;
   TX operation synchronization/allocation-failure paths also passed.
-- ASan/UBSan: WMI send/allocation failures, early/duplicate completion, ring stop/wake,
+  WMI send/allocation failures, early/duplicate completion, ring stop/wake,
   channel resume credit checks, netdev down and close quarantine passed.
 
 Runtime evidence and limits:

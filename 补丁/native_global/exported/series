@@ -4,3 +4,4 @@
 0004-native-monitor-tx-hardening.patch
 0005-monitor-channel-and-tx-diagnostics.patch
 0006-preserve-deauth-wrong-key.patch
+0007-monitor-channel-current-macro-fix.patch
