@@ -44,3 +44,19 @@ v5 尚未加载；不能宣称修复了固件 DISCARD 或注入已成功。
 前一会话已证实 v4 的模块版本不一致、Kali 缺少 /sys，以及补挂后 probe 的
 固件 DISCARD。下次用户要求测试时，从核对三模块实际 Build ID、监听频道查询、
 probe flags 对照和退出恢复继续，不应为测试重新编译。
+
+## 用户手动测试回报（2026-09-16）
+
+用户未连接 ADB，在手机运行 `aireplay-ng --test wlan0`，贴出 08:20:18 起的输出：
+广播探测 No Answer，Found 13 APs；08:20:20 开始定向列表，两个信道 1 AP
+分别在约 6 秒后返回 `0/30: 0%`，第三项由用户 Ctrl-C 中止。
+
+本次能进入定向探测并列出 AP，之前的列表等待现象未复现；已完成的两个目标
+均未获得探测响应。不能称为注入成功，也不能仅凭该输出断定没有任何空口发送。
+本次运行模块的 Build ID、实际锁定频道、Kali 的 /sys 挂载及 WMI completion
+尚未核对，不能直接把前一会话 v4 的 DISCARD 当成本次结论。
+
+下一步先采集当前 `iw dev wlan0 info`、`mon_tx_wrong_key` 和
+`dmesg | grep NETHUNTER-INJ`：分别确认频道、flags 设置及驱动拒收/固件完成结果。
+若出现 malformed Radiotap，则检查 Kali `/sys/class/net/wlan0/phy80211/subsystem`。
+仅查看日志；本次没有修改驱动、重新编译、更新 ZIP 或远程操作设备。
