@@ -1,14 +1,12 @@
-# peach_v2 原生全局监听 v1
+# peach_v2 原生全局监听与注入实验线
 
-这是一套从 OnePlus 13 `peach_v2` 源码重新开始的实验补丁，目标是使用高通
-`QDF_GLOBAL_MONITOR_MODE`（`con_mode=4`）。全局模式下驱动直接创建 `wlan0`
-monitor adapter；补丁没有隐藏 STA，也没有 helper vdev 或 vdev 槽位分配。
+一加 13 的硬件是 `peach_v2`。本线使用高通 `QDF_GLOBAL_MONITOR_MODE`
+（`con_mode=4`）及原生 `wlan0` monitor vdev。sam 的 `kiwi_v2` 实现仅作为
+输入解析、队列与资源管理的参考；其 helper STA 注入结果不能证明本线的固件支持。
 
-## 应用和统一编译
+## 应用与统一编译
 
-补丁基于当前 OnePlus 13 `peach_v2` 同步源码（本地验证基线为 `4d69a3ed`）：
-
-在内核源码根目录按 `series` 中的顺序应用：
+源码基线为 `4d69a3ed9a176152e85580352723c308f29cbfcb`。在内核仓库根目录：
 
 ```sh
 git apply /root/pt/oplus/补丁/qca_inject/0001-add-qcacldko.patch
@@ -16,58 +14,42 @@ git apply /root/pt/oplus/补丁/native_global/0001-peach-v2-native-global-monito
 RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 ```
 
-旧 `qca_inject/0001-add-qcacldko.patch` 是必需的构建接入补丁，只修改
-`prepare_vendor.sh`，与虚拟 STA/helper 无关。它通过主构建的 `KERNEL_KIT`、
-`build_opts.txt` 和 WLAN 平台符号表构建 qcacld，并归集到同一次构建的 dist。
-不要应用旧 `qca_inject/0002-0017`。已有 Image 时总脚本可能跳过主内核生成，
-因此重做整包时设置 `RECOMPILE_KERNEL=1`。
+第一项只接入 `prepare_vendor.sh` 的 WLAN 统一构建，必需保留。第二项是当前
+原生全局实现的合并 diff。不要叠加旧 `qca_inject/0002-0017`。
 
-日志必须出现 WLAN platform、WLAN qcacld、Installing WLAN modules 的完成阶段。
-外层脚本通过 `tee` 输出，退出码不能单独证明内部构建成功；还要检查日志中的
-错误、阶段完成标记和三模块产物。不要用另外手写的 Bazel 命令补齐缺失产物后打包。
+也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用四个邮件补丁。
+这与上面的两项应用方式二选一。对应源码提交：
 
-KSU 发布流程固定为：统一构建成功 → 从
-`kernel_platform/out/msm-kernel-sun-perf/dist/` 取下面三个 4K 模块 → 在副本上
-执行 `llvm-strip --strip-debug` → 放进 KSU 的 `vendor_dlkm/lib/modules/` → 打包
-→ 真机调试：
+- `d20c69af`：WLAN 统一构建接入。
+- `2fa5ca62`：原生全局 monitor TX 初版。
+- `f5bb38df`：实验性 PMF TX flag。
+- `8e21acf0`：Radiotap、队列、回调竞态和 DMA 生命周期保护。
 
-- `cfg80211.ko`
-- `mac80211.ko`
-- `qca_cld3_peach_v2.ko`
+构建日志必须包含 kernel、WLAN platform、WLAN qcacld、Installing WLAN modules
+及 DT 合并完成阶段；外层脚本退出码不能单独证明内部成功。
 
-检查三者的 vermagic、符号 CRC 和 SHA256，记录到包内 `docs/BUILD_INFO.txt`。
-CNSS 可作为构建依赖生成，但不放入 KSU，不替换手机的 CNSS 平台栈。
+KSU 固定流程：统一构建 → 从 `kernel_platform/out/msm-kernel-sun-perf/dist/`
+取 `cfg80211.ko`、`mac80211.ko`、`qca_cld3_peach_v2.ko` → 副本执行
+`llvm-strip --strip-debug` → 放入 `vendor_dlkm/lib/modules/` → 打包 → 真机调试。
+CNSS 只作为构建依赖，包内不放 CNSS 模块。校验记录见包内 `docs/BUILD_INFO.txt`。
 
-KSU 模块中的 `monitor_control.sh` 已改为写入
-`/sys/module/qca_cld3_peach_v2/parameters/con_mode`，并通过 `wlan0` 操作频道，
-不再创建 `wlan0mon`。
+## 已实现与验证边界
 
-## 当前实现
+- 全局 monitor 的 RX 及退出后 managed/con_mode=0 已在旧 v2 包真机确认。
+  当时 Wi-Fi 已启用但未确认重新关联，热点/P2P 恢复也未验收。
+- 注入入口必须是 Radiotap + 24–2048 字节管理帧；支持剥除显式 FCS，拒绝
+  DATAPAD、损坏头和控制/数据帧。其他 Radiotap 字段不设置固件速率或重试参数。
+- 64 槽队列搜索空闲槽；满环停止队列，完成时唤醒。锁频成功后也按剩余容量恢复队列。
+- 处理完成事件早于 send 返回的竞态，以 generation 字段区分重用槽的旧 descriptor。
+- WMA 关闭时若存在漏 completion，保留 DMA 缓冲和模块引用、禁止后续注入。
+  这是有界保留策略，目前仍需重启恢复；自动恢复尚未实现。
+- `MGMT_TX_USE_INCORRECT_KEY` 的效果需要在本机测量。`[submit]` 只证明提交，
+  `status=0` 只是固件报告，空口发送还需要独立接收端确认。
 
-- `con_mode=4` 下给原生 monitor adapter 打开 TX 队列。
-- 发送入口解析基本 Radiotap；也暂时接受裸 802.11 帧。
-- WMI 管理帧使用私有 descriptor 区间并从完成事件回收 DMA buffer。
-- 64 个槽位全部占用时向网络栈返回 `NETDEV_TX_BUSY`，不按超时猜测固件已经停止 DMA。
-- 发送只尝试当前 monitor vdev；不会创建、选择、重启或销毁任何额外 vdev。
+源码中的 `tests/test_monitor_radiotap.py` 使用本内核真实 Radiotap 解析器；
+`tests/test_native_injection.py` 对真实 TX/回调代码注入分配失败、发送失败、
+提前/重复/丢失完成事件。两者均使用 ASan/UBSan，不能代替固件与空口测试。
 
-## 尚未验证
-
-这是 v1 实验实现，必须在 peach_v2 真机上确认：
-
-1. `con_mode=4` 的 RX filter 和 Radiotap 收包；
-2. monitor vdev 上 WMI TX 的 completion 状态及空口效果；
-3. firmware 丢 completion 后的背压和完整 WLAN 重启恢复；
-4. 退出全局模式后 Wi-Fi、热点和 P2P 的恢复。
-
-如果 peach_v2 固件对 monitor-vdev TX 返回 DISCARD，这套设计会保留该事实，
-不会偷偷退回虚拟 STA；下一步应研究 firmware 已支持的全局 monitor 发送入口。
-
-## 已导出的邮件补丁
-
-从 peach_v2 源码提交精确导出、可用于审阅和移植：
-
-- `exported/0001-build-integrate-wlan-qcacld.patch`
-- `exported/0002-peach-v2-native-global-monitor.patch`
-
-源码提交为 `d20c69af` 和 `2fa5ca62`。`series` 保持与旧补丁目录兼容；新导出文件反映实际提交内容。
-- `exported/0003-monitor-injection-flag.patch` adds the peach_v2 monitor TX incorrect-key flag learned from sam's validated broadcast injection path.
+当前新包尚未热切：ADB 无设备连接。此前 Kali chroot 调用失败的原因未确认，
+不能据此断定是 SELinux 或 namespace 限制。恢复连接后应通过设备脚本进入
+`/data/local/nhsystem/kalifs`，用锁定信道的管理帧测试验证提交、完成和空口。

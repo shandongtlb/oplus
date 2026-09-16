@@ -7,7 +7,8 @@
 ```
 oplus/
 ├── 补丁/                 # 内核补丁
-│   ├── qca_inject/           # 【主线】内置 WiFi monitor + 注入补丁集（0001-0017）
+│   ├── native_global/        # 当前 peach_v2 原生全局监听与注入实验线
+│   ├── qca_inject/           # 历史 helper STA 方案（0001-0017）
 │   │   ├── 0001-0017.patch   # monitor + inject + 稳定性 + 防呆守卫(r12) + 选槽(r13)
 │   │   └── README.md         # 补丁应用说明
 │   ├── 1.op13_bt_arsenal_msm_only.patch    # 蓝牙 arsenal 工具支持
@@ -23,10 +24,10 @@ oplus/
 > **两条线**：`qca_inject/` 是**内置 WiFi**（peach_v2 qcacld-3.0）的 monitor + 注入主线成果；
 > 顶层 `1~5.*.patch` 是**外置 USB 网卡 / 蓝牙**支持（RT3070L、ZD1201、BT/USB arsenal），互相独立、按需应用。
 
-> **重做线（2026-09）**：`补丁/native_global/` 是新的 peach_v2 原生全局监听实验线。
-> 它使用 `con_mode=4` 和 `wlan0`，取消隐藏 STA/helper vdev。必须保留旧的
-> `qca_inject/0001-add-qcacldko.patch` 构建接入补丁；不混用旧 `0002-0017` 驱动补丁。
-> 按 `补丁/native_global/README.md` 统一编译、strip 三模块后打包。当前实现已加入 sam 验证过的 `MGMT_TX_USE_INCORRECT_KEY` 原生 monitor TX flag；设备端 RX/恢复已验证，带锁信道的 Kali aireplay completion 仍待在可用 chroot 会话中验收。
+> **当前重做线**：`补丁/native_global/` 使用 `peach_v2` 的 `con_mode=4` 与 `wlan0`。
+> 构建保留 `qca_inject/0001-add-qcacldko.patch`，按 native_global 的说明统一构建并 strip 三模块。
+> 旧 v2 包已验证监听 RX 和返回 managed；新版增加管理帧注入及队列/DMA 保护，固件接受程度和空口效果待真机验证。
+> 下文的 helper STA 功能和测试结果均属旧 `qca_inject` 线，不能用于宣称新版注入已通过。
 
 ## 功能实现
 
@@ -204,4 +205,4 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 **补丁集版本**：0001-0015
 
 
-当前原生全局线的 KSU 包：`ksu/op13_nethunter_ksu-peach-native-global-v3-integrated-r4.zip`（SHA256 见同名 `.zip.sha256`）。
+当前原生全局线的 KSU 包：`ksu/op13_nethunter_ksu-peach-native-global-v4-integrated.zip`（SHA256 见同名 `.zip.sha256`）。

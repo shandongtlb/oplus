@@ -1,6 +1,11 @@
 # OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
 This package is the OnePlus 13 `peach_v2` native-global rebuild from `补丁/native_global/`.
+v4 adds management-frame TX input validation, queue control and DMA ownership protection.
+Firmware TX acceptance and RF reception are unverified on this package. Missing
+completion at WMA close quarantines buffers and module references until reboot.
+See `NATIVE_INJECTION.md` and `BUILD_INFO.txt`.
+
 The three WLAN `.ko` files come from the integrated `sun perf` build with
 `qca_inject/0001-add-qcacldko.patch` applied, and are processed with `llvm-strip --strip-debug`.
 

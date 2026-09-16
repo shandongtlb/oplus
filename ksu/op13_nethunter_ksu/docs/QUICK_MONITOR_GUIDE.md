@@ -4,7 +4,7 @@
 ```bash
 # 1. KSU 里点 Action 按钮 → nethunter (切换到打补丁的 ko)
 # 2. 终端(adb shell 或 Termux root)
-monstart 149        # 进全局 monitor + 锁 ch149(5G)，等待真机验证
+monstart 149        # 进全局 monitor + 锁 ch149(5G)
 # 或
 monstart 6          # 锁 ch6(2.4G)
 # 或
@@ -12,7 +12,7 @@ monstart            # 不锁频 → airodump 全频扫描
 
 # 3. 抓包/注入
 airodump-ng wlan0              # 抓包/扫描
-aireplay-ng -9 -a <BSSID> wlan0   # 注入测试
+aireplay-ng -9 --ignore-negative-one -a <测试AP的BSSID> wlan0   # 管理帧注入测试
 tcpdump -i wlan0 -nn           # 原始抓包
 
 # 4. 退出
@@ -47,3 +47,12 @@ dmesg | grep NETHUNTER-INJ
 - 5G: `5180`(ch36), `5745`(ch149), `5825`(ch165)
 
 构建来源和验证范围见 `BUILD_INFO.txt`。
+
+## 新版范围
+
+当前仅接入 WMI 管理帧 TX，固件是否接受尚待真机验收。输入必须带 Radiotap；
+控制帧、数据帧和 DATAPAD 不支持。速率、NOACK、NOSEQ 等提示不保证由固件执行。
+注入期间保持固定信道。旧 v2 的监听验证不能替代新版的发送和恢复测试。
+
+如果退出时日志报告保留未完成 DMA 缓冲，模块可能拒绝卸载，后续注入禁用；
+此异常需要重启恢复。目前没有自动回收漏 completion 的实现。
