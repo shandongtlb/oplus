@@ -21,13 +21,16 @@ oplus/
 └── README.md             # 本文件
 ```
 
-> **两条线**：`qca_inject/` 是**内置 WiFi**（peach_v2 qcacld-3.0）的 monitor + 注入主线成果；
+> **两条线**：`qca_inject/` 是**内置 WiFi**（peach_v2 qcacld-3.0）的历史 monitor + 注入成果；
 > 顶层 `1~5.*.patch` 是**外置 USB 网卡 / 蓝牙**支持（RT3070L、ZD1201、BT/USB arsenal），互相独立、按需应用。
 
-> **当前重做线**：`补丁/native_global/` 使用 `peach_v2` 的 `con_mode=4` 与 `wlan0`。
+> **当前实现**：`补丁/native_global/` 使用 `peach_v2` 的 `con_mode=4` 与 `wlan0`，
+> 以 sam 实现为主，内部 STA helper TX、monitor RX。
 > 构建保留 `qca_inject/0001-add-qcacldko.patch`，按 native_global 的说明统一构建并 strip 三模块。
-> 旧 v2 包已验证监听 RX 和返回 managed；新版增加管理帧注入及队列/DMA 保护，固件接受程度和空口效果待真机验证。
-> 下文的 helper STA 功能和测试结果均属旧 `qca_inject` 线，不能用于宣称新版注入已通过。
+> 2026-09-16 用户回报 v6 的 Probe 注入成功：信道 1 响应 29/30、25/30、11/30。
+> 其他管理帧、重复启停、跨频道和长期稳定性待验。详见
+> [当前交接](说明/op13_sam_global_helper_handoff.md) 和 [下一步清单](说明/op13_v6_next_validation.md)。
+> 下文功能和测试结果属旧 `qca_inject` 线的历史记录，不能推广到 v6。
 
 ## 功能实现
 
@@ -205,4 +208,5 @@ aireplay-ng --deauth 3 -a <AP> -c <CLIENT> wlan0mon
 **补丁集版本**：0001-0015
 
 
-当前原生全局线的 KSU 包：`ksu/op13_nethunter_ksu-peach-native-global-v4-integrated.zip`（SHA256 见同名 `.zip.sha256`）。
+当前原生全局线已交付 KSU v6：`op13_nethunter_ksu-peach-native-global-v6-integrated.zip`
+（SHA256 见 `ksu/` 同名 `.zip.sha256`）。收尾时本地 ZIP 已不在原目录，模块副本保留。

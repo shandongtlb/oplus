@@ -1,0 +1,55 @@
+From cd811a615772f4c144118f6215ab0d8972544959 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 11:11:45 +0000
+Subject: [PATCH] docs: record peach v6 device Probe injection success
+
+---
+ .../qcacld-3.0/docs/peach-native-injection.md | 28 +++++++++++++++++--
+ 1 file changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+index 9a86823d..6a775997 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+@@ -8,7 +8,8 @@ firmware-only STA helper on the confirmed monitor channel, following sam's
+ This replaces v5's direct monitor-vdev WMI TX, which returned DISCARD for the
+ reported probe/auth frames. Global mode does not require TX on the monitor
+ vdev. The old oplus patches are supporting references, not the port baseline.
+-The helper port has not yet been verified on peach_v2 firmware or over the air.
++On 2026-09-16 the user reported successful broadcast and directed Probe testing
++on channel 1 with v6. See the device evidence and remaining scope below.
+ 
+ Lifecycle follows sam: confirmed START and self-peer creation; FIFO unicast
+ peer changes after old inflight TX drains; confirmed peer deletion, STOP and
+@@ -66,4 +67,27 @@ python3 tests/test_mode_handoff.py
+ They cover parsing, helper TX parameters/flags, queue pressure, ordered peer
+ switches, early completion, synchronous failures/retries, timeout retention,
+ channel errors and serialization, recovery eligibility and exit handoff.
+-Firmware confirmations and RF behavior still require later device validation.
++These host checks do not substitute for device firmware and RF validation.
++
++## v6 device evidence (2026-09-16)
++
++The user supplied `aireplay-ng --test wlan0` output from 10:58:24–10:58:32
++(device clock; timezone unspecified). It reported `Injection is working!`,
++found three APs on channel 1, and received directed Probe responses of 29/30
++(96%), 25/30 (83%) and 11/30 (36%). This establishes a working Probe
++request/response path on 2.4 GHz channel 1 in this run.
++
++The report followed delivery of
++`op13_nethunter_ksu-peach-native-global-v6-integrated.zip`, SHA-256
++`0ce6a9200601feba5ae9e92006bf2235d264cabd97b361011c19cbbc8899308a`.
++Its build source was `eab4d48d0034f88961de8f06e371d54985242588`; the packaged
++qcacld Build ID is `cc13d725ff0b78cb272c54643bc9d88187862483`.
++Loaded module identity, driver counters and an independent capture were not
++included in this user report. No device operation was performed by the agent.
++
++The differing response rates alone do not identify a driver fault. The report
++does not establish authentication/deauthentication/disassociation behavior,
++other channels or bands, repeated mode/channel transitions, long runs or SSR.
++Keep this package as the baseline. Next collect before/after `inject_stats`
++and `inject_tx_status` around short repeated Probe tests, then check complete
++mode exit/re-entry and channel changes before broadening frame coverage.
+-- 
+2.53.0
+

@@ -1,0 +1,61 @@
+From eab4d48d0034f88961de8f06e371d54985242588 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 09:21:30 +0000
+Subject: [PATCH] wlan: retain typed frame view for WMI payload
+
+---
+ .../opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c  | 8 +++++---
+ .../wlan/qcacld-3.0/tests/test_native_injection.py        | 2 +-
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
+index 11b768b8..7c179488 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
+@@ -546,6 +546,7 @@ static QDF_STATUS inj_native_send(struct wlan_objmgr_vdev *owner,
+ 	struct wma_inj_slot *slot = context;
+ 	unsigned int i = slot - inj.q.slots;
+ 	struct wmi_mgmt_params p = {0};
++	uint8_t *frame;
+ 	QDF_STATUS status;
+ 
+ 	spin_lock_bh(&inj_lock);
+@@ -559,10 +560,11 @@ static QDF_STATUS inj_native_send(struct wlan_objmgr_vdev *owner,
+ 	p.vdev_id = inj.helper_id;
+ 	p.chanfreq = inj.freq;
+ 	p.desc_id = 0x8000 | (slot->gen << INJ_GEN_SHIFT) | i;
+-	p.pdata = (uint8_t *)inj.pool + i * INJ_FRAME_SIZE;
++	frame = (uint8_t *)inj.pool + i * INJ_FRAME_SIZE;
++	p.pdata = frame;
+ 	p.dma_pre_mapped = true;
+ 	p.dma_address = inj.dma + i * INJ_FRAME_SIZE;
+-	p.tx_flags = (p.pdata[0] == 0xc0 || p.pdata[0] == 0xa0 ||
++	p.tx_flags = (frame[0] == 0xc0 || frame[0] == 0xa0 ||
+ 		      READ_ONCE(mon_tx_wrong_key)) ? MGMT_TX_USE_INCORRECT_KEY : 0;
+ 	spin_unlock_bh(&inj_lock);
+ 	/* The lifecycle joins this worker before touching helper/pool/owner.
+@@ -574,7 +576,7 @@ static QDF_STATUS inj_native_send(struct wlan_objmgr_vdev *owner,
+ 		if (inj.submitted <= 8 || !(inj.submitted % 256))
+ 			wma_info("NETHUNTER-INJ: [submit] #%llu owner=%u helper=%u desc=%u chan=%u len=%u fc=0x%02x flags=%u",
+ 				 inj.submitted, inj.monitor_id, p.vdev_id,
+-				 p.desc_id, p.chanfreq, p.frm_len, p.pdata[0], p.tx_flags);
++				 p.desc_id, p.chanfreq, p.frm_len, frame[0], p.tx_flags);
+ 	}
+ 	spin_unlock_bh(&inj_lock);
+ 	return status;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+index 4f5940a1..13df30a4 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+@@ -47,7 +47,7 @@ struct work_struct {int unused;};
+ struct wma {void *wmi_handle;} wma;
+ typedef struct wma *tp_wma_handle;
+ struct wmi_mgmt_params {unsigned frm_len,vdev_id,chanfreq,desc_id,tx_flags;
+- uint8_t *pdata;bool dma_pre_mapped;uint64_t dma_address;};
++ void *pdata;bool dma_pre_mapped;uint64_t dma_address;};
+ static unsigned long jiffies;
+ static bool mon_tx_wrong_key,inject_peer_setup_only,ready;
+ static int inj_lock,mode=4,kicks,faults,sends,peer_creates,peer_deletes;
+-- 
+2.53.0
+

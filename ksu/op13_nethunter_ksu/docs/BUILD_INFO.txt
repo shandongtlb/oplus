@@ -1,105 +1,68 @@
-OnePlus 13 peach_v2 native global monitor + management TX (experimental)
+OnePlus 13 peach_v2 native global monitor + sam-derived helper TX package
 
-Package: 2026.09.16-peach-native-global-v5 / versionCode 2026091605
-Source commit: 2cbfb99ff1848517870b7cf2b3e6d8a8a7a82014
-Started UTC: 2026-09-16T05:29:46+00:00
-Build script end timestamp: 2026_09_16 05:35:45
+Package: 2026.09.16-peach-native-global-v6 / versionCode 2026091606
+Source commit: eab4d48d0034f88961de8f06e371d54985242588
+Build started UTC: 2026-09-16T09:22:42.676997+00:00
+Build finished UTC: 2026-09-16T09:34:07.891000+00:00
 Target: sun perf, peach_v2, ARM64 4 KiB
-Command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
-WLAN platform and qcacld were built within prepare_vendor.sh; no separate qcacld build.
-Build log: /root/pt/op13-native-global-hardening/build-current.log
-ELF/CRC validation: /root/pt/op13-native-global-hardening/validation.json
-Patch replay: /root/pt/op13-native-global-hardening/patch-replay.json
-
-Applied source commits:
-d20c69af build integration
-2fa5ca62 native global monitor TX
-f5bb38df experimental PMF TX flag
-8e21acf0 Radiotap, TX queues and DMA ownership
-afc425eb channel diagnostics
-9fddc162 deauth wrong-key flag
-2cbfb99f compile fix
-Exported series and build+aggregate patches both reproduce 11 source files exactly.
+Build command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+The single unified build completed successfully; no rebuild was run for packaging.
+Build evidence: /root/pt/op13-sam-global-20260916/build-result.json
+Host tests: /root/pt/op13-sam-global-20260916/host-tests.json
+Implementation: global con_mode=4 monitor wlan0 owns RX; sam-derived internal STA helper owns TX.
+The old v5 package used direct monitor-vdev TX and is superseded by this v6 package.
 
 Payload: exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko.
-Input: kernel_platform/out/msm-kernel-sun-perf/dist; matches installed vendor_dlkm artifacts.
-Strip: llvm-strip --strip-debug on copies; original build outputs preserved.
-CNSS/platform dependencies remain ROM-provided; no CNSS modules packaged.
+Input: kernel_platform/out/msm-kernel-sun-perf/dist; each raw module matches installed vendor_dlkm.
+Strip: llvm-strip --strip-debug on package copies; raw build outputs preserved.
+CNSS modules are build dependencies only and are not packaged.
 
 Module manifest:
-cfg80211.ko: 2070456 bytes
+- cfg80211.ko: 2070456 bytes stripped (raw 10201736)
   sha256 488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626
-  raw sha256 b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c
+  raw_sha256 b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c
+  Build ID 40533847cea5b0e9aeac19849b37f1dfc7dc9f44
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
   depends rfkill
-  Build ID 40533847cea5b0e9aeac19849b37f1dfc7dc9f44
-  Cross-module CRC matches: 0
-  Kernel/platform CRC matches: 195
-  Other dependency symbols unchecked: 0
-mac80211.ko: 1963888 bytes
+- mac80211.ko: 1963888 bytes stripped (raw 17277376)
   sha256 6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d
-  raw sha256 3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0
+  raw_sha256 3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0
+  Build ID abacfa26d25bc862a3383f8f21c4f3eccd333778
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,libarc4
-  Build ID abacfa26d25bc862a3383f8f21c4f3eccd333778
-  Cross-module CRC matches: 104
-  Kernel/platform CRC matches: 317
-  Other dependency symbols unchecked: 0
-qca_cld3_peach_v2.ko: 19731088 bytes
-  sha256 06b0d3028c6f62dbb5fc835265e528902a7aa6dd61cd9eec7cbab1e603aebdc8
-  raw sha256 46d03119d29e525fc5bb106e6d2a6234197c3e8996f05a09e6ecb5464b882665
+- qca_cld3_peach_v2.ko: 19776432 bytes stripped (raw 513179424)
+  sha256 61266594e59947b8f1d5bc7830d90542685ad0f1fb46149efb35ef845606c83f
+  raw_sha256 e4039287dc2036cfff3ba70f6b191cc7dcfc28de3c0e9c900f8aac1645ba05cb
+  Build ID cc13d725ff0b78cb272c54643bc9d88187862483
   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
-  Build ID f99c48339d6efd71557d863cceb02cd8ebac51c9
-  Cross-module CRC matches: 46
-  Kernel/platform CRC matches: 566
-  Other dependency symbols unchecked: 27
 
 Validation:
-- ARM64 relocatable ELF, no debug sections; stripping preserved import/export CRCs.
-- All three modules have matching flags and module_layout CRC. UTS SCM suffix differs.
-- Metadata was not edited. With __versions present, same_magic ignores UTS_RELEASE.
-- Other dependency symbols listed above are outside the static CRC validation scope.
-- Existing build warnings about gki_system_dlkm_modules and SCM metadata remain.
-- Shell syntax and patch reverse/replay checks passed.
-- Historical ASan/UBSan checks from v4 (not rerun for this packaging):
-  66,091 production Radiotap input cases, 4,096 malformed-header probes;
-  TX operation synchronization/allocation-failure paths also passed.
-  WMI send/allocation failures, early/duplicate completion, ring stop/wake,
-  channel resume credit checks, netdev down and close quarantine passed.
+- ARM64 relocatable ELF; no debug sections remain after strip.
+- Build ID note preserved byte-for-byte through strip.
+- Module metadata and modversion imports remain present.
+- qca_cld3_peach_v2 contains wma_inject_ensure_tx_vdev, wma_inject_mon_frame and wma_inject_resume.
+- Nine host ASan/UBSan checks passed; these do not establish firmware or RF success.
+- No device deployment or phone test was performed for this package.
 
-Runtime evidence and limits:
-- Older v2 package: real Beacon/RTS/CTS capture at channel 153, zero kernel drops in short runs.
-- Older v2 package: monitor exit returned managed/con_mode=0. Wi-Fi was enabled but not associated.
-- v5 has NOT been loaded on the device. This package was not device-tested.
-- Earlier v4 probe tests reached firmware but returned DISCARD; this version needs retest.
-- TX supports Radiotap + management frames only, 24-2048 bytes after optional FCS removal.
-- DATAPAD and control/data frames are rejected. TX hints do not configure firmware rate/NOACK.
-- Keep channel fixed during injection; concurrent retuning is not validated.
-- PMF TX flag is experimental. Sam helper-vdev results do not establish native peach_v2 support.
-- Firmware COMPLETE_OK still requires independent RF reception to prove air transmission.
-- If completion is missing at WMA close, DMA/module references remain quarantined.
-  TX stays disabled across reopen and module unload may be refused; reboot is required.
-- Automatic recovery of quarantined DMA, RF tests, hotspot/P2P recovery remain unverified.
-
-Completed build phases:
-kpl-time-check kernel start 05:29:46
-kpl-time-check kernel end 05:30:11
-kpl-time-check oplus DDK start 05:30:11
-kpl-time-check oplus DDK end 05:31:18
-kpl-time-check kernel copy start 05:31:18
-kpl-time-check kernel copy end 05:31:19
-kpl-time-check Preparing UAPI headers start 05:31:21
-kpl-time-check Preparing UAPI headers end 05:31:21
-kpl-time-check setting up Android tree start 05:31:21
-kpl-time-check setting up Android tree end 05:31:23
-kpl-time-check Building WLAN platform start 05:31:23
-kpl-time-check Building WLAN platform end 05:31:25
-kpl-time-check Building WLAN qcacld start 05:31:25
-kpl-time-check Building WLAN qcacld end 05:34:20
-kpl-time-check Installing WLAN modules start 05:34:20
-kpl-time-check Installing WLAN modules end 05:34:20
-kpl-time-check Compiling vendor devicetree start 05:34:20
-kpl-time-check Compiling vendor devicetree end 05:34:25
-kpl-time-check Merging vendor devicetree start 05:34:25
-kpl-time-check Merging vendor devicetree end 05:35:36
+Completed unified build phases:
+kpl-time-check kernel start 09:22:43
+kpl-time-check kernel end 09:23:06
+kpl-time-check oplus DDK start 09:23:06
+kpl-time-check oplus DDK end 09:29:09
+kpl-time-check kernel copy start 09:29:09
+kpl-time-check kernel copy end 09:29:09
+kpl-time-check Preparing UAPI headers start 09:29:12
+kpl-time-check Preparing UAPI headers end 09:29:12
+kpl-time-check setting up Android tree start 09:29:12
+kpl-time-check setting up Android tree end 09:29:15
+kpl-time-check Building WLAN platform start 09:29:15
+kpl-time-check Building WLAN platform end 09:29:24
+kpl-time-check Building WLAN qcacld start 09:29:24
+kpl-time-check Building WLAN qcacld end 09:32:29
+kpl-time-check Installing WLAN modules start 09:32:29
+kpl-time-check Installing WLAN modules end 09:32:29
+kpl-time-check Compiling vendor devicetree start 09:32:29
+kpl-time-check Compiling vendor devicetree end 09:32:33
+kpl-time-check Merging vendor devicetree start 09:32:33
+kpl-time-check Merging vendor devicetree end 09:33:45

@@ -1,0 +1,17 @@
+└─# aireplay-ng --test wlan0
+10:58:24  Trying broadcast probe requests...
+10:58:24  Injection is working!
+10:58:26  Found 3 APs
+
+10:58:26  Trying directed probe requests...
+10:58:26  5C:E7:47:52:94:44 - channel: 1 - 'tdgcxh'
+10:58:27  Ping (min/avg/max): 2.355ms/20.411ms/40.851ms Power: -72.59
+10:58:27  29/30:  96%
+
+10:58:27  5C:6B:D7:48:81:6E - channel: 1 - ''
+10:58:28  Ping (min/avg/max): 3.586ms/17.653ms/35.833ms Power: -74.76
+10:58:28  25/30:  83%
+
+10:58:28  5C:6B:D7:46:8A:53 - channel: 1 - ''
+10:58:32  Ping (min/avg/max): 2.656ms/15.589ms/32.876ms Power: -74.36
+10:58:32  11/30:  36%

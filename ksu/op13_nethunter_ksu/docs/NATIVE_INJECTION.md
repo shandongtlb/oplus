@@ -1,58 +1,69 @@
-# peach_v2 native global monitor TX (experimental)
+# peach_v2 global monitor RX with internal STA TX (experimental)
 
-Only `con_mode=4` on `wlan0` is supported. No helper STA is created.
-TX uses the existing monitor vdev and WMI management-TX command.
-Deauthentication/disassociation retain MGMT_TX_USE_INCORRECT_KEY. Other
-management frames use ordinary flags by default; the root-only boolean
-`mon_tx_wrong_key` sysfs parameter forces that flag on them for A/B diagnosis.
-Sam's helper-vdev results do not establish peach_v2 native monitor TX support.
+The public interface remains native `wlan0` in `con_mode=4`. The monitor vdev
+owns RX, host references and native management descriptors. TX uses a separate
+firmware-only STA helper on the confirmed monitor channel, following sam's
+`0001-wlan-native-monitor-injection.patch`. No extra netdev is created.
 
-Input is Radiotap followed by a management frame (24–2048 bytes excluding FCS).
-Raw callers must prepend an empty 8-byte Radiotap header. FLAGS.FCS removes
-four trailing bytes from the submitted view; DATAPAD is rejected. Other
-Radiotap hints are parsed but do not configure firmware rate, power, sequence
-or retry behavior. Control and data frames are rejected by this management API.
-Use a fixed channel during injection; concurrent retuning is not validated.
+This replaces v5's direct monitor-vdev WMI TX, which returned DISCARD for the
+reported probe/auth frames. Global mode does not require TX on the monitor
+vdev. The old oplus patches are supporting references, not the port baseline.
+The helper port has not yet been verified on peach_v2 firmware or over the air.
 
-TX has 64 slots, searches all free slots, stops netdev queues when full and
-wakes them on completion. Netdev/module references protect outstanding frames.
-WMI may complete before send returns: reclamation waits for both events.
-Generation bits distinguish a reused slot's current descriptor from stale IDs;
-the 16-bit descriptor namespace is finite, not an unlimited generation number.
-A failed WMI send rolls back its own DMA mapping before host buffer release.
-TX admission is covered by an HDD vdev operation to join driver teardown.
+Lifecycle follows sam: confirmed START and self-peer creation; FIFO unicast
+peer changes after old inflight TX drains; confirmed peer deletion, STOP and
+DELETE; native descriptor/peer bookkeeping; one ordered worker and a bounded
+64-slot coherent DMA pool with at most 32 inflight frames. Early completions
+cannot recycle a submitting slot. Lost completions retain uncertain DMA and
+request recovery. Only the existing platform's fresh firmware reinit/idle
+restart can reclaim a retired pool; CNSS/MHI are not replaced.
 
-Missing completion is not a DMA fence. On WMA close, incomplete buffers and
-module references are quarantined and TX remains disabled across WMA reopen.
-This bounds retention to 64 buffers but requires reboot for recovery; module
-hot-unload can be refused while references remain. Automatic recovery after a
-confirmed CNSS firmware boot is outstanding work. No timeout reclaims memory.
+Mode exit quiesces TX before queuing the driver transaction or acquiring RTNL.
+Administrative `ip link down` pauses host traffic and keeps the firmware
+session; `up` resumes. Full exit uses con_mode/monstop. Recovery recreates TX
+only after restoring the monitor channel and clearing recovery state, and an
+accepted mode-exit request remains latched across SSR.
 
-`[submit]` proves WMI submission only. `[completion] status=0` is a firmware
-report. NO_ACK and DISCARD must be distinguished, and independent reception is
-needed to claim RF transmission. Counters are cumulative over module lifetime.
+TX accepts Radiotap plus 24–2048 bytes of management frame. Raw callers must
+prepend an empty eight-byte Radiotap header. F_FCS strips trailing FCS;
+DATAPAD, control/data frames and invalid lengths are rejected. Other Radiotap
+hints do not change firmware rate, retries, power or sequence handling.
+Probe/auth keep ordinary flags by default. Deauth/disassoc retain wrong-key;
+`mon_tx_wrong_key` remains an optional root diagnostic override. No flag change
+is claimed as the fix for v5's DISCARD.
 
-Host checks (run from the qcacld directory):
+The helper is limited to enabled non-passive 2.4/5 GHz 20 MHz channels,
+excluding channel 14 and DFS. Wider 40/80/160 MHz monitor requests are RX-only,
+subject to complete channel/center validation and firmware capability. Channel
+changes stop the old helper first; failed teardown blocks retuning. Repeating
+the same channel skips RX restart while retrying optional helper setup.
+
+Diagnostics under `/sys/module/qca_cld3_peach_v2/parameters/`:
+
+- `inject_stats`: admission, queue, inflight, timeout and retained-pool counts.
+- `inject_tx_status`: separate firmware OK, DISCARD, INSPECT and NO_ACK counts;
+  host failures/drains never count as firmware success.
+- `inject_peer_setup_only`: create peers but suppress TX for diagnosis.
+
+`NETHUNTER-INJ` logs include owner/helper IDs and sampled submissions and
+completions. Successful WMI submission is not proof of RF transmission;
+firmware OK likewise needs independent reception to establish RF success.
+
+Host checks from the qcacld directory (ASan/UBSan with production code):
 
 ```
 python3 tests/test_monitor_radiotap.py
 python3 tests/test_native_injection.py
+python3 tests/test_inject_tx_status.py
+python3 tests/test_inject_recovery.py
+python3 tests/test_monitor_channel.py
+python3 tests/test_monitor_channel_alloc.py
+python3 tests/test_monitor_channel_serialization.py
+python3 tests/test_monitor_restore_result.py
+python3 tests/test_mode_handoff.py
 ```
 
-The first uses this kernel's real Radiotap iterator with ASan/UBSan. The second
-runs the production TX/complete/close code against a WMI stub with injected
-allocation/send failures, early/duplicate completions and missing completions.
-They validate host ownership and input handling, not RF or firmware behavior.
-
-Device investigation (2026-09-16): the installed v4 payload initially differed
-from the loaded qcacld Build ID. After explicit reload the v4 Build ID matched.
-The Kali chroot had no /sys mount: aircrack-ng 1.7 therefore missed the phy80211
-sysfs check and sent raw frames, which this Radiotap interface rejects. With
-/sys visible, broadcast probes reached WMI and the logged completions were
-DISCARD, not successful RF injection. The 5 GHz directed test also returned
-zero replies. Local outgoing tcpdump capture is not an independent RF capture.
-
-Monitor get_channel now reports the active vdev's channel, and repeating an
-identical tuning avoids the no-op restart that previously waited for an UP
-notification and timed out. The callback publishes its state before waking
-waiters. Run tests/test_monitor_channel.py for the channel reporting checks.
+They cover parsing, helper TX parameters/flags, queue pressure, ordered peer
+switches, early completion, synchronous failures/retries, timeout retention,
+channel errors and serialization, recovery eligibility and exit handoff.
+Firmware confirmations and RF behavior still require later device validation.

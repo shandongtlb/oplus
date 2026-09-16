@@ -5,3 +5,6 @@
 0005-monitor-channel-and-tx-diagnostics.patch
 0006-preserve-deauth-wrong-key.patch
 0007-monitor-channel-current-macro-fix.patch
+0008-sam-global-helper-tx.patch
+0009-helper-tx-payload-type.patch
+0010-v6-device-probe-validation.patch

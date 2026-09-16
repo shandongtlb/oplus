@@ -1,7 +1,7 @@
 # OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
 This package is the OnePlus 13 `peach_v2` native-global rebuild from `补丁/native_global/`.
-v5 includes monitor channel reporting, same-channel restart avoidance, TX flag diagnostics,
+v6 includes monitor channel reporting, same-channel restart avoidance, TX flag diagnostics,
 and verification of all three loaded module Build IDs. Build ID notes are bundled under
 `module_build_ids/`. The v4 TX input validation, queue control and DMA protection remain.
 Firmware TX acceptance and RF reception are unverified on this package. Missing
@@ -12,7 +12,7 @@ The earlier v4 probe test reached firmware but returned DISCARD. v5 has been bui
 and packaged; it has not been loaded or tested on the phone. See `AIREPLAY_DEBUG.md`.
 
 The three WLAN `.ko` files come from the integrated `sun perf` build with
-`qca_inject/0001-add-qcacldko.patch` applied, and are processed with `llvm-strip --strip-debug`.
+`qca_inject/0001-add-qcacldko.patch` plus the sam-derived helper TX port, and are processed with `llvm-strip --strip-debug`.
 
 Build markers:
 - `cfg80211/mac80211` release: `6.6.118-android15-8-o-g6028f47fadda-4k`
@@ -42,7 +42,7 @@ Manual controls:
     - with freq (e.g. `monstart 5745`): locks the global monitor channel for injection
   - `monstop` — leave monitor, restore normal WiFi
   - See `docs/QUICK_MONITOR_GUIDE.md` for usage + injection notes
-  - **Note**: the peach_v2 path uses Qualcomm global monitor mode (`con_mode=4`) and submits TX directly on the monitor vdev; no `wlan0mon` or hidden STA/helper vdev is created
+  - **Note**: the peach_v2 path uses Qualcomm global monitor mode (`con_mode=4`) and keeps RX on the monitor vdev and submits TX through an internal firmware-only STA helper; no extra netdev is created
 - `runtime_status.txt`
   - generated runtime snapshot in the installed module directory
 - `show_status.sh`
