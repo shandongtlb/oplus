@@ -7,8 +7,10 @@
 当前为 v7：在 v6 helper 实现上接入 sam WEXT 兼容，并修复宽信道 RX-only 下
 主机 qdisc 留帧后跨频道补发。2026-09-16 真机三轮指定 AP Probe 均为 30/30，
 不加 `--ignore-negative-one`；40/80 MHz 留帧复现和 20 MHz 正向对照均通过。
-启停恢复、换频道、普通 Wi-Fi 和 128 帧短突发通过；长时间稳定性、SSR、160 MHz
-仍待验证。详见 [v7 真机报告](../../说明/op13_v7_runtime_20260916.md)。
+启停恢复、换频道、普通 Wi-Fi 和 128 帧短突发通过。随后10分钟跳频通过，
+单次空闲SSR自动恢复失败，160 MHz仅配置成功、RX未验收。
+详见 [v7 真机报告](../../说明/op13_v7_runtime_20260916.md) 和
+[专项结果与SSR定位](../../说明/op13_v7_extended_20260916.md)。
 
 ## 应用与统一编译
 
@@ -82,9 +84,11 @@ qcacld Build ID 为 `6f765b5dc0aeaafd1b5c71d23b95ca612ca153dd`，三模块安装
 此次优先修正发送端点与生命周期，不把 flags 当作上述故障的修复。
 `submitted`、`completed`、固件 OK 和独立空口接收是不同证据，不可混为成功。
 
-WEXT 兼容和 RX-only qdisc 两项已修复并通过针对性真机回归。后续专项为 SSR、
-长时间连续跳频/压力及 160 MHz RX。短突发峰值达到 62 后排空，不等于长期压力
-通过；本轮 backpressure 计数为 0，不声称已复现 NETDEV_TX_BUSY 分支。
+WEXT 兼容和 RX-only qdisc 两项已修复并通过针对性真机回归。随后601.3秒完成
+517个频道阶段、6864帧，宽信道1768帧无跨频补发。backpressure仍0，未覆盖
+NETDEV_TX_BUSY、并发换频或长时间耐久性；160 MHz RX仍缺空口证据。
+空闲SSR暴露monitor重建-22和RX恢复缺口，完整退出重进可恢复。源码定位包括
+station初始化覆盖monitor union及SSR遗漏DP monitor启用；本补丁尚未修复。
 
 ### WEXT 兼容实现的来源
 

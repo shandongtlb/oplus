@@ -245,3 +245,30 @@ down/up、完整退出重进通过；普通 Wi-Fi 自动连接/IP/扫描正常�
 v7 ZIP 保持原 SHA-256；包内 BUILD_INFO 是打包时快照，后续提交及真机结果以
 本交接和 v7 真机报告为准。下一步可安排 SSR、长时间跳频压力及 160 MHz 接收
 专项；当前基础功能回归已完成，无需为本次提交再编译。
+
+## v7 专项验证：跳频通过，SSR 自动恢复失败
+
+用户随后明确授权“做吧”，2026-09-16 16:44:46–17:08:00 UTC 完成扩展验证。
+601.3 秒、517 个频道阶段、6864 帧全部完成；40/80/160 MHz 共送入1768帧，
+qdisc 保持空、回到20 MHz无旧帧补发。最大completion312 ms、used峰值62，
+无超时/残留，backpressure0；这是10分钟排空后跳频，未覆盖并发换频/长时间耐久。
+160 MHz在36/40/44/48主频道中心5250设置成功，均未抓到帧，RX仍不能验收。
+
+一次空闲SSR未通过：CNSS DIAG触发firmware assert，固件重新ready，但
+`hdd_start_all_adapters()`报monitor restart -22，60秒后helper仍state0。
+手动重新设频只恢复TX completion，没有RX；完整monstop→monstart后抓到
+271个Beacon、3个Probe回应。没有再触发带流量SSR，也没有重启整机。
+
+对照sam/实际源码和v7 ELF DWARF，发现monitor重建走station初始化，union中的
+monitor.center_freq1(offset16)会被station.roam_profile.SSIDs.SSIDList覆盖；
+另SSR monitor分支漏了正常启动中的hdd_enable_monitor_mode/DP启用。
+前者与-22、后者与只恢复TX无RX吻合；尚无运行中context/具体失败分支的直接观测，
+修复仍待实施。下一步优先修完整monitor SSR重建，补union/恢复链回归，不能只重试helper。
+
+普通Wi-Fi自动连接/IP/VALIDATED/扫描通过，最后con_mode0、Wi-Fi关闭，三模块
+仍v7；6876帧完成/固件OK，池3/3，无残留，关闭后超过两分钟复查正常。
+开测时曾发现系统在上轮结束后卸载qcacld，本轮重新加载已安装v7并等待接口就绪。
+完整报告见[v7专项结果](op13_v7_extended_20260916.md)，
+持久证据见[摘要](验证/op13-v7-extended-20260916.json)，原始证据在
+`/root/pt/op13-v7-extended-20260916/`。本轮未改驱动、构建或重打包；
+内核HEAD仍524a92c0，正式邮件补丁仍至0012。

@@ -1,0 +1,346 @@
+{
+  "test_date_utc": "2026-09-16",
+  "start_utc": "16:44:46",
+  "end_device_check_utc": "17:08:00",
+  "device": "PJZ110",
+  "boot_id": "1b243197-bbb2-4629-979c-9a3691355e36",
+  "whole_device_rebooted": false,
+  "source_head": "524a92c084f36b8301bac24ae3920c610b53fac0",
+  "runtime_commit": "c79b6f6541583b148354b731691dc92caeac6adb",
+  "package_sha256": "3a32b8975076861d43285b0bab25c7a8f92e79cefe6da7e614eab851e12401f2",
+  "identity_final": {
+    "cfg80211": {
+      "returncode": 0,
+      "note_sha256": "14f9436fa03a8da75c11059705c7599df9d4ae81a8fd7049455472cf94173140",
+      "matches_v7": true
+    },
+    "mac80211": {
+      "returncode": 0,
+      "note_sha256": "d34583b9ac9aecb9b14208822628ba2cc995241386d0d708c76425a4d992b880",
+      "matches_v7": true
+    },
+    "qca_cld3_peach_v2": {
+      "returncode": 0,
+      "note_sha256": "20f3117d9fc3b99fbb5daa32c9b54d7f52ef90f98e7d3da5468ccd7f5f750510",
+      "matches_v7": true
+    }
+  },
+  "hop_stress": {
+    "phases": [
+      [
+        "1-20",
+        [
+          "2412",
+          "HT20"
+        ],
+        20
+      ],
+      [
+        "6-20",
+        [
+          "2437",
+          "HT20"
+        ],
+        20
+      ],
+      [
+        "11-20",
+        [
+          "2462",
+          "HT20"
+        ],
+        20
+      ],
+      [
+        "149-20",
+        [
+          "5745",
+          "HT20"
+        ],
+        20
+      ],
+      [
+        "1-40",
+        [
+          "2412",
+          "HT40+"
+        ],
+        40
+      ],
+      [
+        "149-80",
+        [
+          "5745",
+          "80",
+          "5775"
+        ],
+        80
+      ],
+      [
+        "36-160",
+        [
+          "5180",
+          "160",
+          "5250"
+        ],
+        160
+      ]
+    ],
+    "pass": true,
+    "seconds": 601.3,
+    "hops": 517,
+    "tx_sent": 6864,
+    "wide_attempts": 1768,
+    "ebusy_retries": 0,
+    "max_tune_s": 0.23178885500055912,
+    "max_drain_s": 1.114901146000193,
+    "initial": {
+      "state": 2,
+      "accepted": 0,
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 0,
+      "max_completion_ms": 0,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "final": {
+      "state": 2,
+      "accepted": 6864,
+      "submitted": 6864,
+      "completed": 6864,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 62,
+      "max_completion_ms": 312,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "rx": {
+      "2412 beacon": 810,
+      "2412 other_response": 421,
+      "2412 probe_response": 3201,
+      "2437 beacon": 33,
+      "2437 probe_response": 2848,
+      "2437 other_response": 185,
+      "2462 probe_response": 870,
+      "2462 other_response": 120,
+      "5745 beacon": 123,
+      "5745 other_response": 2
+    },
+    "scope": "10 minutes; drain before retune; no concurrent retune or NETDEV_TX_BUSY coverage"
+  },
+  "width160": {
+    "configuration_passed": true,
+    "over_air_rx_validated": false,
+    "observations": [
+      {
+        "primary": 5180,
+        "width": 160,
+        "center": 5250,
+        "returncode": 0,
+        "stderr": "",
+        "info": "Interface wlan0\n\tifindex 47\n\twdev 0x100000004\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 1\n\tchannel 36 (5180 MHz), width: 160 MHz, center1: 5250 MHz\n\ttxpower 0.00 dBm\n",
+        "before": "state=2 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0",
+        "capture": "tcpdump: listening on wlan0, link-type IEEE802_11_RADIO (802.11 plus radiotap header), snapshot length 256 bytes\n0 packets captured\n0 packets received by filter\n0 packets dropped by kernel\n",
+        "after": "state=0 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0"
+      },
+      {
+        "primary": 5200,
+        "width": 160,
+        "center": 5250,
+        "returncode": 0,
+        "stderr": "",
+        "info": "Interface wlan0\n\tifindex 47\n\twdev 0x100000004\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 1\n\tchannel 40 (5200 MHz), width: 160 MHz, center1: 5250 MHz\n\ttxpower 0.00 dBm\n",
+        "before": "state=0 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0",
+        "capture": "tcpdump: listening on wlan0, link-type IEEE802_11_RADIO (802.11 plus radiotap header), snapshot length 256 bytes\n0 packets captured\n0 packets received by filter\n0 packets dropped by kernel\n",
+        "after": "state=0 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0"
+      },
+      {
+        "primary": 5220,
+        "width": 160,
+        "center": 5250,
+        "returncode": 0,
+        "stderr": "",
+        "info": "Interface wlan0\n\tifindex 47\n\twdev 0x100000004\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 1\n\tchannel 44 (5220 MHz), width: 160 MHz, center1: 5250 MHz\n\ttxpower 0.00 dBm\n",
+        "before": "state=0 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0",
+        "capture": "tcpdump: listening on wlan0, link-type IEEE802_11_RADIO (802.11 plus radiotap header), snapshot length 256 bytes\n0 packets captured\n0 packets received by filter\n0 packets dropped by kernel\n",
+        "after": "state=0 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0"
+      },
+      {
+        "primary": 5240,
+        "width": 160,
+        "center": 5250,
+        "returncode": 0,
+        "stderr": "",
+        "info": "Interface wlan0\n\tifindex 47\n\twdev 0x100000004\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 1\n\tchannel 48 (5240 MHz), width: 160 MHz, center1: 5250 MHz\n\ttxpower 0.00 dBm\n",
+        "before": "state=0 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0",
+        "capture": "tcpdump: listening on wlan0, link-type IEEE802_11_RADIO (802.11 plus radiotap header), snapshot length 256 bytes\n0 packets captured\n0 packets received by filter\n0 packets dropped by kernel\n",
+        "after": "state=0 accepted=0 submitted=0 completed=0 failed=0 dropped=0 backpressure=0 stale=0 retries=0 timeouts=0 drained=0 queued=0 inflight=0 used=0 peak=0 max_completion_ms=0 pool_allocs=1 pool_frees=0 retained=0 reset_reclaims=0 stopping=0"
+      }
+    ]
+  },
+  "idle_ssr": {
+    "attempts": 1,
+    "automatic_monitor_recovery_passed": false,
+    "trigger": {
+      "interface": "cld80211 generic netlink family, command 27 (WLAN_NL_MSG_CNSS_DIAG)",
+      "wire_format": "vendor attr 1 (nested), data attr 2, dbglog_slot LE u32 {6,0,2,0}, u8 payload {1,0}",
+      "simulation": "RECOVERY_SIM_ASSERT = 1; delay_time_ms = 0",
+      "recovery_enabled": "device CNSS recovery Enabled[1]; persistent INI gEnableSelfRecovery=1 and gEnableForceTargetAssert=1",
+      "sources": [
+        "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/utils/fwlog/dbglog_host.c:4193",
+        "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/utils/nlink/inc/wlan_nlink_common.h:99",
+        "vendor/qcom/opensource/wlan/platform/inc/cnss_nl.h:32",
+        "vendor/qcom/opensource/wlan/platform/cnss_genl/cnss_nl.c:167",
+        "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c:1492",
+        "vendor/qcom/opensource/wlan/fw-api/fw/wmi_unified.h:26447"
+      ],
+      "do_not_use": [
+        "CNSS recovery sysfs only changes policy; writing 1 does not trigger SSR",
+        "CNSS oplus debug switch only changes flags; not a clean SSR trigger",
+        "PCI reset is not substituted for firmware SSR"
+      ]
+    },
+    "helper_states": [
+      2,
+      4,
+      0
+    ],
+    "wait_seconds": 60,
+    "driver_log": [
+      "[ 4703.294325] [python][0x151f2bcefa][16:59:19.007019] peach_v2: [25624:E:QDF] cnss_diag_handle_crash_inject: cnss_diag_handle_crash_inject : DIAG_TYPE_CRASH_INJECT: 1 0",
+      "[ 4703.294387] [schedu][0x151f2bd3b6][16:59:19.007082] peach_v2: [3711:I:WMI] send_crash_inject_cmd_tlv: type:1 delay_time_ms:0 current_time:1789577959007",
+      "[ 4703.867365] [kworke][0x151fd3b110][16:59:19.580060] peach_v2: [4320:I:HDD] hdd_reset_all_adapters: [SSR] reset adapter with device mode Monitor(6)",
+      "[ 4712.930419] [kworke][0x152a32e160][16:59:28.643104] peach_v2: [4320:E:HDD] wlan_hdd_delete_mon_link: monitor vdev stop event time out vdev id: 0 status 15",
+      "[ 4714.024214] [kworke][0x152b7353f1][16:59:29.736900] peach_v2: [4320:I:HDD] __hdd_soc_recovery_reinit: re-probing driver",
+      "[ 4714.313286] [kworke][0x152bc804c9][16:59:30.025976] peach_v2: [4320:I:WMA] wma_wait_for_ready_event: FW ready event received",
+      "[ 4714.342321] [kworke][0x152bd086b0][16:59:30.055015] peach_v2: [4320:E:HDD] hdd_start_all_adapters: [SSR] Failed to restart monitor adapter: -22",
+      "[ 4714.342362] [kworke][0x152bd089c3][16:59:30.055056] peach_v2: [4320:I:HDD] hdd_wlan_re_init: WLAN host driver reinitiation completed!"
+    ],
+    "manual_retune_tx_completed": 6,
+    "manual_retune_beacons": 0,
+    "manual_retune_probe_responses": 0,
+    "full_mode_reentry_tx_completed": 6,
+    "full_mode_reentry_beacons": 271,
+    "full_mode_reentry_probe_responses": 3,
+    "inflight_ssr_attempted": false,
+    "analysis": "Source and ELF DWARF show station roam_profile at offset8 aliases monitor cb_mode8/phy_mode12/center_freq1=16; SSIDList pointer writes offset16. SSR monitor restart also omits hdd_enable_monitor_mode present in normal open. Specific -22 branch not directly observed; no runtime fix tested."
+  },
+  "ordinary_wifi": {
+    "auto_connected": true,
+    "ipv4_obtained": true,
+    "android_validated": true,
+    "scan_succeeded": true
+  },
+  "final": {
+    "con_mode": 0,
+    "wifi_enabled": false,
+    "all_three_v7_modules_loaded": true,
+    "stats": {
+      "state": 0,
+      "accepted": 6876,
+      "submitted": 6876,
+      "completed": 6876,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 62,
+      "max_completion_ms": 312,
+      "pool_allocs": 3,
+      "pool_frees": 3,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "tx_status": {
+      "completed": 6876,
+      "failed": 0,
+      "ok": 6876,
+      "discard": 0,
+      "inspect": 0,
+      "no_ack": 0,
+      "unknown": 0,
+      "last_status": 0,
+      "last_error": 0
+    },
+    "note": "Firmware OK for broadcast is not an AP ACK; no auth/deauth/disassoc in this run."
+  },
+  "severe_kernel_patterns": {
+    "patterns": [
+      "BUG:",
+      "WARNING:",
+      "Call trace:",
+      "Kernel panic",
+      "use.after.free",
+      "KASAN:",
+      "scheduling while atomic",
+      "blocked for more than"
+    ],
+    "since_uptime": 4703.29,
+    "matches": []
+  },
+  "source_modified": false,
+  "kernel_build_started": false,
+  "package_changed": false,
+  "evidence_directory": "/root/pt/op13-v7-extended-20260916",
+  "evidence_sha256": {
+    "baseline.txt": "f20f93291e56c56738322146aae57da25b3b9c97556bf6fce4529df7aff30050",
+    "identity-loaded.json": "1182c520bb9487bb99f265593c0bb30b38c7475a7b4d31796ce1d69fbf0ea52a",
+    "load-v7.txt": "b2a0e37c9ee0c46bf5ead35354ac66d49a0ec7934b1054a8ffb54f97fd31d747",
+    "monitor-ready.txt": "7b734c327cd68566574805f236ac7245dcdd697feb800566792d42081736dba8",
+    "width160.txt": "f2148f728cb26249856d829602b44958cf8e5f2cdfb920ec8947ab0a132b2434",
+    "width160.sh": "b746919f0c3c7540aba4369045862685e2e13dda699d15a09cca0d1b8bd9545d",
+    "hop-stress.txt": "5a3b72d3d9e10392869ff28f4946a98ea2a3283777ede69691604973987ce22f",
+    "hop-stress.sh": "248b9bb06edce115076d3b0561cd1ce631a857512ed70af036a083f5fb41d8ab",
+    "ssr_once.py": "d9440a31934151f9c3f460339e90f90aff4bae8e55a732aa29ab87ee9d4f730c",
+    "ssr-source-reference.json": "9017a3aa48d1aadc931378f2a1e0698808373ad21da7edc87f86da2b8788e2cb",
+    "ssr-idle.txt": "e901ffc3307503be4a6fb02223aac8add7e9ede772bd8048e4d1e838abcca69a",
+    "ssr-idle.sh": "4581b37f96a66f15a0ac29fe3c6c4008561d5b4daea7d31fc7f450fe94a28de5",
+    "dmesg-before-ssr.txt": "ba03e80f0abdf88096da9a703a445e9b14c001ab743e9824c2c650303d9c4d2f",
+    "dmesg-ssr-idle.txt": "4bf47ae7f296c95347282624f2966f88b4623828d93f1d5cffb9b0d71c1c6ab6",
+    "ssr-manual-channel.txt": "52e91228f8de6c0909ffbe5d3884d234db9d48194391da8ae6cbeccb52620bde",
+    "ssr-manual-probe.txt": "f338f55ba5ee2406988520c43ad2b30ec7952d8c510b55bba869489446dea3ce",
+    "ssr-exit-reenter.txt": "b9e4efdbe543ca71294650d138c7dcea4cdf62e93ce72f60a89e8e5026032353",
+    "ssr-reenter-probe.txt": "de78aaeb808b8bf69dca13a40d2ac3ac19eb897f3136ad37230b248562cff6b9",
+    "ssr-normal-wifi.txt": "c886d64c968d61344bc224de804baad66fb60fde073590910ae6a1642ca33fc3",
+    "final-stable-state.txt": "af0e59a04fcb8c999760c4b69782662ce19eb9519a79e2efe01acc56de2d5e39",
+    "identity-final.json": "ff7aba2c0ec3e2d015ea61f276ff64687a197743495adfddecbe99eaad16d1d9",
+    "dmesg-final.txt": "d1b2ed7c0e1425373587613d0bfabb611669dbafac4b4dea653ca8b9359463c9",
+    "ssr-station-layout.txt": "20a574b04033b1df35add84eb1e4017bd304d2e6234ce603873a00847553cd81",
+    "ssr-monitor-layout.txt": "6ca5d0502b1089025da61e54fc1dbb2d2d54a1bc9eec37a6feec67bf796ce65c",
+    "ssr-roam-layout.txt": "8c4f6cdfda765eeaaf5c5a9865b4ecab70efd9e447d58e44ebd290c36f046953",
+    "ssr-ssids-members.txt": "b7debe657182997426afebe90a9b37d27208be7aa9d762b8cb73464c00d78bec"
+  }
+}
