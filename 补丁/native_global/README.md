@@ -4,11 +4,11 @@
 （`con_mode=4`）及原生 `wlan0` monitor vdev。2026-09-16 按用户要求，
 以 sam 完整实现为主要依据：monitor 负责 RX/主机所有权，内部 STA helper 负责 TX。
 全局监听不要求直接由 monitor vdev 发包；旧 oplus 补丁仅作参考。
-2026-09-16 v6 已有用户真机证据：`aireplay-ng --test wlan0` 在 2.4 GHz
-信道 1 报告 Injection working，三个 AP 的定向 Probe 响应为 29/30、25/30、11/30。
-随后 ADB 真机检查通过频道切换、启停恢复、其他频道 Probe 及认证响应；用户另行
-实测确认单播/广播正常。长时间稳定性及 SSR 仍待验证，详见
-[真机报告](../../说明/op13_v6_runtime_20260916.md)。
+当前为 v7：在 v6 helper 实现上接入 sam WEXT 兼容，并修复宽信道 RX-only 下
+主机 qdisc 留帧后跨频道补发。2026-09-16 真机三轮指定 AP Probe 均为 30/30，
+不加 `--ignore-negative-one`；40/80 MHz 留帧复现和 20 MHz 正向对照均通过。
+启停恢复、换频道、普通 Wi-Fi 和 128 帧短突发通过；长时间稳定性、SSR、160 MHz
+仍待验证。详见 [v7 真机报告](../../说明/op13_v7_runtime_20260916.md)。
 
 ## 应用与统一编译
 
@@ -23,7 +23,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 第一项只接入 `prepare_vendor.sh` 的 WLAN 统一构建，必需保留。第二项是当前
 原生全局实现的合并 diff。不要叠加旧 `qca_inject/0002-0017`。
 
-也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十个邮件补丁。
+也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十二个邮件补丁。
 这与上面的两项应用方式二选一。对应源码提交：
 
 - `d20c69af`：WLAN 统一构建接入。
@@ -36,10 +36,16 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 - `48710187`：移植 sam 的 helper/peer 确认、原生描述符记账、有界队列、DMA 生命周期、SSR 和模式退出流程。
 - `eab4d48d`：保持 WMI payload 的字节指针类型。
 - `cd811a61`：记录 v6 用户真机 Probe 成功与验证边界，仅修改文档。
+- `c79b6f65`：sam WEXT handlers/频道确认与主机 qdisc 切换边界；完整保留 v7 构建快照的 11 个文件。
+- `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
 
-v6 的实际构建源码仍是 `eab4d48d`。当前十封邮件补丁和两项合并应用方案已从
-基线重放，完整 tree 均为 `34ce32b2deb9ea48195477ef764c877498b72cb8`，与
-`cd811a61` 一致。证据见 `op13-sam-global-20260916/patch-replay-closeout.json`。
+v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
+不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
+当前十二封邮件补丁和两项合并应用方案已从基线用隔离 index 重放，完整 tree
+均为 `422e8a00abf0521a986311b445c014a946a822ef`，与 `524a92c0` 一致。
+证据见 `op13-wext-qdisc-20260916/patch-replay-v7.json`。
+可随仓库保存的摘要见 [v7 收尾校验记录](../../说明/验证/op13-v7-closeout-20260916.json)。
+若已应用旧 v6 至 0010，仅追加 0011、0012；不要在旧补丁上重复叠加合并补丁。
 
 构建日志必须包含 kernel、WLAN platform、WLAN qcacld、Installing WLAN modules
 及 DT 合并完成阶段；外层脚本退出码不能单独证明内部成功。
@@ -47,8 +53,8 @@ v6 的实际构建源码仍是 `eab4d48d`。当前十封邮件补丁和两项合
 KSU 固定流程：统一构建 → 从 `kernel_platform/out/msm-kernel-sun-perf/dist/`
 取 `cfg80211.ko`、`mac80211.ko`、`qca_cld3_peach_v2.ko` → 副本执行
 `llvm-strip --strip-debug` → 放入 `vendor_dlkm/lib/modules/` → 打包。
-v6 已完成一次用户侧真机 Probe 验证；agent 不自动部署或重复运行手机测试。每次完整
-构建结束后先报告并停下，不自动二次构建。
+用户已安装 v7 并授权完成针对性真机回归。后续每次完整构建结束后先报告并停下，
+不自动二次构建。
 CNSS 只作为构建依赖，包内不放 CNSS 模块。校验记录见包内 `docs/BUILD_INFO.txt`。
 
 ## 当前实现与验证边界
@@ -63,20 +69,22 @@ CNSS 只作为构建依赖，包内不放 CNSS 模块。校验记录见包内 `d
 丢失 completion 保留 DMA 并请求恢复，仅在既有平台确认新固件启动后回收。
 退出模式先在 psoc 事务下停止发送，再进入 driver 事务；`ip down` 为主机暂停。
 
-九项主机 ASan/UBSan 检查通过，详见
-`/root/pt/op13-sam-global-20260916/host-tests.json`。
+十一项主机 ASan/UBSan 检查通过，详见
+`/root/pt/op13-wext-qdisc-20260916/host-tests.json`；收尾时五项受影响检查再次通过。
 源码文档 `qcacld-3.0/docs/peach-native-injection.md` 列出全部测试与限制。
-本轮成功构建结果见 `/root/pt/op13-sam-global-20260916/build-result.json`。
-当前 KSU v6 ZIP 使用 helper 版实现；旧 v5 ZIP 属于直接 monitor TX，不能作为当前基线。
-已交付 v6 SHA-256 为 `0ce6a9200601feba5ae9e92006bf2235d264cabd97b361011c19cbbc8899308a`。
-收尾时本地 ZIP 已不在原目录，模块副本和校验文件仍在；本轮未重打包。
+成功构建结果见 `/root/pt/op13-wext-qdisc-20260916/build-result.json`。
+当前包为 `op13_nethunter_ksu-peach-native-global-v7-integrated.zip`，SHA-256
+`3a32b8975076861d43285b0bab25c7a8f92e79cefe6da7e614eab851e12401f2`。
+qcacld Build ID 为 `6f765b5dc0aeaafd1b5c71d23b95ca612ca153dd`，三模块安装文件
+与实际加载 notes 均在真机测试前后核对。收尾只提交代码、补丁和文档，没有重新构建或打包。
 
 用户提供的 v5 probe/auth 日志返回 DISCARD，flags=1 对照也未解决已记录的认证帧。
 此次优先修正发送端点与生命周期，不把 flags 当作上述故障的修复。
 `submitted`、`completed`、固件 OK 和独立空口接收是不同证据，不可混为成功。
 
-后续先处理真机复现的 WEXT 兼容和 RX-only qdisc 留帧问题，再安排对应回归。
-本轮仅记录结果和实现引用，没有更改补丁代码或重新编译。
+WEXT 兼容和 RX-only qdisc 两项已修复并通过针对性真机回归。后续专项为 SSR、
+长时间连续跳频/压力及 160 MHz RX。短突发峰值达到 62 后排空，不等于长期压力
+通过；本轮 backpressure 计数为 0，不声称已复现 NETDEV_TX_BUSY 分支。
 
 ### WEXT 兼容实现的来源
 
@@ -86,7 +94,7 @@ v6 的 `iwconfig` 显示 no wireless extensions，指定 AP 的 aireplay 读到 
 `hdd_mon_wext_handler_def`，以及 `hdd_mon_mode_ether_setup()` 设置
 `dev->wireless_handlers`。它还通过 `wlan_hdd_mon_wext_set_freq()` 复用频道并发
 保护；仅接受同一 20 MHz 频道确认，实际换频道返回 EOPNOTSUPP，由 nl80211 完成。
-当前 peach v6 尚未接入这段；下一轮按该补丁移植并做 aireplay 查询回归。
+v7 已按此接入，并增加 peach 已确认频道读取与数值边界保护；真机查询回归通过。
 
 oplus 原补丁也有对应历史修复：[0011 WEXT 查询桥](../qca_inject/0011-fix-wext-for-qcamonitor.patch)
 记录了 `wireless_handlers` 接线及 aireplay channel -1 的原因；

@@ -1,0 +1,127 @@
+{
+  "source_snapshot_verification": {
+    "at": "2026-09-16T16:19:35.278492+00:00",
+    "built_snapshot": "/root/pt/op13-wext-qdisc-20260916/source-state.json",
+    "all_11_files_match": true,
+    "files": {
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_alloc.py": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_serialization.py": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_host_queue.py": true,
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_wext.py": true
+    }
+  },
+  "patch_replay": {
+    "base": "4d69a3ed9a176152e85580352723c308f29cbfcb",
+    "source_commit": "c79b6f6541583b148354b731691dc92caeac6adb",
+    "documentation_commit": "524a92c084f36b8301bac24ae3920c610b53fac0",
+    "mail_patch_count": 12,
+    "mail_tree": "422e8a00abf0521a986311b445c014a946a822ef",
+    "combined_tree": "422e8a00abf0521a986311b445c014a946a822ef",
+    "head_tree": "422e8a00abf0521a986311b445c014a946a822ef",
+    "match": true,
+    "method": "isolated temporary index; git apply --cached and complete git tree comparison; no build",
+    "patch_sha256": {
+      "exported/0001-build-integrate-wlan-qcacld.patch": "f2e7f4ead3e87635f9bc3fa3bc6ce52a1e9cfec1bdd7b9028008ee553d01941d",
+      "exported/0002-peach-v2-native-global-monitor.patch": "271b2cd08b03752b71f695bec1561aaa4ba2c481b508e1d8dbe6ea7f90888cbb",
+      "exported/0003-monitor-injection-flag.patch": "4be8bdbbee109409d3f00d8a4d962e1777c8cc27753a841e3bac1af455932ac6",
+      "exported/0004-native-monitor-tx-hardening.patch": "ffdce17f4de149ff8d0b6536488a470fbc784e714cb717948ad9ff9e37fd4720",
+      "exported/0005-monitor-channel-and-tx-diagnostics.patch": "0722f2c94f5bf7cd789d34e897a5792648f548e02c6cc49ce2407e627df2a82c",
+      "exported/0006-preserve-deauth-wrong-key.patch": "a7b38cd653e43e9552fe72ba29a2225c450f3edef02a770f29a7818248b9befb",
+      "exported/0007-monitor-channel-current-macro-fix.patch": "e5d712710f28ea4488f8f0611ac408b76ab62f5430845ea8e876f1d4657ff472",
+      "exported/0008-sam-global-helper-tx.patch": "de3cccebc96eaa2a17f25a31dc9a4238f7c7cf201fce52b562ef8d80d1cd1d66",
+      "exported/0009-helper-tx-payload-type.patch": "a8a8891aacb0febcab4d3154612c5462835823c5a5910a155b643df4b225aea7",
+      "exported/0010-v6-device-probe-validation.patch": "3e7752237c052a4961596113c074544420b6da8e533ede1e376365e537266ff2",
+      "exported/0011-monitor-wext-and-host-queue.patch": "68d32b88eb4586f0e5f35f510b2619cb886d1ad55852753794aeca1adaf3f517",
+      "exported/0012-v7-device-regression-results.patch": "a94699152759ed59fe4c7f10392c31ec997ab970d712fe8ec583c592b08465f0",
+      "0001-peach-v2-native-global-monitor.patch": "3fa4462802562e39c68d2f46eba51ad2154ff702dbaeb760f72a298bce316ed8"
+    }
+  },
+  "closeout_host_tests": [
+    {
+      "test": "test_monitor_wext.py",
+      "returncode": 0
+    },
+    {
+      "test": "test_monitor_host_queue.py",
+      "returncode": 0
+    },
+    {
+      "test": "test_native_injection.py",
+      "returncode": 0
+    },
+    {
+      "test": "test_monitor_channel_alloc.py",
+      "returncode": 0
+    },
+    {
+      "test": "test_monitor_channel_serialization.py",
+      "returncode": 0
+    }
+  ],
+  "device_summary": {
+    "test_window_utc": "2026-09-16 15:47:59 to 15:57:49",
+    "loaded_v7_verified": true,
+    "wext_probe_rounds": [
+      "30/30",
+      "30/30",
+      "30/30"
+    ],
+    "wide_qdisc_regression": "pass 40/80 MHz including 20 MHz positive control",
+    "probe_response_channels": [
+      1,
+      6,
+      11,
+      149
+    ],
+    "burst_count": 128,
+    "final_accepted_submitted_completed": 343,
+    "final_ok": 253,
+    "final_no_ack": 90,
+    "final_discard": 0,
+    "final_pool_allocs_frees": [
+      2,
+      2
+    ],
+    "final_mode": 0,
+    "final_wifi": "disabled",
+    "report": "oplus/说明/op13_v7_runtime_20260916.md",
+    "not_validated": [
+      "SSR",
+      "long-running stress",
+      "160 MHz",
+      "NETDEV_TX_BUSY branch",
+      "standalone authentication/deauthentication/disassociation in this run"
+    ]
+  },
+  "device_module_identity": {
+    "cfg80211": {
+      "loaded_note_sha256": "14f9436fa03a8da75c11059705c7599df9d4ae81a8fd7049455472cf94173140",
+      "loaded_matches_v7": true
+    },
+    "mac80211": {
+      "loaded_note_sha256": "d34583b9ac9aecb9b14208822628ba2cc995241386d0d708c76425a4d992b880",
+      "loaded_matches_v7": true
+    },
+    "qca_cld3_peach_v2": {
+      "loaded_note_sha256": "20f3117d9fc3b99fbb5daa32c9b54d7f52ef90f98e7d3da5468ccd7f5f750510",
+      "loaded_matches_v7": true
+    }
+  },
+  "zip": {
+    "filename": "op13_nethunter_ksu-peach-native-global-v7-integrated.zip",
+    "sha256": "3a32b8975076861d43285b0bab25c7a8f92e79cefe6da7e614eab851e12401f2",
+    "bytes": 7061780,
+    "unchanged_during_closeout": true
+  },
+  "closeout_did_build": false,
+  "closeout_did_package": false,
+  "closeout_did_operate_phone": false,
+  "initial_check_note": "An attempted pytest command did not run tests because pytest was absent; these tests are standalone python3 scripts. Five affected scripts were then run directly and passed. The initial unrestricted diff check reported existing .repo TRACE_FILE whitespace; targeted source checks passed."
+}

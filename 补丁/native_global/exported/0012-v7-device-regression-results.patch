@@ -1,0 +1,87 @@
+From 524a92c084f36b8301bac24ae3920c610b53fac0 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 16:21:49 +0000
+Subject: [PATCH] docs: record v7 WEXT and host queue device regression results
+
+---
+ .../qcacld-3.0/docs/peach-native-injection.md | 56 +++++++++++++++++--
+ 1 file changed, 52 insertions(+), 4 deletions(-)
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+index 091c70ad..ac30e7a7 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+@@ -39,8 +39,8 @@ subject to complete channel/center validation and firmware capability. Channel
+ changes stop the old helper first; failed teardown blocks retuning. Repeating
+ the same channel skips RX restart while retrying optional helper setup.
+ 
+-The source now includes follow-up fixes for two v6 device findings (not yet
+-built or tested on the phone):
++The v7 source includes follow-up fixes for two v6 device findings. The unified
++build and targeted device regressions passed on 2026-09-16:
+ 
+ - Monitor WEXT name/mode/frequency/range handlers follow sam's
+   `0001-wlan-native-monitor-injection.patch`, with `wireless_handlers` wired
+@@ -63,8 +63,8 @@ built or tested on the phone):
+ 
+ The qdisc tests model kernel networking primitives while executing production
+ HDD/WMA functions. They do not establish real kernel lock scheduling or device
+-behavior. Repeat the observed 80 MHz one-frame -> 20 MHz test on the next
+-build, check normal backpressure, and check WEXT without `--ignore-negative-one`.
++behavior. The separate v7 device evidence below covers the observed wide-to-20
++MHz stale-packet regression and WEXT without `--ignore-negative-one`.
+ 
+ Diagnostics under `/sys/module/qca_cld3_peach_v2/parameters/`:
+ 
+@@ -120,3 +120,51 @@ other channels or bands, repeated mode/channel transitions, long runs or SSR.
+ Keep this package as the baseline. Next collect before/after `inject_stats`
+ and `inject_tx_status` around short repeated Probe tests, then check complete
+ mode exit/re-entry and channel changes before broadening frame coverage.
++
++## v7 build and device evidence (2026-09-16)
++
++Source commit `c79b6f6541583b148354b731691dc92caeac6adb` preserves all 11
++changed source/test/documentation files from the v7 build snapshot. It was
++committed after the build; the build itself used `cd811a61` plus those working
++changes. This later documentation update does not change runtime code.
++
++The single unified `sun perf` build ran 14:47:27-14:59:02 UTC and passed.
++Eleven production-code ASan/UBSan host checks passed. The stripped three-module
++KSU ZIP is `op13_nethunter_ksu-peach-native-global-v7-integrated.zip`, SHA-256
++`3a32b8975076861d43285b0bab25c7a8f92e79cefe6da7e614eab851e12401f2`.
++Its qcacld Build ID is `6f765b5dc0aeaafd1b5c71d23b95ca612ca153dd`.
++
++After the user installed and hot-switched v7, device checks ran from 15:47:59
++to 15:57:49 UTC. Installed file hashes and loaded Build ID notes matched v7
++before/after testing. Results:
++
++- WEXT reported the confirmed frequency/channel. Same-mode/channel
++  confirmation succeeded; actual WEXT retuning returned EOPNOTSUPP as
++  intended. Directed aireplay tests without `--ignore-negative-one` scored
++  30/30 on all three rounds: initial, down/up and full mode exit/re-entry.
++- nl80211 tuning succeeded on channels 1/6/11/36/149/161. Probe responses
++  were observed on 1/6/11/149. Channel 36 had no RF reception evidence, and
++  channel 161 had Beacons but no Probe responses in this run.
++- 40/80 MHz RX captures contained 224/63 Beacons. Sending 17 host frames at
++  either RX-only width left every qdisc empty. Returning to 20 MHz without
++  a new send did not advance accepted/submitted/completed. Sending one new
++  valid frame then advanced all three counters by exactly one.
++- A 128-frame short burst was fully submitted/completed, reached peak 62
++  slots, and drained with no timeout or retained buffer. It does not prove
++  sustained-load behavior or the NETDEV_TX_BUSY branch.
++- Repeated start, down/up, full exit/re-entry and normal Wi-Fi connection,
++  IPv4 assignment and scanning succeeded. The final state restored mode 0
++  and Wi-Fi off, with v7 modules left loaded.
++
++Final accepted/submitted/completed were 343; firmware OK=253, NO_ACK=90,
++DISCARD=0. Queued/inflight/used/retained and timeout counters were zero;
++DMA pools allocated/freed=2/2. Completion is not an ACK or independent RF
++confirmation. Separate auth/deauth/disassoc validation was not repeated.
++SSR, long-running stress/hopping and 160 MHz reception remain unvalidated.
++
++The first direct Kali chroot lacked sys/proc/dev mounts and aireplay traffic
++was rejected as malformed Radiotap. Preparing those mounts in an isolated
++mount namespace made the same test pass 30/30. Use a prepared chroot when
++repeating these tests; do not classify this first environment failure as a
++driver regression. Full evidence is in `/root/pt/op13-v7-runtime-20260916/`
++and the workspace report `oplus/说明/op13_v7_runtime_20260916.md`.

@@ -8,3 +8,5 @@
 0008-sam-global-helper-tx.patch
 0009-helper-tx-payload-type.patch
 0010-v6-device-probe-validation.patch
+0011-monitor-wext-and-host-queue.patch
+0012-v7-device-regression-results.patch

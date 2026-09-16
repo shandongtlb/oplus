@@ -1,15 +1,17 @@
 # OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
-This package is the OnePlus 13 `peach_v2` native-global rebuild from `补丁/native_global/`.
-v6 includes monitor channel reporting, same-channel restart avoidance, TX flag diagnostics,
-and verification of all three loaded module Build IDs. Build ID notes are bundled under
-`module_build_ids/`. The v4 TX input validation, queue control and DMA protection remain.
-Firmware TX acceptance and RF reception are unverified on this package. Missing
-completion at WMA close quarantines buffers and module references until reboot.
-See `NATIVE_INJECTION.md` and `BUILD_INFO.txt`.
+This v7 package uses native global monitor (`con_mode=4`, `wlan0`) with
+sam-derived internal STA helper TX. It adds monitor WEXT compatibility and
+host qdisc cleanup across channel transitions to the tested v6 baseline.
+WEXT queries and current 20 MHz channel confirmation are supported; use
+nl80211 (`iw`) for actual channel changes. Loaded module identities are
+checked against the binary ELF notes bundled under `module_build_ids/`.
 
-The earlier v4 probe test reached firmware but returned DISCARD. v5 has been built
-and packaged; it has not been loaded or tested on the phone. See `AIREPLAY_DEBUG.md`.
+The v6 baseline passed Probe tests on 2.4/5 GHz, authentication, repeated
+start/stop and channel switching; the user also reported unicast/broadcast
+working. v7 passed the unified build and eleven host ASan/UBSan checks.
+The new v7 changes have not yet been tested on the phone. See
+`NATIVE_INJECTION.md` and `BUILD_INFO.txt` for scope and module identity.
 
 The three WLAN `.ko` files come from the integrated `sun perf` build with
 `qca_inject/0001-add-qcacldko.patch` plus the sam-derived helper TX port, and are processed with `llvm-strip --strip-debug`.
@@ -17,7 +19,7 @@ The three WLAN `.ko` files come from the integrated `sun perf` build with
 Build markers:
 - `cfg80211/mac80211` release: `6.6.118-android15-8-o-g6028f47fadda-4k`
 - `qca_cld3_peach_v2` release: `6.6.118-android15-8-o-4k`
-- The SCM suffix differs; module version flags and checked symbol CRCs match. See `BUILD_INFO.txt`.
+- The SCM suffix differs. Strip preserves module metadata and imported CRC sections; this packaging check does not validate every ROM dependency. See `BUILD_INFO.txt`.
 - `system_dlkm` dependency modules remain ROM-provided and may use a different vermagic
 
 Included modules:

@@ -1,0 +1,1112 @@
+From c79b6f6541583b148354b731691dc92caeac6adb Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 16:20:12 +0000
+Subject: [PATCH] wlan: restore monitor WEXT and discard stale host queues on
+ retune
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Port sam monitor WEXT name/mode/frequency/range handlers to peach, using
+confirmed channel reads and the existing channel lock. Accept idempotent
+20 MHz confirmation; keep actual retuning on nl80211 to avoid waiting for
+firmware under RTNL.
+
+Drain RX-only host traffic to rejection instead of retaining it. Detach
+and reset qdisc under a short RTNL trylock before helper/channel changes,
+block admission across the transition, and resume the empty queue on all
+exits. Preserve the running helper on same-channel confirmation and retain
+capacity-based stop/wake flow control.
+
+This commit preserves all 11 files from the v7 build snapshot byte for
+byte. The unified sun perf build and 11 ASan/UBSan host checks passed;
+five affected host checks also passed at closeout. Installed v7 module
+identities matched, WEXT Probe passed 30/30 in three rounds, and 40/80 MHz
+queue tests showed no old packets submitted after returning to 20 MHz.
+A 128-frame burst reached peak 62 and drained fully. Device evidence is
+recorded separately; SSR and long-running stress remain unvalidated.
+
+Primary reference: sam/补丁/0001-wlan-native-monitor-injection.patch.
+Historical oplus qca_inject/0011 and 0012 WEXT patches are reference only.
+---
+ .../core/hdd/src/wlan_hdd_cfg80211.c          | 155 ++++++++++++++--
+ .../core/hdd/src/wlan_hdd_cfg80211.h          |   4 +
+ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   | 170 ++++++++++++++++--
+ .../wlan/qcacld-3.0/core/wma/inc/wma_api.h    |   2 +
+ .../wlan/qcacld-3.0/core/wma/src/wma_inject.c |  62 +++++--
+ .../qcacld-3.0/docs/peach-native-injection.md |  29 +++
+ .../tests/test_monitor_channel_alloc.py       |  32 +++-
+ .../test_monitor_channel_serialization.py     |  25 ++-
+ .../tests/test_monitor_host_queue.py          | 145 +++++++++++++++
+ .../qcacld-3.0/tests/test_monitor_wext.py     | 102 +++++++++++
+ .../qcacld-3.0/tests/test_native_injection.py |  16 +-
+ 11 files changed, 693 insertions(+), 49 deletions(-)
+ create mode 100644 vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_host_queue.py
+ create mode 100644 vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_wext.py
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+index 736dced8..ef004cfc 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+@@ -31,11 +31,13 @@
+ #include <linux/init.h>
+ #include <linux/etherdevice.h>
+ #include <linux/wireless.h>
++#include <linux/rtnetlink.h>
+ #include "osif_sync.h"
+ #include <wlan_hdd_includes.h>
+ #include <net/arp.h>
+ #include <net/cfg80211.h>
+ #include <net/mac80211.h>
++#include <net/sch_generic.h>
+ #include <wlan_hdd_wowl.h>
+ #include <ani_global.h>
+ #include "sir_params.h"
+@@ -31309,6 +31311,35 @@ int wlan_hdd_change_hw_mode_for_given_chnl(struct hdd_adapter *adapter,
+  */
+ static DEFINE_MUTEX(hdd_mon_channel_lock);
+ 
++/* The networking core resets both queued and already-dequeued/requeued skbs
++ * in dev_deactivate(). Keep its noop qdisc installed throughout retuning:
++ * incoming packets cannot survive to the new channel, including when the old
++ * channel was RX-only and had no WMA netdev reference. Carrier-off prevents
++ * linkwatch from reactivating it early. RTNL is never held over firmware work.
++ * nl80211 holds wiphy, so trylock instead of reversing the RTNL/wiphy order.
++ */
++static int hdd_mon_tx_transition_begin(struct hdd_adapter *adapter)
++{
++	if (!rtnl_trylock())
++		return -EBUSY;
++	wma_inject_set_host_blocked(true);
++	netif_carrier_off(adapter->dev);
++	netif_tx_disable(adapter->dev);
++	dev_deactivate(adapter->dev);
++	rtnl_unlock();
++	return 0;
++}
++
++static void hdd_mon_tx_transition_end(struct hdd_adapter *adapter)
++{
++	wma_inject_set_host_blocked(false);
++	/* Carrier-on lets linkwatch reactivate the empty qdisc under RTNL.
++	 * Until then the noop qdisc drops new traffic. In RX-only/failure states
++	 * the live qdisc drains to ndo_start_xmit, which rejects it immediately.
++	 */
++	wma_inject_resume(adapter->dev);
++}
++
+ /**
+  * __wlan_hdd_cfg80211_set_mon_ch() - Set monitor mode capture channel
+  * @wiphy: Handle to struct wiphy to get handle to module context.
+@@ -31454,24 +31485,37 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 		return -EBUSY;
+ 	}
+ 
+-	/* Keep idempotent tuning; retry optional helper setup if it failed. */
++	/* Same-channel confirmation preserves an already-running helper/queue.
++	 * A failed helper setup retry still needs a fresh host queue boundary.
++	 */
+ 	if (!hdd_mon_get_chandef(wiphy, adapter, &current_chandef) &&
+ 	    hdd_mon_same_channel(&current_chandef, chandef)) {
+-		if (ch_width == CH_WIDTH_20MHZ) {
+-			status = wma_inject_ensure_tx_vdev(adapter->deflink->vdev_id,
+-							 chandef->chan->center_freq);
+-			if (QDF_IS_STATUS_ERROR(status))
+-				return qdf_status_to_os_return(status);
++		if (ch_width != CH_WIDTH_20MHZ ||
++		    wma_inject_tx_ready(adapter->deflink->vdev_id,
++					chandef->chan->center_freq)) {
+ 			wma_inject_resume(adapter->dev);
++			return 0;
+ 		}
+-		return 0;
++		ret = hdd_mon_tx_transition_begin(adapter);
++		if (ret)
++			return ret;
++		status = wma_inject_ensure_tx_vdev(adapter->deflink->vdev_id,
++						 chandef->chan->center_freq);
++		ret = qdf_status_to_os_return(status);
++		goto resume_tx;
+ 	}
+ 
++	ret = hdd_mon_tx_transition_begin(adapter);
++	if (ret)
++		return ret;
++
+ 	/* Quiesce injection on the old channel before changing hardware mode
+ 	 * or the monitor channel. The next ensure creates a confirmed helper. */
+ 	status = wma_inject_destroy_tx_vdev();
+-	if (QDF_IS_STATUS_ERROR(status))
+-		return qdf_status_to_os_return(status);
++	if (QDF_IS_STATUS_ERROR(status)) {
++		ret = qdf_status_to_os_return(status);
++		goto resume_tx;
++	}
+ 	if (policy_mgr_is_hw_mode_change_required_for_channel_switch(
+ 		hdd_ctx->psoc, adapter->deflink->vdev_id,
+ 		chandef->chan->center_freq,
+@@ -31480,21 +31524,24 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 						   chandef->chan->center_freq,
+ 						   POLICY_MGR_UPDATE_REASON_SET_OPER_CHAN)) {
+ 			hdd_err("Failed to change hw mode");
+-			return -EINVAL;
++			ret = -EINVAL;
++			goto resume_tx;
+ 		}
+ 	}
+ 
+ 	status = qdf_event_reset(&adapter->qdf_monitor_mode_vdev_up_event);
+ 	if (QDF_IS_STATUS_ERROR(status)) {
+ 		hdd_err_rl("failed to reinit monitor mode vdev up event");
+-		return qdf_status_to_os_return(status);
++		ret = qdf_status_to_os_return(status);
++		goto resume_tx;
+ 	}
+ 	adapter->monitor_mode_vdev_up_in_progress = true;
+ 
+ 	req = qdf_mem_malloc(sizeof(struct channel_change_req));
+ 	if (!req) {
+ 		adapter->monitor_mode_vdev_up_in_progress = false;
+-		return -ENOMEM;
++		ret = -ENOMEM;
++		goto resume_tx;
+ 	}
+ 
+ 	req->vdev_id = adapter->deflink->vdev_id;
+@@ -31514,7 +31561,7 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 			   status);
+ 		adapter->monitor_mode_vdev_up_in_progress = false;
+ 		ret = qdf_status_to_os_return(status);
+-		return ret;
++		goto resume_tx;
+ 	}
+ 
+ 	/* block on a completion variable until vdev up success*/
+@@ -31537,7 +31584,8 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 				  status);
+ 
+ 		adapter->monitor_mode_vdev_up_in_progress = false;
+-		return qdf_status_to_os_return(status);
++		ret = qdf_status_to_os_return(status);
++		goto resume_tx;
+ 	}
+ 
+ 	/* Save confirmed RX state even if the optional TX setup later fails. */
+@@ -31548,19 +31596,20 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
+ 		if (QDF_IS_STATUS_ERROR(status)) {
+ 			hdd_err("NETHUNTER-INJ: scheduler setup failed: %u", status);
+ 			adapter->monitor_mode_vdev_up_in_progress = false;
+-			return qdf_status_to_os_return(status);
++			ret = qdf_status_to_os_return(status);
++			goto resume_tx;
+ 		}
+ 	} else {
+ 		hdd_info("NETHUNTER-INJ: %u MHz monitor channel is RX-only; TX helper remains disabled",
+ 			 wlan_reg_get_bw_value(ch_width));
+ 	}
+ 
+-	wma_inject_resume(adapter->dev);
+ 	hdd_info("NETHUNTER-INJ: monitor channel ready; TX enabled only at 20 MHz");
+-
++	ret = 0;
++resume_tx:
++	hdd_mon_tx_transition_end(adapter);
+ 	hdd_exit();
+-
+-	return 0;
++	return ret;
+ }
+ 
+ /**
+@@ -31598,6 +31647,74 @@ stop:
+ }
+ #endif
+ 
++int wlan_hdd_mon_wext_get_freq(struct wiphy *wiphy, int *freq_mhz)
++{
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++	struct osif_psoc_sync *psoc_sync;
++	struct hdd_adapter *adapter;
++	struct cfg80211_chan_def chandef = {0};
++	int ret;
++
++	/* Reuse peach's confirmed-channel getter under the same serialization
++	 * as sam's WEXT confirmation. Do not expose saved state mid-retune.
++	 */
++	ret = osif_psoc_sync_op_start(wiphy_dev(wiphy), &psoc_sync);
++	if (ret)
++		return ret;
++	if (!mutex_trylock(&hdd_mon_channel_lock)) {
++		ret = -EBUSY;
++		goto stop;
++	}
++	adapter = hdd_get_adapter(wiphy_priv(wiphy), QDF_MONITOR_MODE);
++	ret = adapter ? hdd_mon_get_chandef(wiphy, adapter, &chandef) : -ENODATA;
++	if (!ret)
++		*freq_mhz = chandef.chan->center_freq;
++	mutex_unlock(&hdd_mon_channel_lock);
++stop:
++	osif_psoc_sync_op_stop(psoc_sync);
++	return ret;
++#else
++	return -EOPNOTSUPP;
++#endif
++}
++
++int wlan_hdd_mon_wext_set_freq(struct wiphy *wiphy, int freq_mhz)
++{
++#ifdef FEATURE_MONITOR_MODE_SUPPORT
++	struct osif_psoc_sync *psoc_sync;
++	struct hdd_adapter *adapter;
++	struct hdd_monitor_ctx *mon_ctx;
++	int ret;
++
++	/* WEXT handlers run under RTNL, which must not cover firmware waits.
++	 * Preserve idempotent confirmation for legacy tools. Retuning must use
++	 * nl80211 (iw), whose set_monitor_channel path does not hold RTNL.
++	 */
++	ret = osif_psoc_sync_op_start(wiphy_dev(wiphy), &psoc_sync);
++	if (ret)
++		return ret;
++	if (!mutex_trylock(&hdd_mon_channel_lock)) {
++		ret = -EBUSY;
++		goto stop;
++	}
++	adapter = hdd_get_adapter(wiphy_priv(wiphy), QDF_MONITOR_MODE);
++	ret = -EOPNOTSUPP;
++	if (adapter && adapter->deflink &&
++	    !adapter->monitor_mode_vdev_up_in_progress &&
++	    adapter->deflink->vdev &&
++	    QDF_IS_STATUS_SUCCESS(wlan_vdev_is_up_active_state(adapter->deflink->vdev))) {
++		mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(adapter->deflink);
++		if (mon_ctx->freq == freq_mhz && mon_ctx->bandwidth == CH_WIDTH_20MHZ)
++			ret = 0;
++	}
++	mutex_unlock(&hdd_mon_channel_lock);
++stop:
++	osif_psoc_sync_op_stop(psoc_sync);
++	return ret;
++#else
++	return -EOPNOTSUPP;
++#endif
++}
+ 
+ #define CNT_DIFF(cur, prev) \
+ 	((cur >= prev) ? (cur - prev) : (cur + (MAX_COUNT - (prev) + 1)))
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h
+index 2d1d4755..ee152582 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h
+@@ -1277,4 +1277,8 @@ void wlan_hdd_save_sta_keep_alive_interval(struct hdd_adapter *adapter,
+ enum nl80211_chan_width
+ hdd_convert_phy_bw_to_nl_bw(enum phy_ch_width bw);
+ 
++/* Legacy confirmation only; actual monitor retuning uses nl80211. */
++int wlan_hdd_mon_wext_set_freq(struct wiphy *wiphy, int freq_mhz);
++int wlan_hdd_mon_wext_get_freq(struct wiphy *wiphy, int *freq_mhz);
++
+ #endif
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+index f62e5cb3..04287527 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -73,6 +73,7 @@
+ 
+ #include <net/addrconf.h>
+ #include <linux/wireless.h>
++#include <net/iw_handler.h>
+ #include <net/cfg80211.h>
+ #include <net/ieee80211_radiotap.h>
+ #include <linux/inetdevice.h>
+@@ -3416,6 +3417,153 @@ bool hdd_is_valid_mac_address(const uint8_t *mac_addr)
+ 	return xdigit == 12 && (separator == 5 || separator == 0);
+ }
+ 
++/* Monitor WEXT compatibility follows sam's native-monitor-injection patch. */
++#ifdef CONFIG_WIRELESS_EXT
++static int hdd_mon_wext_giwname(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	strlcpy(wrqu->name, "IEEE 802.11", IFNAMSIZ);
++	return 0;
++}
++
++static int hdd_mon_wext_giwmode(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	wrqu->mode = IW_MODE_MONITOR;
++	return 0;
++}
++
++/*
++ * Aircrack-ng probes SIOCSIWMODE even on an existing monitor interface.
++ * Accept that idempotent request. Leaving global monitor mode must use the
++ * normal HDD mode transition instead of bypassing the firmware lifecycle.
++ */
++static int hdd_mon_wext_siwmode(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	if (wrqu->mode == IW_MODE_MONITOR)
++		return 0;
++
++	return -EOPNOTSUPP;
++}
++
++static int hdd_mon_wext_giwfreq(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	struct iw_freq *freq = &wrqu->freq;
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	int freq_mhz, ret;
++
++	if (!wdev || !wdev->wiphy)
++		return -EOPNOTSUPP;
++	ret = wlan_hdd_mon_wext_get_freq(wdev->wiphy, &freq_mhz);
++	if (ret)
++		return ret;
++	freq->m = freq_mhz;
++	freq->e = 6;
++	freq->i = 0;
++	freq->flags = 0;
++	return 0;
++}
++
++static int hdd_mon_wext_siwfreq(struct net_device *dev,
++				struct iw_request_info *info,
++				union iwreq_data *wrqu, char *extra)
++{
++	struct iw_freq *f = &wrqu->freq;
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	int freq_mhz;
++
++	if (!wdev || !wdev->wiphy)
++		return -EOPNOTSUPP;
++	if (f->m <= 0 || f->e < 0 || f->e > 6)
++		return -EINVAL;
++	if (f->e == 0) {
++		if (f->m > 196)
++			return -EINVAL;
++		freq_mhz = ieee80211_channel_to_frequency(f->m,
++				(f->m > 14) ? NL80211_BAND_5GHZ :
++					      NL80211_BAND_2GHZ);
++	} else {
++		int i, div = 1000000;
++
++		for (i = 0; i < f->e; i++)
++			div /= 10;
++		if (f->m % div)
++			return -EINVAL;
++		freq_mhz = f->m / div;
++	}
++	if (freq_mhz <= 0)
++		return -EINVAL;
++
++	return wlan_hdd_mon_wext_set_freq(wdev->wiphy, freq_mhz);
++}
++
++static int hdd_mon_wext_giwrange(struct net_device *dev,
++				 struct iw_request_info *info,
++				 union iwreq_data *wrqu, char *extra)
++{
++	struct iw_point *data = &wrqu->data;
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct iw_range *range = (struct iw_range *)extra;
++	enum nl80211_band band;
++	int i, c = 0;
++
++	if (!wdev || !wdev->wiphy)
++		return -EOPNOTSUPP;
++	data->length = sizeof(struct iw_range);
++	memset(range, 0, sizeof(struct iw_range));
++	range->we_version_compiled = WIRELESS_EXT;
++	range->we_version_source = 21;
++	range->max_qual.level = (u8)-110;
++	range->max_qual.qual = 70;
++	range->max_qual.updated = IW_QUAL_DBM | IW_QUAL_QUAL_UPDATED |
++				  IW_QUAL_LEVEL_UPDATED;
++	range->avg_qual.level = range->max_qual.level / 2;
++	range->avg_qual.qual = 35;
++	range->avg_qual.updated = range->max_qual.updated;
++	for (band = 0; band < NUM_NL80211_BANDS; band++) {
++		struct ieee80211_supported_band *sband = wdev->wiphy->bands[band];
++
++		if (!sband)
++			continue;
++		for (i = 0; i < sband->n_channels &&
++		     c < IW_MAX_FREQUENCIES; i++) {
++			struct ieee80211_channel *chan = &sband->channels[i];
++
++			if (chan->flags & IEEE80211_CHAN_DISABLED)
++				continue;
++			range->freq[c].i =
++				ieee80211_frequency_to_channel(chan->center_freq);
++			range->freq[c].m = chan->center_freq;
++			range->freq[c].e = 6;
++			c++;
++		}
++	}
++	range->num_channels = c;
++	range->num_frequency = c;
++	return 0;
++}
++
++static const iw_handler hdd_mon_wext_std[] = {
++	IW_HANDLER(SIOCGIWNAME,  hdd_mon_wext_giwname),
++	IW_HANDLER(SIOCSIWMODE,  hdd_mon_wext_siwmode),
++	IW_HANDLER(SIOCSIWFREQ,  hdd_mon_wext_siwfreq),
++	IW_HANDLER(SIOCGIWFREQ,  hdd_mon_wext_giwfreq),
++	IW_HANDLER(SIOCGIWMODE,  hdd_mon_wext_giwmode),
++	IW_HANDLER(SIOCGIWRANGE, hdd_mon_wext_giwrange),
++};
++
++static const struct iw_handler_def hdd_mon_wext_handler_def = {
++	.standard = hdd_mon_wext_std,
++	.num_standard = ARRAY_SIZE(hdd_mon_wext_std),
++};
++#endif
++
+ /**
+  * hdd_mon_mode_ether_setup() - Update monitor mode struct net_device.
+  * @dev: Handle to struct net_device to be updated.
+@@ -3433,6 +3581,10 @@ static void hdd_mon_mode_ether_setup(struct net_device *dev)
+ 	dev->flags              = IFF_BROADCAST|IFF_MULTICAST;
+ 	dev->priv_flags        |= IFF_TX_SKB_SHARING;
+ 
++#ifdef CONFIG_WIRELESS_EXT
++	dev->wireless_handlers = &hdd_mon_wext_handler_def;
++#endif
++
+ 	memset(dev->broadcast, 0xFF, ETH_ALEN);
+ }
+ 
+@@ -3528,17 +3680,15 @@ static int __hdd_mon_open(struct net_device *dev)
+ 		ucfg_dp_set_current_throughput_level(hdd_ctx->psoc,
+ 						     PLD_BUS_WIDTH_VERY_HIGH);
+ 
+-		/*
+-		 * NETHUNTER injection: a monitor adapter never starts its netdev
+-		 * Tx queues (only the STA/SAP connect paths call this), so frames
+-		 * pushed via ndo_start_xmit (aireplay/raw socket) stay stuck in
+-		 * the qdisc and never reach hdd_mon_hard_start_xmit. Turn carrier
+-		 * on and start the Tx queues so the injection path can dispatch.
++		/* RX-only sockets must reach the drop path instead of building a
++		 * qdisc backlog. A concurrent channel transition keeps this gated.
+ 		 */
+-		wlan_hdd_netif_queue_control(adapter,
+-					    WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
+-					    WLAN_CONTROL_PATH);
+-		hdd_info("NETHUNTER-INJ: monitor Tx queues started for injection");
++		if (con_mode == QDF_GLOBAL_MONITOR_MODE)
++			wma_inject_resume(dev);
++		else
++			wlan_hdd_netif_queue_control(adapter,
++				WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
++				WLAN_CONTROL_PATH);
+ 	}
+ 
+ 	return ret;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
+index fcad78b9..3efa3417 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
+@@ -1020,4 +1020,6 @@ bool wma_inject_peer_create_confirm(uint8_t vdev_id, const uint8_t *addr,
+ bool wma_inject_peer_delete_confirm(uint8_t vdev_id, const uint8_t *addr);
+ 
+ void wma_inject_resume(struct net_device *dev);
++void wma_inject_set_host_blocked(bool blocked);
++bool wma_inject_tx_ready(uint8_t mon_vdev_id, uint32_t chanfreq);
+ #endif /* WMA_API_H */
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
+index 7c179488..d3f04303 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
+@@ -68,6 +68,8 @@ static struct {
+ 	struct wlan_objmgr_peer *peer;
+ 	struct net_device *netdev;
+ 	bool queue_stopped;
++	/* Spans helper teardown/recreation; owned by HDD's channel operation. */
++	bool host_blocked;
+ 	bool reserved, started, self_peer, unicast_peer;
+ 	uint8_t helper_id, monitor_id;
+ 	uint8_t mac[QDF_MAC_ADDR_SIZE], target[QDF_MAC_ADDR_SIZE];
+@@ -194,31 +196,68 @@ static void inj_flow_update(void)
+ {
+ 	if (!inj.netdev)
+ 		return;
+-	if (!netif_running(inj.netdev) || inj.state != INJ_RUNNING ||
+-	    inj.q.used >= WMA_INJ_SLOTS - INJ_STOP_FREE) {
++	/* Only capacity pressure may retain packets for later transmission.
++	 * Disabled/RX-only TX must drain through ndo_start_xmit and be dropped.
++	 * A channel transition separately detaches/resets the host qdisc while
++	 * host_blocked prevents both normal and PACKET_QDISC_BYPASS admission.
++	 */
++	if (!netif_running(inj.netdev) || inj.host_blocked ||
++	    (inj.state == INJ_RUNNING &&
++	     inj.q.used >= WMA_INJ_SLOTS - INJ_STOP_FREE)) {
+ 		netif_tx_stop_all_queues(inj.netdev);
+ 		inj.queue_stopped = true;
+ 	} else if (inj.queue_stopped &&
+-		   inj.q.used <= WMA_INJ_SLOTS - INJ_WAKE_FREE) {
++		   (inj.state != INJ_RUNNING ||
++		    inj.q.used <= WMA_INJ_SLOTS - INJ_WAKE_FREE)) {
+ 		inj.queue_stopped = false;
+ 		netif_tx_wake_all_queues(inj.netdev);
+ 	}
+ }
+ 
++/* HDD owns the psoc operation and channel lock. Never wait for firmware or
++ * take RTNL here; the caller resets the qdisc outside inj_lock.
++ */
++void wma_inject_set_host_blocked(bool blocked)
++{
++	spin_lock_bh(&inj_lock);
++	inj.host_blocked = blocked;
++	inj_flow_update();
++	spin_unlock_bh(&inj_lock);
++}
++
++bool wma_inject_tx_ready(uint8_t id, uint32_t freq)
++{
++	bool ready;
++
++	spin_lock_bh(&inj_lock);
++	ready = inj.state == INJ_RUNNING && !inj.host_blocked &&
++		!inj.mode_stop && inj.monitor_id == id && inj.freq == freq;
++	spin_unlock_bh(&inj_lock);
++	return ready;
++}
++
+ /* Serialize admin-up / channel resume with admission and completion. */
+ void wma_inject_resume(struct net_device *dev)
+ {
+ 	spin_lock_bh(&inj_lock);
+-	if (inj.state == INJ_RUNNING && netif_running(dev) &&
++	if (!inj.host_blocked && netif_running(dev) &&
+ 	    cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE &&
+ 	    (!inj.netdev || inj.netdev == dev)) {
+-		if (!inj.netdev) {
+-			dev_hold(dev);
+-			inj.netdev = dev;
+-		}
+ 		netif_carrier_on(dev);
+-		inj.queue_stopped = true;
+-		inj_flow_update();
++		if (inj.state == INJ_RUNNING) {
++			if (!inj.netdev) {
++				dev_hold(dev);
++				inj.netdev = dev;
++			}
++			inj.queue_stopped = true;
++			inj_flow_update();
++		} else {
++			/* Keep RX-only/unconfigured sockets from building a backlog.
++			 * No helper or netdev reference is needed to consume a drop.
++			 */
++			inj.queue_stopped = false;
++			netif_tx_wake_all_queues(dev);
++		}
+ 	}
+ 	spin_unlock_bh(&inj_lock);
+ }
+@@ -737,7 +776,8 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, struct net_device *dev,
+ 	    cds_get_conparam() != QDF_GLOBAL_MONITOR_MODE)
+ 		return QDF_STATUS_E_INVAL;
+ 	spin_lock_bh(&inj_lock);
+-	if (inj.state != INJ_RUNNING || inj.monitor_id != vdev_id || !inj.pool ||
++	if (inj.host_blocked || inj.state != INJ_RUNNING ||
++	    inj.monitor_id != vdev_id || !inj.pool ||
+ 	    (inj.netdev && inj.netdev != dev)) {
+ 		spin_unlock_bh(&inj_lock);
+ 		return QDF_STATUS_E_AGAIN;
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+index 6a775997..091c70ad 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+@@ -39,6 +39,33 @@ subject to complete channel/center validation and firmware capability. Channel
+ changes stop the old helper first; failed teardown blocks retuning. Repeating
+ the same channel skips RX restart while retrying optional helper setup.
+ 
++The source now includes follow-up fixes for two v6 device findings (not yet
++built or tested on the phone):
++
++- Monitor WEXT name/mode/frequency/range handlers follow sam's
++  `0001-wlan-native-monitor-injection.patch`, with `wireless_handlers` wired
++  at monitor setup. Reads use peach's confirmed-channel getter. Reads and
++  same-channel confirmation serialize with nl80211; overlap returns EBUSY.
++  WEXT may confirm the current 20 MHz channel but cannot retune it; use `iw`
++  for channel changes. The numeric decoder rejects invalid exponents/channel
++  numbers and fractional MHz instead of silently truncating them.
++- RX-only and unavailable TX drain to the rejecting transmit path instead of
++  stopping the netdev queue indefinitely. Normal running-helper capacity
++  pressure still stops/wakes the queue. Before a real retune or failed-helper
++  retry, HDD blocks admission and uses `dev_deactivate()` under a short RTNL
++  trylock to join/reset the host qdisc. RTNL contention returns EBUSY before
++  changing the helper. RTNL is released before any firmware wait. Carrier-off
++  and an admission gate protect the transition against reopen and qdisc-bypass
++  traffic. Every exit releases the gate. Carrier-on lets linkwatch reactivate
++  the empty qdisc; packets arriving before activation are dropped. This also
++  works when a wide channel has no WMA netdev reference. An already-working
++  same-channel confirmation preserves the helper and queued traffic.
++
++The qdisc tests model kernel networking primitives while executing production
++HDD/WMA functions. They do not establish real kernel lock scheduling or device
++behavior. Repeat the observed 80 MHz one-frame -> 20 MHz test on the next
++build, check normal backpressure, and check WEXT without `--ignore-negative-one`.
++
+ Diagnostics under `/sys/module/qca_cld3_peach_v2/parameters/`:
+ 
+ - `inject_stats`: admission, queue, inflight, timeout and retained-pool counts.
+@@ -62,6 +89,8 @@ python3 tests/test_monitor_channel_alloc.py
+ python3 tests/test_monitor_channel_serialization.py
+ python3 tests/test_monitor_restore_result.py
+ python3 tests/test_mode_handoff.py
++python3 tests/test_monitor_wext.py
++python3 tests/test_monitor_host_queue.py
+ ```
+ 
+ They cover parsing, helper TX parameters/flags, queue pressure, ordered peer
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_alloc.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_alloc.py
+index 079be3f8..c9185bf0 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_alloc.py
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_alloc.py
+@@ -54,7 +54,10 @@ static struct wlan_hdd_link_info link = {.vdev_id=0, .vdev=(void *)1, .mon={2412
+ static struct net_device dev = {"wlan0"};
+ static struct hdd_adapter test_adapter = {.magic=123,.deflink=&link,.dev=&dev};
+ static struct wlan_channel saved_channel = {.ch_freq=2412,.ch_width=20};
+-static bool same_channel;
++static bool same_channel, helper_ready;
++static unsigned transition_begins, transition_ends;
++static bool host_blocked;
++static int transition_error;
+ static unsigned captured_len, tx_calls, destroyed, alloc_calls, ensure_calls, queue_starts;
+ static uint8_t captured[2048];
+ static int ensure_status, malloc_fails, destroy_status, send_status, wait_status;
+@@ -120,9 +123,17 @@ static int wait_monitor(void) {
+ #define wlan_vdev_is_up_active_state(v) 0
+ #define wlan_vdev_mlme_get_des_chan(v) (&saved_channel)
+ static void *qdf_mem_malloc(size_t n) {alloc_calls++; return malloc_fails ? NULL : calloc(1,n);}
+-static int wma_inject_destroy_tx_vdev(void) {destroyed++;return destroy_status;}
+-static int wma_inject_ensure_tx_vdev(unsigned id,unsigned freq) {ensure_calls++; return ensure_status;}
+-static void wma_inject_resume(struct net_device *d) {queue_starts++;}
++static int wma_inject_destroy_tx_vdev(void) {assert(host_blocked);destroyed++;return destroy_status;}
++static int wma_inject_ensure_tx_vdev(unsigned id,unsigned freq) {assert(host_blocked);ensure_calls++; return ensure_status;}
++static void wma_inject_resume(struct net_device *d) {assert(!host_blocked);queue_starts++;}
++static bool wma_inject_tx_ready(unsigned id,unsigned freq) {return helper_ready;}
++static int hdd_mon_tx_transition_begin(struct hdd_adapter *a) {
++ assert(!host_blocked);if(transition_error)return transition_error;
++ host_blocked=true;transition_begins++;return 0;
++}
++static void hdd_mon_tx_transition_end(struct hdd_adapter *a) {
++ assert(host_blocked);host_blocked=false;transition_ends++;wma_inject_resume(a->dev);
++}
+ static int hdd_mon_get_chandef(struct wiphy *w,struct hdd_adapter *a,struct cfg80211_chan_def *c) {return same_channel ? 0 : -ENODATA;}
+ static bool hdd_mon_same_channel(const struct cfg80211_chan_def *a,const struct cfg80211_chan_def *b) {return same_channel;}
+ static int cds_get_conparam(void) {return 4;}
+@@ -150,13 +161,16 @@ int main(void) {
+  assert(__wlan_hdd_cfg80211_set_mon_ch(&w,&def)==-EBUSY);
+  assert(destroyed==0 && alloc_calls==0 && ensure_calls==0);
+  test_adapter.monitor_mode_vdev_up_in_progress=false;
++ transition_error=-EBUSY;
++ assert(__wlan_hdd_cfg80211_set_mon_ch(&w,&def)==-EBUSY);
++ assert(!destroyed && !transition_begins);transition_error=0;
+  malloc_fails=1;
+  assert(__wlan_hdd_cfg80211_set_mon_ch(&w,&def)==-ENOMEM);
+  assert(!test_adapter.monitor_mode_vdev_up_in_progress);
+  assert(alloc_calls==1 && ensure_calls==0);
+  malloc_fails=0;
+  assert(__wlan_hdd_cfg80211_set_mon_ch(&w,&def)==0);
+- assert(alloc_calls==2 && ensure_calls==1 && queue_starts==1);
++ assert(alloc_calls==2 && ensure_calls==1 && queue_starts==2);
+  /* Wide channels succeed even if creating a TX helper would fail. */
+  ensure_status=QDF_STATUS_E_NOMEM;chan.center_freq=5180;
+  const unsigned wide[]={40,80,160},centers[]={5190,5210,5250};
+@@ -206,6 +220,14 @@ int main(void) {
+  assert(destroyed==old_destroy && sends==old_sends && ensure_calls==old_ensure+1);
+  ensure_status=0;assert(__wlan_hdd_cfg80211_set_mon_ch(&w,&def)==0);
+  assert(destroyed==old_destroy && sends==old_sends && ensure_calls==old_ensure+2);
++ assert(!host_blocked && transition_begins==transition_ends);
++ /* Normal idempotent tuning preserves queued traffic; RX-only repeats drain. */
++ helper_ready=true;unsigned old_begins=transition_begins;old_ensure=ensure_calls;
++ assert(__wlan_hdd_cfg80211_set_mon_ch(&w,&def)==0);
++ assert(transition_begins==old_begins && ensure_calls==old_ensure);
++ helper_ready=false;def.width=80;def.center_freq1=5210;
++ assert(__wlan_hdd_cfg80211_set_mon_ch(&w,&def)==0);
++ assert(transition_begins==old_begins && ensure_calls==old_ensure);
+  puts("Monitor 20/40/80/160 centers, RX-only transitions, HT40 direction and failure ownership passed");
+  return 0;
+ }
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_serialization.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_serialization.py
+index bcee4424..90f3bac4 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_serialization.py
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_serialization.py
+@@ -26,7 +26,8 @@ shim=r'''
+ #define mutex_trylock(m) (!pthread_mutex_trylock(m))
+ #define mutex_unlock(m) pthread_mutex_unlock(m)
+ struct wiphy {int unused;};
+-struct cfg80211_chan_def {int result;};
++struct ieee80211_channel {int center_freq;};
++struct cfg80211_chan_def {int result;struct ieee80211_channel *chan;};
+ struct osif_psoc_sync {int unused;};
+ static struct osif_psoc_sync sync;
+ static atomic_int starts,stops,calls;
+@@ -56,6 +57,11 @@ static struct hdd_adapter adapter={&active,123,true,{1},{2}};
+ static struct wlan_hdd_link_info link={&adapter};
+ static struct hdd_context ctx;
+ static unsigned ups,downs;
++static struct ieee80211_channel channel={2412};
++static int get_error;
++static int hdd_mon_get_chandef(struct wiphy *w,struct hdd_adapter *a,struct cfg80211_chan_def *c) {
++ assert(a==&adapter);if(get_error)return get_error;c->chan=&channel;return 0;
++}
+ #define FEATURE_MONITOR_MODE_SUPPORT
+ #define QDF_MONITOR_MODE 4
+ #define CH_WIDTH_20MHZ 20
+@@ -67,6 +73,7 @@ static unsigned ups,downs;
+ #define WLAN_HDD_ADAPTER_MAGIC 123
+ #define cds_get_context(id) (&ctx)
+ #define hdd_get_link_info_by_vdev(c,id) (&link)
++static struct hdd_adapter *hdd_get_adapter(void *c,int mode) {return &adapter;}
+ #define hdd_err_rl(...) ((void)0)
+ #define hdd_debug(...) ((void)0)
+ static void qdf_event_set(struct event *e) {
+@@ -84,6 +91,8 @@ int main(void) {
+  struct wiphy w={0};struct cfg80211_chan_def c={0};
+  assert(wlan_hdd_cfg80211_set_mon_ch(&w,&c)==-EBUSY);
+  assert(calls==1 && starts==2 && stops==1);
++ assert(wlan_hdd_mon_wext_set_freq(&w,2412)==-EBUSY);assert(calls==1);
++ int freq=0;assert(wlan_hdd_mon_wext_get_freq(&w,&freq)==-EBUSY && !freq);
+  pthread_mutex_lock(&gate);released=true;pthread_cond_broadcast(&cond);pthread_mutex_unlock(&gate);pthread_join(thread,NULL);
+  int failures[]={-ENOMEM,-EINVAL,-ETIMEDOUT,-EAGAIN,0};
+  for(unsigned i=0;i<sizeof(failures)/sizeof(failures[0]);i++) {
+@@ -92,16 +101,26 @@ int main(void) {
+  assert(starts==stops);
+  int prev=calls,stop_count=stops;start_error=-EAGAIN;
+  assert(wlan_hdd_cfg80211_set_mon_ch(&w,&c)==-EAGAIN);assert(calls==prev && stops==stop_count);
++ start_error=0;adapter.monitor_mode_vdev_up_in_progress=false;
++ assert(wlan_hdd_mon_wext_set_freq(&w,2412)==0);
++ assert(wlan_hdd_mon_wext_set_freq(&w,2422)==-EOPNOTSUPP);
++ active.mon.bandwidth=80;assert(wlan_hdd_mon_wext_set_freq(&w,2412)==-EOPNOTSUPP);
++ active.mon.bandwidth=20;active.vdev=NULL;
++ assert(wlan_hdd_mon_wext_set_freq(&w,2412)==-EOPNOTSUPP);active.vdev=(void *)1;
++ assert(!wlan_hdd_mon_wext_get_freq(&w,&freq) && freq==2412);
++ channel.center_freq=5805;assert(!wlan_hdd_mon_wext_get_freq(&w,&freq) && freq==5805);
++ get_error=-ENODATA;assert(wlan_hdd_mon_wext_get_freq(&w,&freq)==-ENODATA);
++ assert(calls==prev);assert(starts==stops+1); /* failed op_start has no stop */
+  hdd_sme_monitor_mode_callback(0,true);assert(ups==1 && !adapter.monitor_mode_vdev_up_in_progress);
+  adapter.monitor_mode_vdev_up_in_progress=true;hdd_sme_monitor_mode_callback(0,false);
+  assert(downs==1 && adapter.monitor_mode_vdev_up_in_progress);
+- puts("Concurrent nl80211 channel entry rejects overlap before body; all exits release lock; callback publishes state before wake");
++ puts("Concurrent WEXT/nl80211 rejects overlap; WEXT confirmation never invokes firmware; all exits release lock; callback publishes state before wake");
+ }
+ '''
+ # The common wrapper is called by both real entry paths. Use a blocking shim
+ # only for the firmware work inside it, not for the synchronization under test.
+ lock=re.search(r'static DEFINE_MUTEX\(hdd_mon_channel_lock\);',cfg)
+-source=shim+(lock.group() if lock else '')+function(cfg,'static int wlan_hdd_cfg80211_set_mon_ch(')+function(main,'void hdd_sme_monitor_mode_callback(')+tests
++source=shim+(lock.group() if lock else '')+function(cfg,'static int wlan_hdd_cfg80211_set_mon_ch(')+function(cfg,'int wlan_hdd_mon_wext_get_freq(')+function(cfg,'int wlan_hdd_mon_wext_set_freq(')+function(main,'void hdd_sme_monitor_mode_callback(')+tests
+ with tempfile.TemporaryDirectory(prefix='monitor-channel-') as tmp:
+  c=Path(tmp)/'test.c';exe=Path(tmp)/'test';c.write_text(source)
+  subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-unused-function','-fsanitize=address,undefined','-pthread',str(c),'-o',str(exe)],check=True)
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_host_queue.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_host_queue.py
+new file mode 100644
+index 00000000..4766faf4
+--- /dev/null
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_host_queue.py
+@@ -0,0 +1,145 @@
++#!/usr/bin/env python3
++"""Run production admission/transition code against a host qdisc lifecycle model.
++
++The networking primitives model deactivate's documented drain/reset boundary;
++real kernel lock scheduling and linkwatch still require device validation.
++"""
++from pathlib import Path
++import subprocess
++import tempfile
++ROOT = Path(__file__).resolve().parents[1]
++wma = (ROOT / 'core/wma/src/wma_inject.c').read_text()
++hdd = (ROOT / 'core/hdd/src/wlan_hdd_cfg80211.c').read_text()
++
++def function(src, sig):
++    start = src.index(sig)
++    end = src.index('{', start) + 1
++    depth = 1
++    while depth:
++        depth += (src[end] == '{') - (src[end] == '}')
++        end += 1
++    return src[start:end]
++
++shim = r'''
++#include <assert.h>
++#include <stdbool.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include <errno.h>
++#include "wma_inject_queue.h"
++typedef int QDF_STATUS;
++enum {QDF_STATUS_SUCCESS,QDF_STATUS_E_INVAL,QDF_STATUS_E_AGAIN,QDF_STATUS_E_BUSY};
++enum {INJ_STOPPED,INJ_STARTING,INJ_RUNNING,INJ_QUIESCING,INJ_RESET_REQUIRED};
++#define QDF_GLOBAL_MONITOR_MODE 4
++#define INJ_FRAME_SIZE 2048
++#define INJ_STOP_FREE 2
++#define INJ_WAKE_FREE 8
++#define max(a,b) ((a)>(b)?(a):(b))
++struct net_device {bool running,stopped,carrier,qdisc_live;unsigned backlog,runner,refs;};
++struct hdd_adapter {struct net_device *dev;};
++static struct {
++ int state;bool host_blocked,mode_stop,queue_stopped;
++ struct wma_inj_queue q;
++ struct {unsigned len,queued_at,retries;} meta[WMA_INJ_SLOTS];
++ struct net_device *netdev;
++ uint8_t monitor_id;unsigned freq;void *pool;
++ unsigned accepted,backpressure,peak_used;
++} inj;
++static int inj_lock;
++static bool rtnl_held,rtnl_busy;
++static unsigned jiffies,deactivations,host_drops;
++static uint8_t payload[WMA_INJ_SLOTS*INJ_FRAME_SIZE],frame[30];
++static void spin_lock_bh(int *l){assert(!*l);*l=1;}
++static void spin_unlock_bh(int *l){assert(*l);*l=0;}
++static bool netif_running(struct net_device *d){return d->running;}
++static void netif_tx_stop_all_queues(struct net_device *d){d->stopped=true;}
++static void netif_tx_wake_all_queues(struct net_device *d){d->stopped=false;}
++static void netif_carrier_on(struct net_device *d){d->carrier=true;}
++static void dev_hold(struct net_device *d){d->refs++;}
++static int cds_get_conparam(void){return 4;}
++static void inj_kick(unsigned ms){assert(inj_lock);}
++static int rtnl_trylock(void){if(rtnl_busy)return 0;assert(!rtnl_held);rtnl_held=true;return 1;}
++static void rtnl_unlock(void){assert(rtnl_held);rtnl_held=false;}
++static void netif_carrier_off(struct net_device *d){assert(rtnl_held);d->carrier=false;}
++static void netif_tx_disable(struct net_device *d){assert(!inj_lock && rtnl_held);d->stopped=true;}
++static void dev_deactivate(struct net_device *d){
++ assert(!inj_lock && rtnl_held && inj.host_blocked && !d->carrier && d->stopped);
++ d->qdisc_live=false;host_drops+=d->backlog+d->runner;d->backlog=d->runner=0;deactivations++;
++}
++'''
++tests = r'''
++static struct net_device dev;
++static struct hdd_adapter adapter={&dev};
++static void linkwatch(void){dev.qdisc_live=dev.running && dev.carrier;}
++static void send_packet(void){
++ if(!dev.qdisc_live){host_drops++;return;}
++ if(dev.stopped){dev.backlog++;return;}
++ int ret=wma_inject_mon_frame(0,&dev,frame,sizeof(frame));
++ if(ret==QDF_STATUS_E_BUSY)dev.backlog++;else if(ret)host_drops++;
++}
++static void reset(void){
++ memset(&inj,0,sizeof(inj));memset(&dev,0,sizeof(dev));memset(frame,0,sizeof(frame));
++ dev.running=dev.carrier=dev.qdisc_live=true;frame[0]=0x40;
++ inj.pool=payload;inj.state=INJ_RUNNING;inj.freq=2412;
++ rtnl_held=rtnl_busy=false;deactivations=host_drops=0;
++ wma_inject_resume(&dev);
++}
++int main(void){
++ reset();rtnl_busy=true;
++ assert(hdd_mon_tx_transition_begin(&adapter)==-EBUSY);
++ assert(!inj.host_blocked && dev.qdisc_live && dev.carrier && !dev.stopped && !deactivations);
++ rtnl_busy=false;
++ /* Capacity pressure may queue on the current channel. The transition must
++  * discard both queued packets and a packet detached by a qdisc runner. */
++ for(unsigned i=0;i<WMA_INJ_SLOTS;i++)send_packet();
++ assert(dev.stopped && inj.accepted==WMA_INJ_SLOTS-INJ_STOP_FREE && dev.backlog==INJ_STOP_FREE);
++ dev.runner=1;unsigned old_accepted=inj.accepted;
++ assert(!hdd_mon_tx_transition_begin(&adapter));
++ assert(!rtnl_held && !dev.qdisc_live && !dev.backlog && !dev.runner && host_drops==3);
++ send_packet();assert(!dev.backlog && inj.accepted==old_accepted);
++ /* A netdev reopen and qdisc-bypass sender during firmware work cannot
++  * override the transition gate, even once a new helper is running. */
++ wma_inject_resume(&dev);assert(!dev.carrier && dev.stopped);
++ assert(wma_inject_mon_frame(0,&dev,frame,sizeof(frame))==QDF_STATUS_E_AGAIN);
++ /* Model confirmed teardown into wide RX-only, retaining no host owner. */
++ wma_inj_queue_drop_pending(&inj.q);inj.state=INJ_STOPPED;inj.netdev=NULL;dev.refs--;
++ hdd_mon_tx_transition_end(&adapter);assert(!inj.host_blocked && !dev.stopped && !dev.refs);
++ assert(!dev.qdisc_live);send_packet();linkwatch();
++ for(unsigned i=0;i<100;i++)send_packet();
++ assert(!dev.backlog && inj.accepted==old_accepted && !inj.q.used);
++ /* Reproduce v6's 44-byte backlog as a preexisting host queue. Changing back
++  * to 20 MHz must purge it before any new helper can admit a frame. */
++ dev.backlog=1;
++ assert(!hdd_mon_tx_transition_begin(&adapter));assert(!dev.backlog);
++ inj.state=INJ_RUNNING;inj.freq=5180;
++ assert(wma_inject_mon_frame(0,&dev,frame,sizeof(frame))==QDF_STATUS_E_AGAIN);
++ hdd_mon_tx_transition_end(&adapter);linkwatch();
++ assert(inj.accepted==old_accepted && !dev.backlog);
++ send_packet();assert(inj.accepted==old_accepted+1 && !dev.backlog);
++ /* Failure returns to a draining reject path, and admin-down stays down. */
++ assert(!hdd_mon_tx_transition_begin(&adapter));inj.state=INJ_RESET_REQUIRED;
++ hdd_mon_tx_transition_end(&adapter);linkwatch();old_accepted=inj.accepted;
++ send_packet();assert(inj.accepted==old_accepted && !dev.backlog);
++ assert(!hdd_mon_tx_transition_begin(&adapter));dev.running=false;
++ hdd_mon_tx_transition_end(&adapter);linkwatch();assert(!dev.qdisc_live && !dev.carrier);
++ dev.running=true;wma_inject_resume(&dev);linkwatch();send_packet();
++ assert(!dev.backlog && inj.accepted==old_accepted);
++ puts("Host qdisc boundary: contention, capacity backlog, RX-only, bypass, reopen, failed retune and 20 MHz re-entry passed");
++}
++'''
++source = shim
++for sig in ['static void inj_flow_update(', 'void wma_inject_set_host_blocked(',
++            'void wma_inject_resume(', 'QDF_STATUS wma_inject_mon_frame(']:
++    source += function(wma, sig) + '\n'
++for sig in ['static int hdd_mon_tx_transition_begin(', 'static void hdd_mon_tx_transition_end(']:
++    source += function(hdd, sig) + '\n'
++source += tests
++with tempfile.TemporaryDirectory(prefix='monitor-host-queue-') as tmp:
++    c = Path(tmp) / 'test.c'
++    exe = Path(tmp) / 'test'
++    c.write_text(source)
++    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
++                    '-Wno-unused-parameter', '-fsanitize=address,undefined',
++                    '-I', str(ROOT / 'core/wma/inc'), str(c), '-o', str(exe)], check=True)
++    subprocess.run([str(exe)], check=True)
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_wext.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_wext.py
+new file mode 100644
+index 00000000..8713fe34
+--- /dev/null
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_wext.py
+@@ -0,0 +1,102 @@
++#!/usr/bin/env python3
++"""Exercise the production monitor WEXT handlers with Linux ioctl structures."""
++from pathlib import Path
++import subprocess
++import tempfile
++
++ROOT = Path(__file__).resolve().parents[1]
++src = (ROOT / 'core/hdd/src/wlan_hdd_main.c').read_text()
++
++def function(signature):
++    start = src.index(signature)
++    end = src.index('{', start) + 1
++    depth = 1
++    while depth:
++        depth += (src[end] == '{') - (src[end] == '}')
++        end += 1
++    return src[start:end]
++
++shim = r'''
++#include <linux/wireless.h>
++#include <assert.h>
++#include <errno.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++typedef uint8_t u8;
++struct iw_request_info {int unused;};
++enum nl80211_band {NL80211_BAND_2GHZ,NL80211_BAND_5GHZ,NUM_NL80211_BANDS};
++#define IEEE80211_CHAN_DISABLED 1
++struct ieee80211_channel {int center_freq,flags;};
++struct ieee80211_supported_band {int n_channels;struct ieee80211_channel *channels;};
++struct wiphy {struct ieee80211_supported_band *bands[NUM_NL80211_BANDS];};
++struct wireless_dev {struct wiphy *wiphy;};
++struct net_device {struct wireless_dev *ieee80211_ptr;};
++static int confirmed_freq=2412,read_status,set_status,set_calls,last_freq;
++#define strlcpy(dst,src,n) snprintf(dst,n,"%s",src)
++static int ieee80211_channel_to_frequency(int c,int b) {
++ return b==NL80211_BAND_5GHZ ? 5000+5*c : (c==14 ? 2484 : 2407+5*c);
++}
++static int ieee80211_frequency_to_channel(int f) {
++ return f==2484 ? 14 : (f<3000 ? (f-2407)/5 : (f-5000)/5);
++}
++static int wlan_hdd_mon_wext_set_freq(struct wiphy *w,int f) {
++ last_freq=f;set_calls++;return set_status;
++}
++static int wlan_hdd_mon_wext_get_freq(struct wiphy *w,int *f) {
++ if(read_status)return read_status;*f=confirmed_freq;return 0;
++}
++'''
++tests = r'''
++int main(void) {
++ struct wiphy w={0};struct wireless_dev wd={&w};struct net_device dev={&wd};
++ union iwreq_data r={0};
++ assert(!hdd_mon_wext_giwname(&dev,NULL,&r,NULL));assert(!strcmp(r.name,"IEEE 802.11"));
++ assert(!hdd_mon_wext_giwmode(&dev,NULL,&r,NULL) && r.mode==IW_MODE_MONITOR);
++ assert(!hdd_mon_wext_siwmode(&dev,NULL,&r,NULL));r.mode=IW_MODE_INFRA;
++ assert(hdd_mon_wext_siwmode(&dev,NULL,&r,NULL)==-EOPNOTSUPP);
++ const int channels[]={1,6,11,36,149,161},freqs[]={2412,2437,2462,5180,5745,5805};
++ for(unsigned i=0;i<sizeof(channels)/sizeof(channels[0]);i++) {
++  r.freq.m=channels[i];r.freq.e=0;
++  assert(!hdd_mon_wext_siwfreq(&dev,NULL,&r,NULL) && last_freq==freqs[i]);
++  r.freq.m=freqs[i]*100000;r.freq.e=1;
++  assert(!hdd_mon_wext_siwfreq(&dev,NULL,&r,NULL) && last_freq==freqs[i]);
++  confirmed_freq=freqs[i];assert(!hdd_mon_wext_giwfreq(&dev,NULL,&r,NULL));
++  assert(r.freq.m==freqs[i] && r.freq.e==6);
++ }
++ int calls=set_calls;
++ const struct iw_freq invalid[]={{-1,0,0,0},{0,0,0,0},{INT32_MAX,0,0,0},
++  {2412,-1,0,0},{2412,7,0,0},{2412,32767,0,0},{241200001,1,0,0}};
++ for(unsigned i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++) {
++  r.freq=invalid[i];assert(hdd_mon_wext_siwfreq(&dev,NULL,&r,NULL)==-EINVAL);
++ }
++ assert(calls==set_calls);
++ r.freq.m=2412;r.freq.e=6;set_status=-EBUSY;
++ assert(hdd_mon_wext_siwfreq(&dev,NULL,&r,NULL)==-EBUSY);
++ read_status=-EBUSY;assert(hdd_mon_wext_giwfreq(&dev,NULL,&r,NULL)==-EBUSY);
++ read_status=-ENODATA;assert(hdd_mon_wext_giwfreq(&dev,NULL,&r,NULL)==-ENODATA);
++ struct ieee80211_channel ch[40];for(int i=0;i<40;i++)ch[i]=(struct ieee80211_channel){5000+5*(i+32),0};
++ ch[0].flags=IEEE80211_CHAN_DISABLED;
++ struct ieee80211_supported_band band={40,ch};w.bands[NL80211_BAND_5GHZ]=&band;
++ struct {struct iw_range range;unsigned sentinel;} output={.sentinel=0x12345678};
++ assert(!hdd_mon_wext_giwrange(&dev,NULL,&r,(char *)&output.range));
++ assert(r.data.length==sizeof(output.range) && output.range.num_frequency==IW_MAX_FREQUENCIES);
++ assert(output.range.freq[0].m==5165 && output.range.freq[0].i==33 && output.sentinel==0x12345678);
++ dev.ieee80211_ptr=NULL;assert(hdd_mon_wext_giwfreq(&dev,NULL,&r,NULL)==-EOPNOTSUPP);
++ assert(hdd_mon_wext_siwfreq(&dev,NULL,&r,NULL)==-EOPNOTSUPP);
++ assert(hdd_mon_wext_giwrange(&dev,NULL,&r,(char *)&output.range)==-EOPNOTSUPP);
++ puts("WEXT mode/name, MHz/channel conversion, errors and bounded frequency range passed");
++}
++'''
++names = ['giwname', 'giwmode', 'siwmode', 'giwfreq', 'siwfreq', 'giwrange']
++source = shim + '\n'.join(function('static int hdd_mon_wext_' + name + '(') for name in names) + tests
++# Verify that the runtime setup actually publishes the tested handlers.
++assert 'dev->wireless_handlers = &hdd_mon_wext_handler_def;' in function('static void hdd_mon_mode_ether_setup(')
++with tempfile.TemporaryDirectory(prefix='monitor-wext-') as tmp:
++    c = Path(tmp) / 'test.c'
++    exe = Path(tmp) / 'test'
++    c.write_text(source)
++    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
++                    '-Wno-unused-parameter', '-Wno-misleading-indentation',
++                    '-fsanitize=address,undefined', str(c), '-o', str(exe)], check=True)
++    subprocess.run([str(exe)], check=True)
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+index 13df30a4..1d511fb0 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py
+@@ -58,7 +58,7 @@ static struct wlan_objmgr_peer peer;
+ static struct {
+  int state;struct wma_inj_queue q;
+  struct {unsigned long queued_at,submitted_at;unsigned native_desc,len,retries;QDF_STATUS send_status;} meta[WMA_INJ_SLOTS];
+- struct net_device *netdev;bool queue_stopped,unicast_peer;
++ struct net_device *netdev;bool queue_stopped,unicast_peer,host_blocked,mode_stop;
+  uint8_t target[6];void *pool;uint64_t dma;unsigned helper_id,monitor_id,freq;
+  struct wlan_objmgr_peer *peer;
+  unsigned long long accepted,submitted,dropped,backpressure,peak_used,retries,timeouts;
+@@ -150,12 +150,26 @@ int main(void){
+  assert(wma_inject_mon_frame(0,&dev,frame,2049)==QDF_STATUS_E_INVAL);
+  mode=0;assert(wma_inject_mon_frame(0,&dev,frame,30)==QDF_STATUS_E_INVAL);mode=4;
+  assert(wma_inject_mon_frame(1,&dev,frame,30)==QDF_STATUS_E_AGAIN);
++ /* RX-only and faults drain/drop; a channel transition gates all admission. */
++ reset();dev.stopped=true;inj.state=INJ_STOPPED;
++ wma_inject_resume(&dev);assert(!dev.stopped && !dev.refs && !inj.netdev);
++ assert(wma_inject_mon_frame(0,&dev,frame,30)==QDF_STATUS_E_AGAIN);
++ reset();queue();inj.state=INJ_RESET_REQUIRED;inj_flow_update();
++ assert(!dev.stopped && wma_inject_mon_frame(0,&dev,frame,30)==QDF_STATUS_E_AGAIN);
++ reset();queue();assert(wma_inject_tx_ready(0,2412));
++ wma_inject_set_host_blocked(true);assert(dev.stopped && !wma_inject_tx_ready(0,2412));
++ wma_inject_resume(&dev);assert(dev.stopped);
++ assert(wma_inject_mon_frame(0,&dev,frame,30)==QDF_STATUS_E_AGAIN);
++ assert(inj.accepted==1);wma_inject_set_host_blocked(false);assert(!dev.stopped);
++ assert(!wma_inject_tx_ready(1,2412) && !wma_inject_tx_ready(0,5180));
++ inj.mode_stop=true;assert(!wma_inject_tx_ready(0,2412));
+  puts("Production scheduler: helper endpoint, flags, full queue, early completion, ordered peer switch, retries, pause, timeout and input rejection passed");
+ }
+ '''
+ with tempfile.TemporaryDirectory() as d:
+  c=Path(d)/'test.c';exe=Path(d)/'test'
+  names=['static void inj_flow_update(', 'void wma_inject_resume(',
++        'void wma_inject_set_host_blocked(', 'bool wma_inject_tx_ready(',
+         'static QDF_STATUS inj_native_send(', 'static bool inj_expired(',
+         'static void inj_worker(', 'QDF_STATUS wma_inject_mon_frame(']
+  c.write_text(pre+'\n'.join(function(n) for n in names)+post)

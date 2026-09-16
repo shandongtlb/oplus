@@ -159,3 +159,89 @@ WEXT 修复已有明确来源：[sam 主补丁](../../sam/补丁/0001-wlan-nativ
 当前 peach v6 尚未移植这段；sam 的同频道确认不会等待固件，实际换频道走 nl80211。
 另参考 oplus 原补丁 [0011](../补丁/qca_inject/0011-fix-wext-for-qcamonitor.patch) /
 [0012](../补丁/qca_inject/0012-fix-wext+waittime.patch)，当前路线仍以 sam 为主。
+
+## v6 后续源码修改（未完整构建）
+
+用户随后要求盘点入记忆并开始修改源码。内核仓库 `cd811a61` 之上的工作区已实现：
+
+- 按 sam 接入 WEXT handlers/接线，支持模式、名称、频道、频率表查询及同频道
+  20 MHz 确认。查询复用 peach 的已确认频道读取，并与 nl80211 共用频道锁；
+  实际换频道仍只走 nl80211，WEXT 不在 RTNL 下等待固件。
+- RX-only/不可发状态让主机队列消费丢弃；运行中的 helper 满队列继续使用背压。
+  真正换频道及失败 helper 重试前，以 RTNL trylock 获得一个短主机队列事务，
+  通过内核 `dev_deactivate()` 等待并清空 qdisc，carrier-off 保持停用状态。
+  WMA 的 host_blocked 阻止切换期间 reopen 或绕过 qdisc 的发送；固件等待前
+  已释放 RTNL。成功/失败出口均解除 gate，carrier-on 由 linkwatch 恢复空队列。
+  RTNL 争用在改变 helper 前返回 EBUSY；已经工作的同频道确认保留 helper/队列。
+
+11 项主机 ASan/UBSan 检查通过，含新加 WEXT、主机 qdisc 场景与已有回归。
+主机 qdisc 测试执行生产 HDD/WMA 函数，内核网络原语使用模型；尚不证明手机上
+实际调度及空口行为。日志在 `/root/pt/op13-wext-qdisc-20260916/`。
+仍需下一次构建后复测 WEXT 不加 `--ignore-negative-one`、80 MHz 留帧复现场景、
+普通背压和频道启停；SSR/长时间压力/160 MHz 仍未完成真机验收。
+5 GHz 149/161 Probe 已有成功证据，之前回复将整个 5 GHz TX 列为未验收不准确。
+
+本次未启动统一完整构建、未操作手机、未重打包。源码改动尚未提交，正式导出补丁
+仍为 v6 的十封补丁（至 0010）；不能用旧补丁重放来声称包含本次工作区修复。
+
+## v7 完整构建与 strip/打包
+
+用户随后授权完整构建，2026-09-16 14:47:27–14:59:02 UTC 唯一一轮 `sun perf`
+统一构建成功，历时 11 分 35 秒；构建结束已报告并停止，没有连续构建。
+核对所记录的 11 个源码/测试/说明文件，构建前后哈希一致。
+用户再授权 strip/打包，已对本轮 dist 的三模块副本执行 `llvm-strip --strip-debug`。
+cfg80211/mac80211 由统一构建缓存复用，qcacld 更新为下列 Build ID。
+
+- 包：`oplus/ksu/op13_nethunter_ksu-peach-native-global-v7-integrated.zip`
+- 大小：7,061,780 bytes
+- SHA-256：`3a32b8975076861d43285b0bab25c7a8f92e79cefe6da7e614eab851e12401f2`
+- qcacld Build ID：`6f765b5dc0aeaafd1b5c71d23b95ca612ca153dd`
+- strip 后三模块大小：cfg80211 2,070,456；mac80211 1,963,888；qcacld 19,784,112 bytes。
+
+验证 ARM64 relocatable ELF、无 debug section、所有已分配 ELF 段/模块元数据/
+导入 CRC section 保持原值；Build ID note 与原件及包内 `.note` 二进制逐字节一致。
+确认 WEXT 和 host_blocked 等新增符号存在；ZIP CRC、逐文件内容及脚本执行权限
+检查通过，恰含 cfg80211/mac80211/qca_cld3_peach_v2 三模块，不含 CNSS。
+常规包目录也已更新至 v7。原始构建模块未 strip。
+
+证据：`/root/pt/op13-wext-qdisc-20260916/package-v7.json`、`build-result.json`。
+v7 尚未部署或真机验证；源码仍为 `cd811a61` 加未提交工作补丁，正式邮件补丁集
+仍至 0010，不能将旧导出补丁当作 v7 源码。没有启动第二轮构建。
+
+## v7 用户安装后的真机回归
+
+用户随后明确授权测试，2026-09-16 15:47:59–15:57:49 UTC 完成。已安装文件及
+加载三模块 notes 均匹配 v7。两项针对性修复通过：WEXT 正确读出频道，aireplay
+不加 `--ignore-negative-one` 三轮均 30/30；40/80 MHz 各送 17 帧后 qdisc 为空，
+回切 20 MHz 没有旧帧补发，另发一帧能准确 +1。40/80 MHz 保存了 224/63 个 Beacon。
+
+1/6/11/149 收到 Probe 回应；36 无空口证据，161 本轮只有 Beacon。重复启动、
+down/up、完整退出重进通过；普通 Wi-Fi 自动连接/IP/扫描正常。128 帧短突发全部
+完成，峰值62后排空，没有证明 NETDEV_TX_BUSY 分支或长期稳定性。
+最终 accepted/submitted/completed343、OK253、NO_ACK90、DISCARD0，超时/在途/
+残留0，池2/2。已恢复初始 con_mode0、Wi-Fi关闭，v7三模块留载。
+
+首轮直接 chroot 缺少 sys/proc/dev 挂载，aireplay 被驱动按错误 Radiotap 拒绝；
+独立 mount namespace 补齐环境后原命令30/30。后续测试复用证据目录的 `mounted.py`，
+不要直接进入未准备好的 chroot 就作驱动结论。完整结果与限制见
+[v7 真机报告](op13_v7_runtime_20260916.md)，原始证据在
+`/root/pt/op13-v7-runtime-20260916/`。本轮未修改驱动/构建/重打包，v7源码提交和
+正式补丁仍待整理；SSR、长期跳频压力及160 MHz监听仍未验收。
+
+## v7 源码与补丁收尾完成
+
+用户要求继续后，核对 v7 构建快照的 11 个文件全部逐字节一致，原样提交为
+`c79b6f6541583b148354b731691dc92caeac6adb`。随后只更新源码验证文档，提交为
+`524a92c084f36b8301bac24ae3920c610b53fac0`。五项受影响的独立主机检查再次通过，
+没有重新构建、操作手机或重打包。
+
+正式补丁新增 `exported/0011-monitor-wext-and-host-queue.patch` 与
+`0012-v7-device-regression-results.patch`，合并补丁和 series/README 已同步。
+从基线 `4d69a3ed` 分别重放十二封邮件补丁以及“构建接入+合并补丁”，完整 tree
+均为 `422e8a00abf0521a986311b445c014a946a822ef`，与源码 HEAD 相同。
+证据为 `/root/pt/op13-wext-qdisc-20260916/patch-replay-v7.json` 及
+`closeout-source-match.json`。之前“源码未提交/补丁仅至0010”均为历史状态。
+
+v7 ZIP 保持原 SHA-256；包内 BUILD_INFO 是打包时快照，后续提交及真机结果以
+本交接和 v7 真机报告为准。下一步可安排 SSR、长时间跳频压力及 160 MHz 接收
+专项；当前基础功能回归已完成，无需为本次提交再编译。
