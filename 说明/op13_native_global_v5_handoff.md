@@ -83,3 +83,39 @@ Build ID 尚未独立提取，但 monstart 的包身份检查和 flags 日志与
 deauth/disassoc 无论 N/Y 都自动保留此标志。本次日志没有 deauth，不能据此判断其效果。
 测试后恢复 N。旧 v4 的其他条件下带标志也出现过 DISCARD，故此对照不等于已知修复；
 若 flags=1 仍返回 DISCARD，需进一步分析 monitor vdev 的固件发送条件。
+
+## flags=1 对照回报（08:37:28）与源码核对
+
+用户确认 `mon_tx_wrong_key=Y`，并提供以下采样摘要：
+
+```text
+[1411.018685] [submit] #256 vdev=0 desc=33023 chan=2412 len=30 fc=0xb0 flags=1
+[1411.019177] [completion] desc=33023 status=1(WMI_MGMT_TX_COMP_TYPE_DISCARD)
+             submitted=256 completed=256 inflight=0 busy=0 stale=0
+```
+
+标志在驱动提交时已生效；该认证帧仍被固件报告丢弃，约 0.492 ms 后完成。
+这个快照的在途数为 0，累计提交/完成计数相等。不能把完成数解释为成功发送数，
+也不能把这一个 `fc=0xb0` 样本推广为本轮所有 probe 帧均已逐帧验证。
+目前 N/Y 两种 flags 都已出现 DISCARD；仅打开 wrong-key 不足以解决所见失败。
+用户可恢复参数 N，当前不需要继续重复相同的 aireplay 测试。
+
+本轮只读源码核对：
+
+- `qca-wifi-host-cmn/wmi/src/wmi_unified_tlv.c:5306` 把 `param->tx_flags`
+  原样写入 WMI 命令，`chanfreq`、vdev 和 descriptor 也由该命令传递。
+- `qcacld-3.0/components/mlme/core/src/wlan_mlme_vdev_mgr_interface.c:2274`
+  的 `mlme_vdev_uses_self_peer()` 对 MONITOR 返回 true；
+  `core/wma/src/wma_dev_if.c:2942` 有相应 self-peer 创建路径。
+- `qcacld-3.0/core/wma/src/wma_utils.c:4789` 的 monitor UP 函数调用
+  `vdev_mgr_up_send()`。因此源码并非根本没有 self-peer/UP 流程，不能未经
+  运行日志确认就将失败归因于缺 peer 或漏发 UP。
+- `sam/补丁/0001-wlan-native-monitor-injection.patch` 的 `inj_native_send()`
+  使用 `inj.helper_id`，该 helper 创建类型为 `WMI_VDEV_TYPE_STA`。
+  `oplus/补丁/qca_inject/0007-fix-inject-1.patch` 也把发送改到 STA helper，
+  后续 0013 的 wrong-key 改动叠加于那条路线。旧文档中的 monitor TX 泛称
+  不能替代核对实际发送 vdev 的类型，更不能作为纯 monitor 已成功的证据。
+
+下一步排查原生 monitor 的实际 vdev/peer 状态、固件 TX 条件与合法发送参数；
+目前未找到已证实的修复，不能宣称纯 monitor 永远不支持 TX。
+本轮未改驱动、未编译、未改包、未操作设备；仍遵守用户不连续编译的约定。
