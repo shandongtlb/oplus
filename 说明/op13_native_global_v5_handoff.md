@@ -60,3 +60,26 @@ probe flags 对照和退出恢复继续，不应为测试重新编译。
 `dmesg | grep NETHUNTER-INJ`：分别确认频道、flags 设置及驱动拒收/固件完成结果。
 若出现 malformed Radiotap，则检查 Kali `/sys/class/net/wlan0/phy80211/subsystem`。
 仅查看日志；本次没有修改驱动、重新编译、更新 ZIP 或远程操作设备。
+
+## 用户补充运行日志：本次也明确返回 DISCARD
+
+用户随后提供 Android root 终端输出：`monstart 1` 成功，`iw dev wlan0 info`
+显示 type monitor、channel 1 (2412 MHz)、20 MHz、center1 2412 MHz；
+`mon_tx_wrong_key` 为 `N`。
+
+对应 08:20:18–08:20:20 的记录，提交 #1–#8 的 `chan=2412 flags=0`，
+`fc=0x40`（probe request）和 `fc=0xb0`（authentication）；
+已列出的 completion #1–#8 全部为 `status=1(WMI_MGMT_TX_COMP_TYPE_DISCARD)`。
+回调很快返回，busy/stale 均为 0。这些已记录帧通过了 HDD 输入解析并提交到 WMI，
+固件返回丢弃结果；不是这些帧在 Radiotap 入口被拒，也不是它们缺少完成回调。
+最后一条 inflight=1 是当时仍有一帧在途，单凭此快照不能判断泄漏。
+
+v5 的日志策略为前 8 帧、每 256 帧采样，completion 状态变化也记录。
+因此看到日志停在 #8，不能推断只提交了 8 帧或之后停发。
+Build ID 尚未独立提取，但 monstart 的包身份检查和 flags 日志与新版路径一致。
+
+无需编译即可用 `mon_tx_wrong_key=Y` 做同版本、同信道的一次 flags 对照。
+该开关令 probe/auth 等其他管理帧携带 `MGMT_TX_USE_INCORRECT_KEY`（flags=1）；
+deauth/disassoc 无论 N/Y 都自动保留此标志。本次日志没有 deauth，不能据此判断其效果。
+测试后恢复 N。旧 v4 的其他条件下带标志也出现过 DISCARD，故此对照不等于已知修复；
+若 flags=1 仍返回 DISCARD，需进一步分析 monitor vdev 的固件发送条件。
