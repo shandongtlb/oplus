@@ -1,10 +1,10 @@
 OnePlus 13 peach_v2 native global monitor - integrated build
 
-Package version: 2026.09.15-peach-native-global-v2
-Package versionCode: 2026091502
-Source: /root/pt/oneplus13-kernel-b @ 4d69a3ed9a176152e85580352723c308f29cbfcb
+Package version: 2026.09.15-peach-native-global-v3
+Package versionCode: 2026091503
+Source: /root/pt/oneplus13-kernel-b @ f5bb38df2661aa553e3567bef254960defcc0fbe
 Started UTC: 2026-09-15T17:30:02Z
-Completed UTC: 2026_09_15 17:42:02
+Completed UTC: 2026_09_16 00:27:51
 Target: sun perf, peach_v2, arm64 4 KiB
 
 Applied patches (in order):
@@ -43,7 +43,7 @@ Module manifest:
   Kernel/WLAN platform CRC matches: 317
   Other dependency symbols not checked: 0
 - vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko: 19729664 bytes
-  sha256 2c3967194c5ba110bb146c383f5798afe81765f662c7c388dfe0cce1100cf44a
+  sha256 5617bcb7fad7eb713f47c9a579b1df56400bb01db7992dc402f34f7b8f573550
   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
   depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
   Cross-module CRC matches: 43
@@ -63,40 +63,29 @@ Validation scope:
 - Native global monitor uses wlan0; no virtual STA/helper vdev is created.
 
 Completed build phases:
-kpl-time-check kernel start 17:30:03
-kpl-time-check kernel end 17:30:30
-kpl-time-check oplus DDK start 17:30:30
-kpl-time-check oplus DDK end 17:36:41
-kpl-time-check kernel copy start 17:36:41
-kpl-time-check kernel copy end 17:36:43
-kpl-time-check Preparing UAPI headers start 17:36:47
-kpl-time-check Preparing UAPI headers end 17:36:48
-kpl-time-check setting up Android tree start 17:36:48
-kpl-time-check setting up Android tree end 17:36:50
-kpl-time-check Building WLAN platform start 17:36:50
-kpl-time-check Building WLAN platform end 17:37:00
-kpl-time-check Building WLAN qcacld start 17:37:00
-kpl-time-check Building WLAN qcacld end 17:40:10
-kpl-time-check Installing WLAN modules start 17:40:10
-kpl-time-check Installing WLAN modules end 17:40:10
-kpl-time-check Compiling vendor devicetree start 17:40:10
-kpl-time-check Compiling vendor devicetree end 17:40:15
-kpl-time-check Merging vendor devicetree start 17:40:15
-kpl-time-check Merging vendor devicetree end 17:41:27
+kpl-time-check kernel start 00:16:23
+kpl-time-check kernel end 00:16:48
+kpl-time-check oplus DDK start 00:16:48
+kpl-time-check oplus DDK end 00:22:49
+kpl-time-check kernel copy start 00:22:49
+kpl-time-check kernel copy end 00:22:50
+kpl-time-check Preparing UAPI headers start 00:22:54
+kpl-time-check Preparing UAPI headers end 00:22:54
+kpl-time-check setting up Android tree start 00:22:54
+kpl-time-check setting up Android tree end 00:22:57
+kpl-time-check Building WLAN platform start 00:22:57
+kpl-time-check Building WLAN platform end 00:23:06
+kpl-time-check Building WLAN qcacld start 00:23:06
+kpl-time-check Building WLAN qcacld end 00:26:11
+kpl-time-check Installing WLAN modules start 00:26:11
+kpl-time-check Installing WLAN modules end 00:26:12
+kpl-time-check Compiling vendor devicetree start 00:26:12
+kpl-time-check Compiling vendor devicetree end 00:26:17
+kpl-time-check Merging vendor devicetree start 00:26:17
+kpl-time-check Merging vendor devicetree end 00:27:29
 
-Direct device monitor test (2026-09-16, serial 3B1F5QE8WTX87GZQ):
-- `monitor_control.sh on 153` returned success and exposed `wlan0` as monitor with radiotap link type.
-- `/system/bin/tcpdump -i wlan0` captured real 5765 MHz Beacon/RTS/CTS frames; one run captured 5 packets with 0 kernel drops, a second captured 3 Beacons with 0 drops.
-- `monitor_control.sh off` returned success; `wlan0` returned to managed and con_mode=0.
-- The installed KSU module reports all three core modules loaded. No virtual `wlan0mon` or helper STA was present.
-- A temporary raw-socket probe was sent to a fabricated BSSID and removed afterwards; this probe did not reach ndo_start_xmit, so it is not counted as injection validation. The earlier user aireplay log did reach `hdd_mon_hard_start_xmit` but lacked a locked channel and was correctly rejected.
-- A real `aireplay-ng`/NetHunter injection test with a locked channel remains the next runtime check; no packet was sent to the user's connected AP.
-
-Source commits (peach_v2):
-- d20c69af build: integrate WLAN qcacld modules into sun package
-- 2fa5ca62 wlan: add peach v2 native global monitor injection
-- Exact mail patches exported under /root/pt/oplus/补丁/native_global/exported/.
-
-Kali chroot injection check (2026-09-16):
-- `/data/local/nhsystem/kalifs` was not usable from the ADB/KSU shell namespace; toybox chroot resolved to the Android root, while the real `kali-arm64` root was denied with `Operation not permitted`.
-- `aireplay-ng` exists in the mounted Kali tree, but no locked-channel aireplay run was executed from that namespace. This is an environment limitation, not a successful injection result.
+Injection follow-up:
+- Source commit: f5bb38df wlan: allow raw monitor management TX flag.
+- `MGMT_TX_USE_INCORRECT_KEY` is set only on the native global monitor WMI management-TX path, following the validated sam broadcast-injection method; no helper STA is created.
+- The rebuilt qca_cld3_peach_v2 payload SHA256 is recorded in the package checksum and validation.json.
+- A locked-channel aireplay-ng run from `/data/local/nhsystem` remains unexecuted because this ADB/KSU namespace cannot enter the mounted Kali root (`chroot ... Operation not permitted`).

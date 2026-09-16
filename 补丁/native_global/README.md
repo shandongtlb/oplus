@@ -70,3 +70,4 @@ KSU 模块中的 `monitor_control.sh` 已改为写入
 - `exported/0002-peach-v2-native-global-monitor.patch`
 
 源码提交为 `d20c69af` 和 `2fa5ca62`。`series` 保持与旧补丁目录兼容；新导出文件反映实际提交内容。
+- `exported/0003-monitor-injection-flag.patch` adds the peach_v2 monitor TX incorrect-key flag learned from sam's validated broadcast injection path.

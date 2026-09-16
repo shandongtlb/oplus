@@ -1,0 +1,26 @@
+From f5bb38df2661aa553e3567bef254960defcc0fbe Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 00:16:14 +0000
+Subject: [PATCH] wlan: allow raw monitor management TX flag
+
+
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+index f32e8bd3..fd82a468 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c
+@@ -3334,6 +3334,15 @@ QDF_STATUS wma_inject_mon_frame(uint8_t vdev_id, const uint8_t *frame,
+ 	mgmt_params.desc_id = desc_id;
+ 	mgmt_params.pdata = data;
+ 	mgmt_params.qdf_ctx = qdf_ctx;
++	/*
++	 * The monitor vdev has no peer/key context.  The firmware uses this
++	 * management-TX flag for raw monitor frames (and, in particular,
++	 * broadcast deauth/disassoc) instead of rejecting them as protected
++	 * management traffic.  This is the same flag used by the stock PMF
++	 * incorrect-key path; it does not create a helper STA or alter the
++	 * global-monitor vdev type.
++	 */
++	mgmt_params.tx_flags |= MGMT_TX_USE_INCORRECT_KEY;
+ 
+ 	if (!g_wma_inj.banner) {
+ 		wma_info("NETHUNTER-INJ: monitor injection active build=mon-inject-probe-r6 vdev=%u chan=%u iface_type=%u",
