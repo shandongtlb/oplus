@@ -16,6 +16,10 @@ v8已完成四种SSR场景及用户down/up补测，详见[v8真机记录](../../
 构建和包身份见[v8校验记录](../../说明/验证/op13-v8-build-20260916.json)，
 主机检查和补丁重放见[源码校验](../../说明/验证/op13-ssr-fix-20260916.json)。
 
+最新源码已追加0015：修正helper self-peer所有权和最终注销时的PNO请求清理。
+真机持续发包换频道仍复现固件assert；本次修正仅通过主机回归，尚未构建或上机验证。
+并发换频道450请求已测，详见[本次调试记录](../../说明/op13_retune_debug_20260917.md)。
+
 ## 应用与统一编译
 
 源码基线为 `4d69a3ed9a176152e85580352723c308f29cbfcb`。在内核仓库根目录：
@@ -29,7 +33,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 第一项只接入 `prepare_vendor.sh` 的 WLAN 统一构建，必需保留。第二项是当前
 原生全局实现的合并 diff。不要叠加旧 `qca_inject/0002-0017`。
 
-也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十四个邮件补丁。
+也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十五个邮件补丁。
 这与上面的两项应用方式二选一。对应源码提交：
 
 - `d20c69af`：WLAN 统一构建接入。
@@ -46,19 +50,20 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 - `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
 - `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；v8构建和四种SSR场景验证通过。
 - `3b8463c2`：同步v8构建、四种SSR真机验证、用户补测及160 MHz缺测试条件的结论；仅文档。
+- `7387a666`：区分host创建与固件已有self-peer，修正最终接口注销PNO清理；两项新测试及五项回归通过，尚未构建/真机验收。
 
 v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
 不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
 v7的十二封邮件补丁曾重放到`422e8a00abf0521a986311b445c014a946a822ef`。
 0013结束时tree为`a3215426a531edd58dd9636b262da0296bac76e4`，对应实际v8构建源码
-`30426bf8`。0014只同步验证文档，当前目标提交为
-`3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb`，完整tree为
-`ecae96f26a9713a501edc9950f90731be0375c9d`。除文档外与v8构建逐文件一致。
-收尾在两个独立完整checkout中，从干净基线实际执行十四封`git am`和两项
-`git apply --index`，比较每封提交tree及最终完整tree，见
-[v8补丁重放校验](../../说明/验证/op13-v8-closeout-20260917.json)。
-若已应用旧v6至0010，追加0011–0014；已应用v7至0012，追加0013–0014；
-已应用v8至0013，只追加0014。
+`30426bf8`。0014仅同步文档，旧重放tree为`ecae96f26a9713a501edc9950f90731be0375c9d`，
+见[v8旧补丁校验](../../说明/验证/op13-v8-closeout-20260917.json)。
+当前目标为`7387a666ebca7d4a22676c350e4c598ffd831d1f`，完整tree为
+`38a1790c9c4b24073c8773c7d7703d424519033f`，运行时代码已经不同于v8构建。
+十五封邮件与“构建接入+合并补丁”分别从完整干净checkout重放，见
+[本次完整重放校验](../../说明/验证/op13-retune-patch-replay-20260917.json)。
+若已应用v6至0010，追加0011–0015；v7至0012，追加0013–0015；v8至0013，追加0014–0015；
+已至0014则只追加0015。
 不要在旧补丁上重复叠加合并补丁。
 
 可在主机重新运行校验，输出目录需使用一个新目录；不会编译或操作手机：
@@ -66,7 +71,7 @@ v7的十二封邮件补丁曾重放到`422e8a00abf0521a986311b445c014a946a822ef`
 ```sh
 python3 /root/pt/oplus/补丁/native_global/verify_replay.py \
   --source /root/pt/oneplus13-kernel-b \
-  --target 3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb \
+  --target 7387a666ebca7d4a22676c350e4c598ffd831d1f \
   --output /tmp/op13-patch-replay
 ```
 
@@ -147,5 +152,5 @@ qcacld Build ID：`ff0f34e4ea4eba64f788c495b3a9eabb401d3157`。
 全部装载段、模块元数据、导入CRC和Build ID保留，ZIP内容/权限校验通过。
 打包时未部署或测试手机。次日用户热切后完成SSR专项和用户补测，未执行新构建。
 空闲及带流量SSR后RX/TX恢复，40 MHz RX-only队列和管理员暂停状态保持；普通
-Wi-Fi恢复及退出重进通过，用户down/up补测Probe23/30。最新监听仍活动，无在途/
+Wi-Fi恢复及退出重进通过，用户down/up补测Probe23/30。该次记录末尾监听仍活动，无在途/
 队列/DMA残留；未执行最终monstop。验证范围及证据见上方v8报告。
