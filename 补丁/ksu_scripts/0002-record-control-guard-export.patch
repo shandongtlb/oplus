@@ -1,0 +1,1059 @@
+From 2889fd3e2dd8b4f52c35188b50e65f540bfd5a94 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 02:36:18 +0000
+Subject: [PATCH] docs: export and verify KSU control guard patch
+
+---
+ .../0001-monitor-control-guards.patch"        | 993 ++++++++++++++++++
+ .../ksu_scripts/README.md"                    |  19 +
+ .../ksu_scripts/verification.json"            |  12 +
+ 3 files changed, 1024 insertions(+)
+ create mode 100644 "\350\241\245\344\270\201/ksu_scripts/0001-monitor-control-guards.patch"
+ create mode 100644 "\350\241\245\344\270\201/ksu_scripts/README.md"
+ create mode 100644 "\350\241\245\344\270\201/ksu_scripts/verification.json"
+
+diff --git "a/\350\241\245\344\270\201/ksu_scripts/0001-monitor-control-guards.patch" "b/\350\241\245\344\270\201/ksu_scripts/0001-monitor-control-guards.patch"
+new file mode 100644
+index 0000000..4a620f1
+--- /dev/null
++++ "b/\350\241\245\344\270\201/ksu_scripts/0001-monitor-control-guards.patch"
+@@ -0,0 +1,993 @@
++From 3bfce6641c35b490adfddc0cba47bb19007c4639 Mon Sep 17 00:00:00 2001
++From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
++Date: Thu, 17 Sep 2026 02:35:44 +0000
++Subject: [PATCH] ksu: serialize monitor controls and report transition
++ failures
++
++---
++ ksu/op13_nethunter_ksu/action.sh              |   4 +
++ ksu/op13_nethunter_ksu/aireplay_test.sh       |   2 +-
++ ksu/op13_nethunter_ksu/bind_mount_control.sh  |   5 +
++ ksu/op13_nethunter_ksu/customize.sh           |   1 +
++ .../docs/QUICK_MONITOR_GUIDE.md               | 111 ++++---
++ ksu/op13_nethunter_ksu/monitor_control.sh     | 175 ++++++++---
++ ksu/op13_nethunter_ksu/monstop                |   2 +-
++ ksu/op13_nethunter_ksu/service.sh             |   2 +-
++ .../update_runtime_status.sh                  |   3 +
++ ksu/op13_nethunter_ksu/wlan_control_common.sh |  94 ++++++
++ ksu/op13_nethunter_ksu/wlan_stack_control.sh  |  14 +
++ tests/test_monitor_control.py                 | 277 ++++++++++++++++++
++ .../op13_sam_global_helper_handoff.md"        |  18 ++
++ .../op13_script_guards_20260917.md"           |  64 ++++
++ 14 files changed, 686 insertions(+), 86 deletions(-)
++ create mode 100755 ksu/op13_nethunter_ksu/wlan_control_common.sh
++ create mode 100644 tests/test_monitor_control.py
++ create mode 100644 "\350\257\264\346\230\216/op13_script_guards_20260917.md"
++
++diff --git a/ksu/op13_nethunter_ksu/action.sh b/ksu/op13_nethunter_ksu/action.sh
++index ee7b8edc74871d02771e1535e84bf65c2871a2c7..51ff3e9e67f551f61ab0a9490c0f2e410cf3fccc 100755
++--- a/ksu/op13_nethunter_ksu/action.sh
+++++ b/ksu/op13_nethunter_ksu/action.sh
++@@ -3,6 +3,7 @@
++ MODDIR=${0%/*}
++ STATE_FLAG=$MODDIR/.nethunter_enabled
++ . "$MODDIR/module_identity.sh" || exit 1
+++. "$MODDIR/wlan_control_common.sh" || exit 1
++ 
++ log() {
++   echo "$*"
++@@ -13,6 +14,9 @@ if [ ! -x "$MODDIR/wlan_stack_control.sh" ]; then
++   exit 1
++ fi
++ 
+++wlan_control_lock || exit 1
+++wlan_check_sharing || exit 1
+++
++ if [ "$(payload_stack_mode)" = nethunter ]; then
++   log "[toggle] current mode: nethunter"
++   log "[toggle] switching back to stock"
++diff --git a/ksu/op13_nethunter_ksu/aireplay_test.sh b/ksu/op13_nethunter_ksu/aireplay_test.sh
++index 655f3c488f98c53388084bef0b478b155e83e049..bbf4965071716b6f8d2b5d1669bb4acc63a3816f 100755
++--- a/ksu/op13_nethunter_ksu/aireplay_test.sh
+++++ b/ksu/op13_nethunter_ksu/aireplay_test.sh
++@@ -1,5 +1,5 @@
++ #!/system/bin/sh
++-# Run from Android root after monstart <channel>; no helper STA is created.
+++# Run from Android root after monstart <channel>; TX uses an internal STA helper.
++ MODDIR=${0%/*}
++ KALI_ROOT=${KALI_ROOT:-/data/local/nhsystem/kalifs}
++ . "$MODDIR/module_identity.sh" || exit 1
++diff --git a/ksu/op13_nethunter_ksu/bind_mount_control.sh b/ksu/op13_nethunter_ksu/bind_mount_control.sh
++index 0eb245500bcbcf21c196680020a77bcddedbc4ef..ebcd935aa6ab1d4c855258ae6bdf11c84fcc4e8e 100755
++--- a/ksu/op13_nethunter_ksu/bind_mount_control.sh
+++++ b/ksu/op13_nethunter_ksu/bind_mount_control.sh
++@@ -4,6 +4,7 @@ MODDIR=${0%/*}
++ LOGTAG=op13_usb_arsenal
++ BIND_FLAG=$MODDIR/.bind_mount_enabled
++ QUIET=0
+++. "$MODDIR/wlan_control_common.sh" || exit 1
++ 
++ log_i() {
++   if [ "$QUIET" -ne 1 ]; then
++@@ -143,6 +144,10 @@ for arg in "$@"; do
++   esac
++ done
++ 
+++case "$COMMAND" in
+++  on|off|apply_if_enabled|apply|remove) wlan_control_lock || exit 1;;
+++esac
+++
++ case "$COMMAND" in
++   on)
++     : > "$BIND_FLAG"
++diff --git a/ksu/op13_nethunter_ksu/customize.sh b/ksu/op13_nethunter_ksu/customize.sh
++index bc73efed0e0032c406784acf78425bab9ceed8fb..16fcb0078603d766204307fed01574278c054aea 100755
++--- a/ksu/op13_nethunter_ksu/customize.sh
+++++ b/ksu/op13_nethunter_ksu/customize.sh
++@@ -16,6 +16,7 @@ set_permissions() {
++   set_perm_recursive "$MODPATH" 0 0 0755 0644
++   set_perm "$MODPATH/customize.sh" 0 0 0755
++   set_perm "$MODPATH/module_identity.sh" 0 0 0755
+++  set_perm "$MODPATH/wlan_control_common.sh" 0 0 0755
++   set_perm "$MODPATH/aireplay_test.sh" 0 0 0755
++   if [ -f "$MODPATH/action.sh" ]; then
++     set_perm "$MODPATH/action.sh" 0 0 0755
++diff --git a/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md b/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md
++index 28c9a1c92f5c51a2ae3dfb5dae5ef6870cb537ea..94da3cea60471bc1c2f9a473ab023be88a5bccb1 100644
++--- a/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md
+++++ b/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md
++@@ -1,58 +1,73 @@
++-# Monitor Mode + Injection — 快速指南
++-
++-## 使用流程
++-```bash
++-# 1. KSU 里点 Action 按钮 → nethunter (切换到打补丁的 ko)
++-# 2. 终端(adb shell 或 Termux root)
++-monstart 149        # 进全局 monitor + 锁 ch149(5G)
++-# 或
++-monstart 6          # 锁 ch6(2.4G)
++-# 或
++-monstart            # 不锁频 → airodump 全频扫描
++-
++-# 3. 抓包/注入
++-airodump-ng wlan0              # 抓包/扫描
++-aireplay-ng -9 --ignore-negative-one -a <测试AP的BSSID> wlan0   # 管理帧注入测试
++-tcpdump -i wlan0 -nn           # 原始抓包
++-
++-# 4. 退出
++-monstop             # 恢复正常 WiFi
++-# 5. (可选) KSU 点 Action → stock (切回原厂栈)
+++# peach_v2 全局监听与管理帧注入
+++
+++先在 KSU Action 中切到本包 WLAN 栈，再从 Android root shell 执行：
+++
+++```sh
+++monstart 149        # 原生 wlan0，全局监听，频道 149 / 20 MHz
+++monstart 6          # 切到频道 6 / 20 MHz
+++monstart            # 进入监听，不主动设置频道；重复执行保留当前频道
++ ```
++ 
++-## 注入原理(OnePlus 13 特殊性)
++-- 当前实现向 peach_v2 的全局 monitor vdev 直接提交 WMI TX；固件是否接受以及实际空口发送情况尚未验证。
++-- 注入测试前锁定信道(`monstart <freq>`)。
++-- 不锁频(`monstart` 无参数)可抓包/扫描；注入需要先锁定信道。
++-- 这是 `peach_v2` 原生 `con_mode=4`，不会创建 `wlan0mon` 或隐藏 STA/helper vdev。
++-
++-验证注入是否成功:
++-```bash
++-dmesg | grep NETHUNTER-INJ
++-# 对照 [submit] 与 [completion] 的 desc 和 status。
++-# status=0 是固件报告成功；还需要独立接收端确认空口帧。
++-# submitted == completed 只说明完成事件数量一致，不能单独证明发送成功。
+++在已正确挂载 `/sys`、`/proc`、`/dev` 的 Kali 环境使用：
+++
+++```sh
+++iw dev wlan0 info
+++iwconfig wlan0
+++airodump-ng wlan0
+++aireplay-ng --test -a <自有测试AP的BSSID> wlan0
++ ```
++ 
++-## 前置条件
++-- **关闭 P2P/Wi-Fi Direct**(手机→平板网络共享/跨设备互联/投屏),否则驱动策略禁止开 monitor。
+++退出和查看状态：
+++
+++```sh
+++monstop            # 退出 con_mode=4，等待 managed 接口；不等于 Wi-Fi 已连接
+++sh /data/adb/modules/op13_nethunter_ksu/monitor_control.sh status
+++# 模块实际安装目录不同时，请替换上述路径。
+++```
+++
+++TX 使用 sam 方案的内部 firmware-only STA helper，RX 和主机接口仍是原生 `wlan0`；
+++不会创建 `wlan0mon` 或额外 STA netdev。v8 的 Probe、针对性 SSR 恢复与普通 Wi-Fi
+++回归已有记录；完整验证范围见源码文档和工作区 `说明/op13_v8_runtime_20260917.md`。
+++`BUILD_INFO.txt` 是已构建模块的身份快照，不代表后续脚本修改已经上机。
+++
+++## 脚本保护
+++
+++- 参数格式、频道是否由当前网卡提供且未禁用，在切换模式前检查；不接受多余参数。
+++  请求频道按 20 MHz 设置，设置成功后回读主频道和带宽。监管与固件最终检查仍由驱动执行。
+++- 新进入监听后若接口 UP、设频或回读失败，尝试退出本次新会话并返回失败。
+++  已经处于监听时的换频失败不会自动关闭原会话；请查询实际频道。
+++- monstart、monstop、reset、KSU Action、模块热切和 bind 修改共用文件锁。
+++  争用立即报忙；子脚本继承同一把锁，进程结束由内核释放，不靠固定 sleep 解锁。
+++  不要删除 `.wlan_control.lock`；存在空锁文件不代表正在忙。
+++  需要系统 `flock` 或 KSU/Magisk 的 BusyBox `flock`。
+++- 热切先正常退出监听，再卸载模块；退出或重载失败会返回失败，不伪报完成。
+++- 状态区分接口未就绪、未确认频道、管理员暂停、20 MHz TX READY、宽信道 RX ONLY、
+++  TX 不可用和需要恢复。状态是查询时快照，READY 不证明实际空口发送成功。
+++
+++`monreset` 仍用于请求完整 WLAN 栈重载，失败不会强制卸载模块或释放不确定的 DMA。
+++若驱动仍处于恢复中或拒绝退出，应先查看状态与日志。
++ 
++-## 信道参考
++-**简写(推荐)**:
++-- 2.4G: `1` `2` `3` `6` `9` `10` `11`
++-- 5G: `36` `40` `44` `48` `149` `153` `157` `161` `165`
+++## OPPO 与平板网络共享
++ 
++-或直接用频率 MHz:
++-- 2.4G: `2412`(ch1), `2437`(ch6), `2462`(ch11)
++-- 5G: `5180`(ch36), `5745`(ch149), `5825`(ch165)
+++全局模式切换会停止、关闭普通模式的接口，并拒绝新增虚接口；普通 Wi-Fi、热点、
+++P2P 共享不能与当前全局监听一起工作。为了避免误中断现有共享，启动监听或热切前
+++检查同一无线网卡的 AP/P2P-GO/P2P-client 接口，并在可用时读取当前 `wifip2p` 状态。
+++发现占用会提示先关闭个人热点、与平板网络共享或 Wi-Fi Direct 投屏。
++ 
++-构建来源和验证范围见 `BUILD_INFO.txt`。
+++空闲 P2P-device、其他无线网卡、历史事件与持久组列表不算当前占用。P2P 服务不可读
+++或状态格式未知时，仅依据可读取的接口检查，不因可选信息缺失锁死入口。已经处于
+++全局监听且没有实际 AP/P2P 接口时，不用 Android 过期的组状态阻止重复启动/reset。
+++退出监听不受共享检查阻挡。
++ 
++-## 新版范围
+++这是脚本入口提示，不覆盖 Android 后续并发请求。监听期间点击共享、框架强制恢复
+++等场景尚未做专项真机验证；旧并发监听方案的三处驱动守卫没有直接移植到本版。
++ 
++-当前仅接入 WMI 管理帧 TX，固件是否接受尚待真机验收。输入必须带 Radiotap；
++-控制帧、数据帧和 DATAPAD 不支持。速率、NOACK、NOSEQ 等提示不保证由固件执行。
++-注入期间保持固定信道。旧 v2 的监听验证不能替代新版的发送和恢复测试。
+++## 支持范围
++ 
++-如果退出时日志报告保留未完成 DMA 缓冲，模块可能拒绝卸载，后续注入禁用；
++-此异常需要重启恢复。目前没有自动回收漏 completion 的实现。
+++- TX：启用的非被动、非 DFS 的 2.4/5 GHz 20 MHz 频道，排除频道 14；输入必须带
+++  Radiotap，目前支持管理帧，不支持数据帧、控制帧与 DATAPAD。
+++- 40/80/160 MHz：RX-only；160 MHz 实际接收仍缺已知信号源验证。
+++- 速率、NOACK、NOSEQ 等 Radiotap 提示不保证由固件执行。
+++- `inject_stats` 记录队列/完成/恢复；`inject_tx_status` 区分固件 OK、NO_ACK 等。
+++  completion 不等于 ACK，固件 OK 也不能代替独立接收证据。
+++- 丢失 completion 时保留不确定 DMA；只有确认的新固件启动等既有恢复边界才能回收。
++diff --git a/ksu/op13_nethunter_ksu/monitor_control.sh b/ksu/op13_nethunter_ksu/monitor_control.sh
++index 06848132eb8268cfa1698be384e3961f6c216eb3..56f8dbe1fbec975fb3c718c3a286ccfd6666215a 100755
++--- a/ksu/op13_nethunter_ksu/monitor_control.sh
+++++ b/ksu/op13_nethunter_ksu/monitor_control.sh
++@@ -1,22 +1,23 @@
++ #!/system/bin/sh
++-# OnePlus 13 / peach_v2 native Qualcomm global monitor controller.
++-# con_mode=4 owns the radio and exposes the monitor adapter as wlan0.
++-# No wlan0mon interface and no hidden STA/helper vdev are used.
++-
+++# Native wlan0 RX; firmware-only STA helper TX follows sam's global design.
++ MODDIR=${0%/*}
++ LOGTAG=op13_global_monitor
++ MODE=/sys/module/qca_cld3_peach_v2/parameters/con_mode
+++STATS=/sys/module/qca_cld3_peach_v2/parameters/inject_stats
++ STATE=$MODDIR/.global_monitor_enabled
++ . "$MODDIR/module_identity.sh" || exit 1
+++. "$MODDIR/wlan_control_common.sh" || exit 1
++ 
++ log_i() { log -t "$LOGTAG" "$*" 2>/dev/null; echo "$*"; }
++-die() { log_i "[global-monitor] ERROR: $*"; return 1; }
+++die() { wlan_error "$*"; return 1; }
++ 
++ wait_for_iface() {
++-  want="$1"
+++  want=$1
++   i=0
++   while [ "$i" -lt 20 ]; do
++-    if iw dev wlan0 info 2>/dev/null | grep -q "type $want"; then return 0; fi
+++    if iw dev wlan0 info 2>/dev/null | awk -v want="$want" '
+++      $1 == "type" && $2 == want {ok=1} END {exit !ok}
+++    '; then return 0; fi
++     sleep 1
++     i=$((i + 1))
++   done
++@@ -24,6 +25,7 @@ wait_for_iface() {
++ }
++ 
++ chan_to_freq() {
+++  case "$1" in ''|*[!0-9]*) return 1;; esac
++   case "$1" in
++     1) echo 2412;; 2) echo 2417;; 3) echo 2422;; 4) echo 2427;;
++     5) echo 2432;; 6) echo 2437;; 7) echo 2442;; 8) echo 2447;;
++@@ -35,50 +37,153 @@ chan_to_freq() {
++     116) echo 5580;; 120) echo 5600;; 124) echo 5620;; 128) echo 5640;;
++     132) echo 5660;; 136) echo 5680;; 140) echo 5700;; 144) echo 5720;;
++     149) echo 5745;; 153) echo 5765;; 157) echo 5785;; 161) echo 5805;;
++-    165) echo 5825;; [0-9][0-9][0-9][0-9]*) echo "$1";; *) return 1;;
+++    165) echo 5825;;
+++    [245][0-9][0-9][0-9]) echo "$1";;
+++    *) return 1;;
++   esac
++ }
++ 
++-mon_on() {
++-  verify_payload_stack || { die "运行模块与本包不匹配，请先重新切换 WLAN 栈"; return 1; }
++-  [ -r "$MODE" ] || { die "peach_v2 con_mode 参数不存在，请先加载 nethunter WLAN 栈"; return 1; }
++-  [ "$(cat "$MODE" 2>/dev/null)" = 4 ] || printf '4\n' > "$MODE" || { die "无法切换 con_mode=4"; return 1; }
++-  wait_for_iface monitor || { die "全局 monitor 未启动，查看 dmesg | grep -i monitor"; return 1; }
++-  ip link set wlan0 up 2>/dev/null || true
++-  if [ -n "$1" ]; then
++-    freq=$(chan_to_freq "$1") || { die "不支持的频道: $1"; return 1; }
++-    iw dev wlan0 set freq "$freq" || { die "设置频道失败: $freq MHz"; return 1; }
++-    log_i "[global-monitor] ON wlan0 channel=$1 freq=$freq MHz"
+++validate_channel() {
+++  requested_freq=$(chan_to_freq "$1") || { die "无效的频道或 MHz 频率: $1"; return 1; }
+++  monitor_phy=$(iw dev wlan0 info 2>/dev/null | awk '$1 == "wiphy" {print "phy" $2; exit}')
+++  [ -n "$monitor_phy" ] || { die '无法确定 wlan0 的 wiphy，未切换模式。'; return 1; }
+++  monitor_phy_info=$(iw phy "$monitor_phy" info 2>/dev/null) || {
+++    die '无法读取网卡频道能力，未切换模式。'; return 1;
+++  }
+++  printf '%s\n' "$monitor_phy_info" | awk -v freq="$requested_freq" '
+++    $1 == "*" && $2 == freq && $3 == "MHz" && !/disabled/ {ok=1}
+++    END {exit !ok}
+++  ' || { die "网卡未提供或禁用了 $requested_freq MHz，未切换模式。"; return 1; }
+++}
+++
+++mon_status() {
+++  monitor_mode=$(cat "$MODE" 2>/dev/null)
+++  if [ "$monitor_mode" != 4 ]; then
+++    log_i "[global-monitor] OFF (con_mode=${monitor_mode:-不可读})"
+++    return 0
+++  fi
+++  monitor_info=$(iw dev wlan0 info 2>/dev/null)
+++  if ! printf '%s\n' "$monitor_info" | awk '$1 == "type" && $2 == "monitor" {ok=1} END {exit !ok}'; then
+++    log_i '[global-monitor] STARTING/UNAVAILABLE：con_mode=4，监听接口尚未就绪'
+++    return 0
+++  fi
+++  printf '%s\n' "$monitor_info" | awk '$1 == "Interface" || $1 == "type" || $1 == "channel"'
+++  if ! ip -o link show dev wlan0 2>/dev/null | awk '
+++    {sub(/^[^<]*</, ""); sub(/>.*/, ""); n=split($0, flags, ",")
+++     for (i=1;i<=n;i++) if (flags[i] == "UP") up=1} END {exit !up}
+++  '; then
+++    log_i '[global-monitor] PAUSED：接口未 UP，不能发包'
+++    return 0
+++  fi
+++  monitor_width=$(printf '%s\n' "$monitor_info" | awk '
+++    $1 == "channel" {for (i=1;i<NF;i++) if ($i == "width:") print $(i+1)}
+++  ')
+++  if [ -z "$monitor_width" ]; then
+++    log_i '[global-monitor] RX INTERFACE READY：频道未确认，请先设置频道'
+++    return 0
+++  fi
+++  monitor_stats=$(cat "$STATS" 2>/dev/null)
+++  monitor_tx_state=$(printf '%s\n' "$monitor_stats" | awk '{for (i=1;i<=NF;i++) if ($i ~ /^state=/) {sub(/^state=/, "", $i); print $i}}')
+++  if [ "$monitor_tx_state" = 4 ]; then
+++    log_i '[global-monitor] RECOVERY REQUIRED：TX 已停用，等待驱动恢复'
+++  elif [ "$monitor_width" = 40 ] || [ "$monitor_width" = 80 ] || [ "$monitor_width" = 160 ]; then
+++    log_i "[global-monitor] RX ONLY：$monitor_width MHz 仅接收，不支持注入"
+++  elif [ "$monitor_width" = 20 ] && [ "$monitor_tx_state" = 2 ] &&
+++       printf '%s\n' "$monitor_stats" | grep -qE '(^| )stopping=0( |$)' &&
+++       verify_payload_stack >/dev/null 2>&1; then
+++    log_i '[global-monitor] TX READY：20 MHz 管理帧注入已就绪（不代表空口发送已验证）'
++   else
++-    log_i "[global-monitor] ON wlan0 (未锁定频道)"
+++    log_i "[global-monitor] RX INTERFACE READY / TX UNAVAILABLE：频道已设置，TX helper 未就绪或不可用 (state=${monitor_tx_state:-未知})"
++   fi
++-  : > "$STATE"
+++}
+++
+++rollback_new_monitor() {
+++  [ "$previous_mode" = 0 ] || return 0
+++  if printf '0\n' > "$MODE" && wait_for_iface managed; then
+++    rm -f "$STATE"
+++    log_i '[global-monitor] 本次启动失败，已退回 managed 模式'
+++  else
+++    die '本次启动失败，退回 managed 也未完成；请检查当前状态，勿按启动成功继续。'
+++  fi
+++}
+++
+++mon_on() {
+++  wlan_require_commands iw ip awk || return 1
+++  requested_freq=
+++  [ -z "$1" ] || validate_channel "$1" || return 1
+++  verify_payload_stack || { die '运行模块与本包不匹配，请先重新切换 WLAN 栈'; return 1; }
+++  [ -w "$MODE" ] || { die 'peach_v2 con_mode 不存在或不可写'; return 1; }
+++  previous_mode=$(cat "$MODE") || return 1
+++  case "$previous_mode" in 0|4) ;; *) die "不支持从 con_mode=$previous_mode 启动监听"; return 1;; esac
+++  wlan_check_sharing || return 1
+++  if [ "$previous_mode" != 4 ]; then
+++    if ! printf '4\n' > "$MODE"; then
+++      die '无法切换 con_mode=4'
+++      rollback_new_monitor
+++      return 1
+++    fi
+++  fi
+++  if ! wait_for_iface monitor || ! ip link set wlan0 up; then
+++    die '监听接口未就绪或 UP 失败'
+++    rollback_new_monitor
+++    return 1
+++  fi
+++  if [ -n "$requested_freq" ]; then
+++    if ! iw dev wlan0 set freq "$requested_freq"; then
+++      die "设置频道失败: $requested_freq MHz"
+++      rollback_new_monitor
+++      return 1
+++    fi
+++    if ! iw dev wlan0 info 2>/dev/null | awk -v freq="$requested_freq" '
+++      $1 == "channel" {
+++        value=$3; gsub(/[^0-9]/, "", value)
+++        for (i=1;i<NF;i++) if ($i == "width:" && $(i+1) == 20 && value == freq) ok=1
+++      } END {exit !ok}
+++    '; then
+++      die '设频后的频道/20 MHz 带宽回读不匹配'
+++      rollback_new_monitor
+++      return 1
+++    fi
+++  fi
+++  : > "$STATE" || return 1
+++  mon_status
++ }
++ 
++ mon_off() {
++-  [ -w "$MODE" ] || { die "con_mode 参数不可写"; return 1; }
++-  printf '0\n' > "$MODE" || { die "无法退出全局 monitor"; return 1; }
++-  wait_for_iface managed || log_i "[global-monitor] wlan0 尚未恢复 managed，请检查 dmesg"
+++  wlan_require_commands iw awk || return 1
+++  [ -w "$MODE" ] || { die 'con_mode 参数不存在或不可写'; return 1; }
+++  monitor_mode=$(cat "$MODE") || return 1
+++  case "$monitor_mode" in 0|4) ;; *) die "不支持退出 con_mode=$monitor_mode"; return 1;; esac
+++  if [ "$monitor_mode" = 4 ]; then
+++    printf '0\n' > "$MODE" || { die '无法退出全局 monitor'; return 1; }
+++  fi
+++  [ "$(cat "$MODE")" = 0 ] || { die 'con_mode 尚未回到 0'; return 1; }
++   rm -f "$STATE"
++-  log_i "[global-monitor] OFF，已退出 con_mode=4"
+++  wait_for_iface managed || { die '已退出监听模式，但 managed 接口尚未就绪'; return 1; }
+++  log_i '[global-monitor] OFF：已退出监听，managed 接口就绪（不代表 Wi-Fi 已连接）'
++ }
++ 
++ mon_reset() {
++-  log_i "[global-monitor] RESET：重载 peach_v2 WLAN 栈"
++-  printf '0\n' > "$MODE" 2>/dev/null || true
+++  # The stack controller checks sharing, leaves monitor and reloads while
+++  # retaining this lock. Do not pre-exit and then recheck stale framework P2P.
+++  log_i '[global-monitor] RESET：重载 peach_v2 WLAN 栈'
++   sh "$MODDIR/wlan_stack_control.sh" nethunter
+++  monitor_reset_rc=$?
+++  [ "$monitor_reset_rc" -eq 0 ] || { die "WLAN 栈重载失败 ($monitor_reset_rc)"; return "$monitor_reset_rc"; }
++   rm -f "$STATE"
++ }
++ 
++ case "$1" in
++-  on|enable|start) shift; mon_on "$1";;
++-  off|disable|stop) mon_off;;
++-  reset|restart) mon_reset;;
++-  status|"")
++-    if [ -r "$MODE" ] && [ "$(cat "$MODE" 2>/dev/null)" = 4 ]; then
++-      log_i "[global-monitor] status: ON"; iw dev wlan0 info 2>/dev/null | grep -E 'Interface|type|channel'
++-    else
++-      log_i "[global-monitor] status: OFF"
++-    fi;;
+++  on|enable|start)
+++    [ "$#" -le 2 ] || { die '用法: monstart [频道或 MHz 频率]'; exit 1; }
+++    # Validate syntax before taking the lock or changing any state.
+++    [ "$#" -lt 2 ] || chan_to_freq "$2" >/dev/null || { die "无效频道: $2"; exit 1; }
+++    wlan_control_lock || exit 1
+++    mon_on "${2:-}";;
+++  off|disable|stop|reset|restart)
+++    [ "$#" -eq 1 ] || { die '此操作不接受额外参数'; exit 1; }
+++    wlan_control_lock || exit 1
+++    case "$1" in off|disable|stop) mon_off;; *) mon_reset;; esac;;
+++  status|"") mon_status;;
++   *) echo "usage: $0 [on [channel/freq]|off|reset|status]" >&2; exit 1;;
++ esac
++diff --git a/ksu/op13_nethunter_ksu/monstop b/ksu/op13_nethunter_ksu/monstop
++index 411c5598db296d6efb0ff9949550b1d573c5f672..535dc89391dcf38732bf3096ced9bbf86c9ac159 100755
++--- a/ksu/op13_nethunter_ksu/monstop
+++++ b/ksu/op13_nethunter_ksu/monstop
++@@ -2,4 +2,4 @@
++ # Resolve symlink to find the real module directory
++ REAL=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
++ MODDIR=${REAL%/*}
++-exec sh "$MODDIR/monitor_control.sh" off
+++exec sh "$MODDIR/monitor_control.sh" off "$@"
++diff --git a/ksu/op13_nethunter_ksu/service.sh b/ksu/op13_nethunter_ksu/service.sh
++index 0bac5d118f0ec806fa8e650d30cbb5fde25537b3..c536a92c9a3947d206df16319b5fff77842b23a5 100755
++--- a/ksu/op13_nethunter_ksu/service.sh
+++++ b/ksu/op13_nethunter_ksu/service.sh
++@@ -136,7 +136,7 @@ exec sh "$MODDIR/monitor_control.sh" on "\$@"
++ EOF
++       cat > "$bindir/monstop" <<EOF
++ #!/system/bin/sh
++-exec sh "$MODDIR/monitor_control.sh" off
+++exec sh "$MODDIR/monitor_control.sh" off "\$@"
++ EOF
++       cat > "$bindir/monreset" <<EOF
++ #!/system/bin/sh
++diff --git a/ksu/op13_nethunter_ksu/update_runtime_status.sh b/ksu/op13_nethunter_ksu/update_runtime_status.sh
++index 293a56325c70d9cc37aa2b8abf72bffd0c9e10d8..e4476ca2a1cc6a84481e864e418f2c0b6caf4dc3 100755
++--- a/ksu/op13_nethunter_ksu/update_runtime_status.sh
+++++ b/ksu/op13_nethunter_ksu/update_runtime_status.sh
++@@ -67,6 +67,9 @@ update_module_description() {
++   echo "cfg80211_bound=$(is_bound /vendor_dlkm/lib/modules/cfg80211.ko && echo yes || echo no)"
++   echo "mac80211_bound=$(is_bound /vendor_dlkm/lib/modules/mac80211.ko && echo yes || echo no)"
++   echo "qca_cld3_peach_v2_bound=$(is_bound /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko && echo yes || echo no)"
+++  if [ -f "$MODDIR/monitor_control.sh" ]; then
+++    sh "$MODDIR/monitor_control.sh" status
+++  fi
++ } > "$STATUS_FILE"
++ 
++ update_module_description
++diff --git a/ksu/op13_nethunter_ksu/wlan_control_common.sh b/ksu/op13_nethunter_ksu/wlan_control_common.sh
++new file mode 100755
++index 0000000000000000000000000000000000000000..93ffbe6ac42add1a3fe2385aa927aceeeba32587
++--- /dev/null
+++++ b/ksu/op13_nethunter_ksu/wlan_control_common.sh
++@@ -0,0 +1,94 @@
+++#!/system/bin/sh
+++# Sourced with MODDIR set. All cooperating writers share an inherited flock.
+++MODDIR=$(cd "$MODDIR" && pwd -P) || return 1
+++
+++wlan_error() { echo "[wlan-control] ERROR: $*" >&2; }
+++
+++wlan_flock() {
+++  if command -v flock >/dev/null 2>&1; then
+++    flock "$@"
+++  elif [ -x /data/adb/ksu/bin/busybox ]; then
+++    /data/adb/ksu/bin/busybox flock "$@"
+++  elif [ -x /data/adb/magisk/busybox ]; then
+++    /data/adb/magisk/busybox flock "$@"
+++  else
+++    wlan_error '缺少 flock，无法安全串行启停和热切。'
+++    return 1
+++  fi
+++}
+++
+++wlan_control_lock() {
+++  [ "$(id -u)" = 0 ] || { wlan_error '请在 root shell 中执行。'; return 1; }
+++  wlan_lock_path=$MODDIR/.wlan_control.lock
+++  # Verify the inherited descriptor as well as the marker. flock on the
+++  # same open file description is reentrant; an environment marker is not.
+++  if [ "${OP13_WLAN_LOCK:-}" = "$wlan_lock_path" ] &&
+++     [ "$wlan_lock_path" -ef "/proc/$$/fd/9" ]; then
+++    wlan_flock -n 9 || { wlan_error '已有 WLAN 操作进行中，请稍后重试。'; return 1; }
+++    return 0
+++  fi
+++  # Never unlink this file: replacing its inode would allow two owners.
+++  exec 9>"$wlan_lock_path" || return 1
+++  wlan_flock -n 9 || { wlan_error '已有 WLAN 操作进行中，请稍后重试。'; return 1; }
+++  OP13_WLAN_LOCK=$wlan_lock_path
+++  export OP13_WLAN_LOCK
+++}
+++
+++wlan_require_commands() {
+++  for wlan_cmd in "$@"; do
+++    command -v "$wlan_cmd" >/dev/null 2>&1 || {
+++      wlan_error "缺少命令: $wlan_cmd"
+++      return 1
+++    }
+++  done
+++}
+++
+++wlan_check_sharing() {
+++  wlan_require_commands iw awk || return 1
+++  wlan_interfaces=$(iw dev 2>/dev/null) || {
+++    wlan_error '无法读取无线接口，未开始操作。'
+++    return 1
+++  }
+++  # Ignore idle P2P-device and other radios when wlan0 identifies our phy.
+++  wlan_conflicts=$(printf '%s\n' "$wlan_interfaces" | awk '
+++    /^phy#/ {phy=$1}
+++    $1 == "Interface" {iface=$2; radios[iface]=phy; if (iface == "wlan0") own=phy}
+++    $1 == "type" && ($2 == "AP" || $2 == "AP/VLAN" ||
+++      $2 == "P2P-GO" || $2 == "P2P-client") {conflict[iface]=$2}
+++    END {for (i in conflict) if (own == "" || radios[i] == own)
+++      print i " (" conflict[i] ")"}
+++  ')
+++  if [ -n "$wlan_conflicts" ]; then
+++    wlan_error "热点或 P2P 接口占用: $wlan_conflicts；请先关闭个人热点、与平板网络共享或 Wi-Fi Direct 投屏。"
+++    return 1
+++  fi
+++  # Global mode has already closed mission-mode adapters. Android may still
+++  # report its old group; do not let that stale state block repeat start/reset.
+++  if [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/con_mode 2>/dev/null)" = 4 ] &&
+++     printf '%s\n' "$wlan_interfaces" | awk '
+++       $1 == "Interface" {iface=$2}
+++       iface == "wlan0" && $1 == "type" && $2 == "monitor" {ok=1}
+++       END {exit !ok}
+++     '; then
+++    return 0
+++  fi
+++  # Supplement interface checks with current framework state, when available.
+++  # Never match history records or saved persistent groups as active sharing.
+++  if command -v timeout >/dev/null 2>&1 && command -v dumpsys >/dev/null 2>&1; then
+++    wlan_p2p=$(timeout 5 dumpsys wifip2p 2>/dev/null) || wlan_p2p=
+++    if printf '%s\n' "$wlan_p2p" | awk '
+++      /^[ \t]*(curState|mCurrentState)[ \t]*[=:]/ {
+++        sub(/^[^=:]*[=:][ \t]*/, "")
+++        if ($0 ~ /^(Group|ProvisionDiscovery|UserAuthorizing|Negotiation|Invitation)/) active=1
+++      }
+++      /^[ \t]*mNetworkInfo([ \t]*[=:]|[ \t]+\[)/ && /state: CONNECT(ED|ING)([ \/,}]|$)/ {active=1}
+++      END {exit !active}
+++    '; then
+++      wlan_error 'P2P 正在连接或共享；请先关闭与平板网络共享或 Wi-Fi Direct 投屏。'
+++      return 1
+++    fi
+++  fi
+++  # This is an entry preflight, not a guarantee against Android starting P2P
+++  # later. Global-mode exclusion remains the driver's responsibility.
+++  return 0
+++}
++diff --git a/ksu/op13_nethunter_ksu/wlan_stack_control.sh b/ksu/op13_nethunter_ksu/wlan_stack_control.sh
++index cd1bf0ea9bec7ccd5d20b71d188499c4ee08a170..79d426dfca884202c64264daf3dd5ace577bf4b1 100755
++--- a/ksu/op13_nethunter_ksu/wlan_stack_control.sh
+++++ b/ksu/op13_nethunter_ksu/wlan_stack_control.sh
++@@ -6,6 +6,7 @@ STAGED_FW_DIR=/mnt/vendor/persist/copy
++ STAGED_FW_FILE=$STAGED_FW_DIR/rt2870.bin
++ STATE_FLAG=$MODDIR/.nethunter_enabled
++ . "$MODDIR/module_identity.sh" || exit 1
+++. "$MODDIR/wlan_control_common.sh" || exit 1
++ 
++ log_i() {
++   log -t "$LOGTAG" "$*"
++@@ -598,6 +599,19 @@ print_status() {
++   fi
++ }
++ 
+++case "$1" in
+++  nethunter|on|enable|stock|off|disable|restore)
+++    [ "$#" -eq 1 ] || { wlan_error '热切操作不接受额外参数'; exit 1; }
+++    wlan_control_lock || exit 1
+++    wlan_check_sharing || exit 1
+++    if [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/con_mode 2>/dev/null)" = 4 ]; then
+++      # Stop the helper through the driver lifecycle before rmmod. Child
+++      # scripts retain this operation's lock via descriptor 9.
+++      sh "$MODDIR/monitor_control.sh" off || exit 1
+++    fi
+++    ;;
+++esac
+++
++ case "$1" in
++   nethunter|on|enable)
++     switch_to_nethunter
++diff --git a/tests/test_monitor_control.py b/tests/test_monitor_control.py
++new file mode 100644
++index 0000000000000000000000000000000000000000..a12e5e7d04fc36360a79d6d66d48cd3087a9455e
++--- /dev/null
+++++ b/tests/test_monitor_control.py
++@@ -0,0 +1,277 @@
+++#!/usr/bin/env python3
+++"""Execute copied production scripts with fake Android IO; no phone operations."""
+++import fcntl
+++import os
+++from pathlib import Path
+++import shlex
+++import subprocess
+++import tempfile
+++import unittest
+++
+++ROOT = Path(__file__).resolve().parents[1] / 'ksu/op13_nethunter_ksu'
+++
+++MOCK = r'''#!/usr/bin/env python3
+++import os, sys
+++from pathlib import Path
+++p = Path(os.environ['FIXTURE'])
+++name = Path(sys.argv[0]).name
+++args = sys.argv[1:]
+++def get(key, default=''):
+++    f = p / key
+++    return f.read_text().strip() if f.exists() else default
+++def end(code=0):
+++    sys.exit(code)
+++if name == 'log' or name == 'sleep': end()
+++if name == 'id': print('0'); end()
+++if name == 'dumpsys':
+++    print(get('p2p', 'curState=InactiveState'))
+++    end(int(get('p2p_rc', '0')))
+++if name == 'iw':
+++    if args == ['dev']:
+++        print(get('interfaces', 'phy#0\n\tInterface wlan0\n\t\ttype managed'))
+++        end(int(get('iw_dev_rc', '0')))
+++    if args[:1] == ['phy']:
+++        print(get('channels', '* 2412 MHz [1] (20.0 dBm)\n* 5745 MHz [149] (20.0 dBm)\n* 5180 MHz [36] (disabled)'))
+++        end()
+++    if args == ['dev', 'wlan0', 'info']:
+++        if get('info_fail') == '1': end(1)
+++        mode = get('mode', '0')
+++        iface_type = 'monitor' if mode == '4' else 'managed'
+++        if get('managed_missing') == '1' and mode == '0': end(1)
+++        print(f'Interface wlan0\n\twiphy 0\n\ttype {iface_type}')
+++        freq = get('freq')
+++        if freq and mode == '4':
+++            print(f'\tchannel 1 ({freq} MHz), width: {get("width", "20")} MHz, center1: {freq} MHz')
+++        end()
+++    if args[:4] == ['dev', 'wlan0', 'set', 'freq']:
+++        with (p / 'calls').open('a') as f: f.write('setfreq\n')
+++        rc = int(get('freq_fail', '0'))
+++        if not rc and get('wrong_readback') != '1':
+++            (p / 'freq').write_text(args[4]); (p / 'width').write_text('20')
+++        end(rc)
+++    end(93)
+++if name == 'ip':
+++    if args == ['link', 'set', 'wlan0', 'up']:
+++        with (p / 'calls').open('a') as f: f.write('up\n')
+++        rc = int(get('up_fail', '0'))
+++        if not rc: (p / 'up').write_text('1')
+++        end(rc)
+++    if args == ['-o', 'link', 'show', 'dev', 'wlan0']:
+++        print('1: wlan0: <BROADCAST,' + ('UP,' if get('up') == '1' else '') + 'LOWER_UP> state UNKNOWN')
+++        end()
+++    end(94)
+++end(95)
+++'''
+++
+++
+++class MonitorControl(unittest.TestCase):
+++    def setUp(self):
+++        self.tmp = tempfile.TemporaryDirectory(prefix='monitor-control-')
+++        self.addCleanup(self.tmp.cleanup)
+++        self.p = Path(self.tmp.name)
+++        self.mod = self.p / 'module'
+++        self.mod.mkdir()
+++        for name in ('monitor_control.sh', 'wlan_control_common.sh', 'wlan_stack_control.sh',
+++                     'action.sh', 'bind_mount_control.sh'):
+++            source = (ROOT / name).read_text()
+++            source = source.replace('/sys/module/qca_cld3_peach_v2/parameters/con_mode', str(self.p / 'mode'))
+++            source = source.replace('/sys/module/qca_cld3_peach_v2/parameters/inject_stats', str(self.p / 'stats'))
+++            dest = self.mod / name
+++            dest.write_text(source)
+++            dest.chmod(0o755)
+++        (self.mod / 'module_identity.sh').write_text('verify_payload_stack() { return 0; }\npayload_stack_mode() { echo nethunter; }\n')
+++        self.bin = self.p / 'bin'
+++        self.bin.mkdir()
+++        (self.bin / 'mock').write_text(MOCK)
+++        (self.bin / 'mock').chmod(0o755)
+++        for name in ('iw', 'ip', 'dumpsys', 'sleep', 'log', 'id'):
+++            (self.bin / name).symlink_to('mock')
+++        self.env = dict(os.environ, FIXTURE=str(self.p), PATH=str(self.bin) + ':' + os.environ['PATH'])
+++        self.env.pop('OP13_WLAN_LOCK', None)
+++        self.set(mode='0', stats='state=2 stopping=0')
+++
+++    def set(self, **values):
+++        for key, value in values.items():
+++            (self.p / key).write_text(str(value))
+++
+++    def run_script(self, name='monitor_control.sh', *args, **kwargs):
+++        return subprocess.run(['sh', str(self.mod / name), *args], env=self.env,
+++                              text=True, capture_output=True, timeout=15, **kwargs)
+++
+++    def assert_mode(self, value):
+++        self.assertEqual((self.p / 'mode').read_text().strip(), value)
+++
+++    def assert_untouched(self, result):
+++        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+++        self.assert_mode('0')
+++        self.assertFalse((self.p / 'calls').exists())
+++        self.assertFalse((self.mod / '.global_monitor_enabled').exists())
+++
+++    def test_invalid_arguments_before_mode_change(self):
+++        for args in (('on', '2412oops'), ('on', '99999'), ('on', '6', 'extra'),
+++                     ('on', ''), ('on', '-1'), ('reset', 'extra')):
+++            with self.subTest(args=args):
+++                self.assert_untouched(self.run_script('monitor_control.sh', *args))
+++
+++    def test_unavailable_or_disabled_channel_before_mode_change(self):
+++        for channel in ('36', '5500', '2450'):
+++            with self.subTest(channel=channel):
+++                self.assert_untouched(self.run_script('monitor_control.sh', 'on', channel))
+++
+++    def test_success_and_repeat_start(self):
+++        for _ in range(2):
+++            result = self.run_script('monitor_control.sh', 'on', '149')
+++            self.assertEqual(result.returncode, 0, result.stderr)
+++            self.assertIn('TX READY', result.stdout)
+++            self.assert_mode('4')
+++        self.assertEqual((self.p / 'freq').read_text(), '5745')
+++
+++    def test_start_failure_rolls_back_new_session(self):
+++        for failure in ('up_fail', 'freq_fail', 'wrong_readback'):
+++            with self.subTest(failure=failure):
+++                self.set(mode='0', **{failure: '1'})
+++                result = self.run_script('monitor_control.sh', 'on', '1')
+++                self.assertNotEqual(result.returncode, 0)
+++                self.assert_mode('0')
+++                self.assertFalse((self.mod / '.global_monitor_enabled').exists())
+++                (self.p / failure).unlink()
+++
+++    def test_existing_session_not_turned_off_on_retune_failure(self):
+++        self.set(mode='4', freq_fail='1', freq='5745')
+++        (self.mod / '.global_monitor_enabled').touch()
+++        result = self.run_script('monitor_control.sh', 'on', '1')
+++        self.assertNotEqual(result.returncode, 0)
+++        self.assert_mode('4')
+++        self.assertTrue((self.mod / '.global_monitor_enabled').exists())
+++
+++    def test_status_distinguishes_states(self):
+++        self.set(mode='4', up='1')
+++        cases = [('', '20', '2', '0', '频道未确认'),
+++                 ('2412', '20', '2', '0', 'TX READY'),
+++                 ('2412', '20', '0', '0', 'TX UNAVAILABLE'),
+++                 ('2412', '20', '2', '1', 'TX UNAVAILABLE'),
+++                 ('2412', '80', '0', '0', 'RX ONLY'),
+++                 ('2412', '80', '4', '0', 'RECOVERY REQUIRED')]
+++        for freq, width, state, stopping, expected in cases:
+++            with self.subTest(expected=expected):
+++                self.set(freq=freq, width=width, stats=f'state={state} stopping={stopping}')
+++                self.assertIn(expected, self.run_script('monitor_control.sh', 'status').stdout)
+++        self.set(up='0')
+++        self.assertIn('PAUSED', self.run_script('monitor_control.sh', 'status').stdout)
+++        self.set(info_fail='1')
+++        self.assertIn('STARTING/UNAVAILABLE', self.run_script('monitor_control.sh', 'status').stdout)
+++
+++    def test_stop_failure_not_reported_success(self):
+++        self.set(mode='4', managed_missing='1')
+++        result = self.run_script('monitor_control.sh', 'off')
+++        self.assertNotEqual(result.returncode, 0)
+++        self.assertNotIn('OFF：', result.stdout)
+++        self.assert_mode('0')
+++
+++    def test_stop_does_not_require_p2p_idle(self):
+++        self.set(mode='4', p2p='curState=GroupCreatedState')
+++        result = self.run_script('monitor_control.sh', 'off')
+++        self.assertEqual(result.returncode, 0, result.stderr)
+++        self.assert_mode('0')
+++
+++    def test_reset_preserves_child_error_and_inherits_lock(self):
+++        # Keep real dispatch, lock and monitor exit; stub only the module IO.
+++        path = self.mod / 'wlan_stack_control.sh'
+++        source = path.read_text()
+++        start = source.rindex('case "$1" in')
+++        source = source[:start] + '''switch_to_nethunter() {
+++  [ "$(cat "$FIXTURE/mode")" = 0 ] || return 98
+++  echo child-entered
+++  return 37
+++}
+++''' + source[start:]
+++        path.write_text(source)
+++        self.set(mode='4', interfaces='phy#0\n Interface wlan0\n  type monitor',
+++                 p2p='curState=GroupCreatedState')
+++        result = self.run_script('monitor_control.sh', 'reset')
+++        self.assertEqual(result.returncode, 37, result.stderr)
+++        self.assertIn('child-entered', result.stdout)
+++        self.assertIn('重载失败', result.stderr)
+++        self.assert_mode('0')
+++
+++    def test_global_mode_ignores_stale_framework_group_on_repeat_start(self):
+++        self.set(mode='4', interfaces='phy#0\n Interface wlan0\n  type monitor',
+++                 p2p='curState=GroupCreatedState')
+++        result = self.run_script('monitor_control.sh', 'on', '1')
+++        self.assertEqual(result.returncode, 0, result.stderr)
+++
+++    def test_switch_stops_before_reload_if_monitor_exit_fails(self):
+++        self.set(mode='4')
+++        (self.mod / 'monitor_control.sh').write_text('echo stop-failed >&2\nexit 29\n')
+++        result = self.run_script('wlan_stack_control.sh', 'nethunter')
+++        self.assertNotEqual(result.returncode, 0)
+++        self.assertIn('stop-failed', result.stderr)
+++        self.assertNotIn('switching wlan stack', result.stdout)
+++        self.assert_mode('4')
+++
+++    def test_active_ap_and_p2p_interfaces_block_before_mutation(self):
+++        for iface_type in ('AP', 'P2P-GO', 'P2P-client'):
+++            self.set(interfaces=f'phy#0\n Interface wlan0\n  type managed\n Interface p2p0\n  type {iface_type}')
+++            for script, args in (('monitor_control.sh', ('on', '1')),
+++                                 ('wlan_stack_control.sh', ('nethunter',)), ('action.sh', ())):
+++                with self.subTest(type=iface_type, script=script):
+++                    result = self.run_script(script, *args)
+++                    self.assert_untouched(result)
+++                    self.assertIn('与平板网络共享', result.stderr)
+++
+++    def test_idle_p2p_device_and_other_radio_allowed(self):
+++        self.set(interfaces='phy#0\n Interface wlan0\n  type managed\n Interface p2p0\n  type P2P-device\nphy#1\n Interface wlan9\n  type AP')
+++        result = self.run_script('monitor_control.sh', 'on', '1')
+++        self.assertEqual(result.returncode, 0, result.stderr)
+++
+++    def test_only_current_p2p_state_blocks(self):
+++        for state in ('GroupCreatedState', 'GroupNegotiationState', 'UserAuthorizingJoinState'):
+++            self.set(p2p=f'curState={state}')
+++            self.assert_untouched(self.run_script('monitor_control.sh', 'on', '1'))
+++        self.set(p2p='curState=InactiveState\nmNetworkInfo [type: WIFI_P2P[], state: CONNECTED/CONNECTED]')
+++        self.assert_untouched(self.run_script('monitor_control.sh', 'on', '1'))
+++        self.set(p2p='rec[0]: state=GroupCreatedState\ncurState=InactiveState\nmGroups:\nGroupCreatedState\nmNetworkInfo [state: DISCONNECTED/DISCONNECTED]')
+++        result = self.run_script('monitor_control.sh', 'on', '1')
+++        self.assertEqual(result.returncode, 0, result.stderr)
+++
+++    def test_optional_p2p_service_absent_does_not_lock_out_global_monitor(self):
+++        self.set(p2p_rc='1')
+++        result = self.run_script('monitor_control.sh', 'on', '1')
+++        self.assertEqual(result.returncode, 0, result.stderr)
+++
+++    def test_lock_contends_across_all_writers_and_ignores_forged_marker(self):
+++        path = self.mod / '.wlan_control.lock'
+++        with path.open('w') as lock:
+++            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+++            self.env['OP13_WLAN_LOCK'] = str(path)
+++            for script, args in (('monitor_control.sh', ('on', '1')),
+++                                 ('monitor_control.sh', ('off',)),
+++                                 ('monitor_control.sh', ('reset',)),
+++                                 ('wlan_stack_control.sh', ('nethunter',)),
+++                                 ('action.sh', ()), ('bind_mount_control.sh', ('on',))):
+++                with self.subTest(script=script, args=args):
+++                    result = self.run_script(script, *args)
+++                    self.assert_untouched(result)
+++                    self.assertIn('已有 WLAN 操作', result.stderr)
+++            # Read-only status is available during a control operation.
+++            self.assertEqual(self.run_script('monitor_control.sh', 'status').returncode, 0)
+++        self.assertEqual(self.run_script('monitor_control.sh', 'on', '1').returncode, 0)
+++
+++    def test_lock_released_on_killed_owner(self):
+++        script = f'MODDIR={shlex.quote(str(self.mod))}; . "$MODDIR/wlan_control_common.sh"; wlan_control_lock || exit 1; echo ready; read line'
+++        proc = subprocess.Popen(['sh', '-c', script], env=self.env, text=True,
+++                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+++        try:
+++            self.assertEqual(proc.stdout.readline().strip(), 'ready')
+++            self.assertNotEqual(self.run_script('monitor_control.sh', 'on', '1').returncode, 0)
+++            proc.kill()
+++            proc.communicate(timeout=5)
+++            result = self.run_script('monitor_control.sh', 'on', '1')
+++            self.assertEqual(result.returncode, 0, result.stderr)
+++        finally:
+++            if proc.poll() is None: proc.kill()
+++            proc.communicate(timeout=5)
+++
+++
+++if __name__ == '__main__':
+++    unittest.main(verbosity=2)
++diff --git "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md" "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
++index de7f422c7c1b1a4090968053f6011698c59038ac..acfe748a666d3ed8faa99a6c90b4fb9040a6f9f9 100644
++--- "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
+++++ "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
++@@ -349,3 +349,21 @@ failed60中先前30对应NO_ACK，新增30缺TX状态明细，不能归因为SSR
++ 实际重放副本：`op13-v8-closeout-20260917/replay/{mail,combined}/`（未展开子项目，
++ gitlink及原项目内容另已核对）；复核脚本`oplus/补丁/native_global/verify_replay.py`。
++ 持久证据`oplus/说明/验证/op13-v8-closeout-20260917.json`。未编译、操作手机或改v8 ZIP。
+++
+++## 脚本防呆与 OPPO 共享核查（2026-09-17）
+++
+++用户同意先做脚本保护，并询问 OPPO“与平板网络共享”在全局模式下是否仍需防呆。
+++已补频道预校验/回读、失败返回及新会话回退、monstart/stop/reset/热切/Action/bind
+++共用继承式 flock，以及接口/频道/暂停/TX/RX-only/恢复状态区分。热切先正常退出监听。
+++共享预检只拦当前同 phy AP/P2P 占用或可识别的当前建组状态；空闲 P2P-device、其他
+++无线网卡、历史记录不误拦，全局监听下忽略过期框架组状态，monstop不受共享检查阻挡。
+++
+++当前全局切换会关闭旧接口，并拒绝新增虚接口；旧并发路线0016三守卫不应直接照搬。
+++尤其 sam 保留框架真实卸载的生命周期，没有采取吞掉全部复位的旧策略。本次不改内核，
+++监听中点共享/框架强制恢复仍缺专项真机证据，不能宣称已全面验证。
+++
+++17项生产脚本模拟回归、原有身份/卸载边界检查、新公共/监听脚本ShellCheck和10个
+++改动shell文件语法检查通过。手机mksh/BusyBox与实际ColorOS状态格式尚未验收。
+++详见 [脚本保护记录](op13_script_guards_20260917.md)。新脚本在KSU源码目录，未部署或
+++打入已交付v8 ZIP；无需重编内核。源码补丁仍至0014且两条重放结论不变；脚本改动另行
+++导出到 `补丁/ksu_scripts/`，不混入内核合并补丁。
++diff --git "a/\350\257\264\346\230\216/op13_script_guards_20260917.md" "b/\350\257\264\346\230\216/op13_script_guards_20260917.md"
++new file mode 100644
++index 0000000000000000000000000000000000000000..bd4d9f18c565a958f6372970cf6359f3cb7e6ae3
++--- /dev/null
+++++ "b/\350\257\264\346\230\216/op13_script_guards_20260917.md"
++@@ -0,0 +1,64 @@
+++# 全局监听脚本保护与 OPPO 共享核查（2026-09-17）
+++
+++本轮只修改 KSU 脚本、说明和主机回归；不修改内核、不完整构建、不部署、不操作手机、
+++不重打 v8 ZIP。源码仍为 `3b8463c2`，运行时代码仍为 v8 的 `30426bf8`，十四封源码
+++邮件补丁与“构建接入 + 合并补丁”的重放结论不变。新的脚本不在已交付 ZIP/手机内。
+++
+++## 已实现
+++
+++`monitor_control.sh` 在改变 `con_mode` 前拒绝错参数、额外参数、网卡未提供/禁用的
+++频道；设频后核对实际主频和 20 MHz 带宽。UP/设频/回读失败准确返回；仅对本次从
+++模式0新进入的监听尝试退回 managed，不把原有监听会话当作失败回滚目标。
+++monstop 等待并核实 managed 接口，reset 保留子进程错误码。
+++
+++新增 `wlan_control_common.sh`：由 flock 锁住同一 inode，FD 9 跨子脚本继承；
+++同时校验环境标记、FD与文件身份，并实际取锁，不凭环境变量绕过互斥。主进程和
+++子进程关闭描述符后内核释放锁，空文件保留。不存在 flock 时明确报错，不无锁执行。
+++monstart/stop/reset、KSU Action、模块热切和 bind 修改共用；查询不取锁。
+++热切在卸载前通过同锁子脚本正常退出监听，退出失败则不进入卸载。
+++
+++状态同时查看模式、接口类型、IFF_UP、频道带宽、TX helper 状态和模块身份；区分
+++未就绪、频道未确认、暂停、20 MHz TX READY、宽信道 RX ONLY、TX不可用及恢复需要。
+++`show_status` 的运行状态输出也包含该快照，不再只显示一个 ON。
+++
+++## OPPO“与平板网络共享”
+++
+++旧 `说明/op13_monitor_injection_全程实战记录.md` 的 §11.7 与后续段落记录了该功能
+++通过 P2P 工作、旧 helper 槽位冲突、以及复用已有 p2p0 绕过新增接口守卫的经历。
+++旧 `补丁/qca_inject/0016-*` 的三个守卫是新增 AP/GO 接口、STA connect、吞掉框架
+++WLAN 状态控制；它们并不是当前全局实现已经完整继承的功能。
+++
+++当前源码核查：
+++
+++- `wlan_hdd_main.c:hdd_stop_present_mode/hdd_cleanup_present_mode` 在全局切换时
+++  停止、反初始化、关闭原模式适配器；`hdd_open_adapters_for_monitor_mode` 建监听口。
+++- `wlan_hdd_p2p.c:__wlan_hdd_add_virtual_intf` 明确拒绝全局监听下新增虚接口。
+++- `wlan_hdd_cm_connect.c:wlan_hdd_cm_connect` 只允许 STA/P2P-client 类型连接，
+++  正常的 monitor adapter 不属于可连接类型。
+++- `wlan_hdd_main.c:wlan_hdd_state_ctrl_param_write` 仍保留原始 OFF/DISABLE/
+++  FORCE_DISABLE 语义，没有旧版“吞掉框架复位”逻辑。sam 主补丁的
+++  `docs/monitor-wifi-notifications.md` 同样强调保留实际卸载生命周期，不能照搬旧守卫。
+++- `wma_inject.c` 在当前空闲 vdev ID 中从高向低选择 helper；这是 firmware-only
+++  helper，不是额外公开 STA netdev，也不能说 objmgr 已为其建立普通 STA 接口。
+++
+++因此全局模式正常建立后，旧并发监听场景的多数守卫不再适用。仍不能由“新增接口
+++被拒绝”推出框架强制恢复、接口改型、监听中点共享等所有路径都经过专项验证。
+++旧记录的“一根天线物理上绝不可能”“永不需重启”等绝对断言不是本轮依据。
+++
+++脚本新增的是避免误中断已有共享的入口检查：同一 phy 的 AP/P2P-GO/P2P-client，
+++以及可读取的当前 P2P 建组/连接状态。忽略空闲 P2P-device、其他 phy、历史事件和
+++持久组列表。wifip2p 缺失/格式未知不作为硬阻塞；全局模式已有实际 monitor 且无
+++冲突接口时跳过可能过期的框架组状态。monstop 不受该检查阻挡。
+++这不能代替驱动互斥，也没有声称 Android 在检查后不可能再发起共享。
+++
+++## 验证及边界
+++
+++`python3 tests/test_monitor_control.py` 执行复制后的生产脚本，只替换 sysfs 路径与
+++Android 命令，不写手机。覆盖参数/禁用频道的零模式变更、重复启动、UP/设频/回读
+++失败回退、保留既有会话、不同状态输出、退出超时、reset 错误透传、真实父子文件锁、
+++跨入口竞争、伪造锁标记、持锁进程被杀后的释放、共享占用/空闲/历史状态、以及监听
+++退出失败阻止热切。原 `tests/test_wlan_identity.py` 继续检查 Build ID/卸载失败边界。
+++
+++ShellCheck 对新公共脚本和监听脚本无 warning/error；所有改动 shell 文件语法检查。
+++主机环境用 Linux sh/flock 和模拟 Android 输出，不证明手机 mksh/BusyBox、ColorOS
+++具体 dumpsys 格式或真实模块重载行为。下一次脚本交付后再验收这些设备差异。
+diff --git "a/\350\241\245\344\270\201/ksu_scripts/README.md" "b/\350\241\245\344\270\201/ksu_scripts/README.md"
+new file mode 100644
+index 0000000..470a574
+--- /dev/null
++++ "b/\350\241\245\344\270\201/ksu_scripts/README.md"
+@@ -0,0 +1,19 @@
++# KSU 脚本保护补丁
++
++此目录属于 `/root/pt/oplus` 脚本仓库，不应用到内核仓库，也不叠加到
++`native_global/0001-peach-v2-native-global-monitor.patch`。
++
++- 基线：`af83a9622345530317a8c4b3cde61131477a292d`
++- 脚本提交：`3bfce6641c35b490adfddc0cba47bb19007c4639`
++- 目标完整 tree：`d11cce5f9ded3789719670b24388a5d68bc86de6`
++
++从上述脚本仓库基线应用：
++
++```sh
++git am /path/to/0001-monitor-control-guards.patch
++```
++
++补丁包含脚本、17项主机回归和相关说明。临时索引从基线应用后完整tree与脚本提交相同，
++详见 `verification.json`。本目录自身的导出记录是后续文档提交，不属于补丁目标tree。
++
++内核源码/模块未变，不需要重编；新脚本尚未打包或部署，现有v8 ZIP保持原样。
+diff --git "a/\350\241\245\344\270\201/ksu_scripts/verification.json" "b/\350\241\245\344\270\201/ksu_scripts/verification.json"
+new file mode 100644
+index 0000000..451516c
+--- /dev/null
++++ "b/\350\241\245\344\270\201/ksu_scripts/verification.json"
+@@ -0,0 +1,12 @@
++{
++  "base_commit": "af83a9622345530317a8c4b3cde61131477a292d",
++  "target_commit": "3bfce6641c35b490adfddc0cba47bb19007c4639",
++  "target_tree": "d11cce5f9ded3789719670b24388a5d68bc86de6",
++  "replayed_tree": "d11cce5f9ded3789719670b24388a5d68bc86de6",
++  "patch_sha256": "bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790",
++  "method": "temporary Git index, read-tree baseline, git apply --cached, compare complete tree",
++  "host_tests": 17,
++  "device_tested": false,
++  "kernel_changed": false,
++  "package_changed": false
++}
+-- 
+2.53.0
+

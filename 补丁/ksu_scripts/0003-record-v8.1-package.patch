@@ -1,0 +1,486 @@
+From 0b9e13ade8cb5a1c4857c8c9e0de9e527dfe7701 Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 03:00:47 +0000
+Subject: [PATCH] ksu: package v8.1 control scripts with unchanged v8 modules
+
+---
+ ...h-native-global-v8.1-integrated.zip.sha256 |   1 +
+ ksu/op13_nethunter_ksu/docs/BUILD_INFO.txt    |  92 +++++--------
+ .../docs/NATIVE_INJECTION.md                  |  73 +++++++++--
+ .../docs/QUICK_MONITOR_GUIDE.md               |   2 +-
+ ksu/op13_nethunter_ksu/docs/README.md         |  35 ++---
+ ksu/op13_nethunter_ksu/module.prop            |   6 +-
+ .../op13_sam_global_helper_handoff.md"        |  16 +++
+ .../op13_script_guards_20260917.md"           |  16 +++
+ .../op13-v8.1-package-20260917.json"          | 122 ++++++++++++++++++
+ 9 files changed, 274 insertions(+), 89 deletions(-)
+ create mode 100644 ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip.sha256
+ create mode 100644 "\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.1-package-20260917.json"
+
+diff --git a/ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip.sha256 b/ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip.sha256
+new file mode 100644
+index 0000000..4f01201
+--- /dev/null
++++ b/ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip.sha256
+@@ -0,0 +1 @@
++7c6496ba85f455c13afe304293b81dc0dcfd4601617765646aa5d87fcf950b15  op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip
+diff --git a/ksu/op13_nethunter_ksu/docs/BUILD_INFO.txt b/ksu/op13_nethunter_ksu/docs/BUILD_INFO.txt
+index 6b351ef..86f6f3a 100644
+--- a/ksu/op13_nethunter_ksu/docs/BUILD_INFO.txt
++++ b/ksu/op13_nethunter_ksu/docs/BUILD_INFO.txt
+@@ -1,77 +1,45 @@
+-OnePlus 13 peach_v2 native global monitor + sam-derived helper TX package
++OnePlus 13 peach_v2 native global monitor — v8.1 control-script update
+ 
+-Package: 2026.09.16-peach-native-global-v8 / versionCode 2026091608
+-Source commit: 30426bf8a3e1b57596ee741086e2c491617c58d1
+-Source tree: a3215426a531edd58dd9636b262da0296bac76e4
+-Source status: WLAN worktree clean; source unchanged throughout the build.
+-Existing oplus_modules_variant.bzl workspace configuration was retained.
+-Build started UTC: 2026-09-16T18:10:43+00:00
+-Build finished UTC: 2026-09-16T18:22:15+00:00
+-Elapsed seconds: 692.45
+-Target: sun perf, peach_v2, ARM64 4 KiB
+-Build command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+-One unified build completed successfully; no rebuild was run for packaging.
+-Build evidence: /root/pt/op13-ssr-build-20260916/build.log
+-Host tests: /root/pt/op13-ssr-fix-20260916/host-tests.json
+-Implementation: global con_mode=4 monitor wlan0 owns RX; sam-derived internal STA helper owns TX.
+-v8 includes the 0013 monitor SSR reconstruction fix, plus all v7 WEXT/qdisc changes.
+-The bounded queue, completion-driven worker and DMA recovery boundaries remain.
++Package: 2026.09.17-peach-native-global-v8.1 / versionCode 2026091701
++Packaged UTC: 2026-09-17T02:59:54.298000+00:00
++Script implementation commit (oplus repository): 3bfce6641c35b490adfddc0cba47bb19007c4639
++Package input repository commit: 2889fd3e2dd8b4f52c35188b50e65f540bfd5a94
++Script patch SHA-256: bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790
++Package metadata and documentation were refreshed during packaging.
++Kernel build source commit: 30426bf8a3e1b57596ee741086e2c491617c58d1
++Current kernel source commit: 3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb (documentation-only changes since build)
++Current combined kernel patch SHA-256: a6b1cd91130995fb8e837e000b0ae89c5a98d3991f27b028c6bb22342ac05ce9
+ 
+-Payload: exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko.
+-Input: kernel_platform/out/msm-kernel-sun-perf/dist from this unified build.
+-Strip: llvm-strip --strip-debug on package copies; raw build outputs preserved.
+-CNSS modules are build dependencies only and are not packaged.
+-Unchanged cfg80211/mac80211 may be reused by the unified build cache.
++Module origin:
++- Reuse the exact three already-stripped files from the verified v8 payload.
++- Original unified build: 2026-09-16 18:10:43–18:22:15 UTC, sun perf, ARM64 4 KiB.
++- Build command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
++- Original strip: llvm-strip --strip-debug on copies; raw build outputs preserved.
++- No rebuild or second strip was performed for v8.1.
++- Exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko; no CNSS modules.
++- Original archive: op13_nethunter_ksu-peach-native-global-v8-integrated.zip
++- Original archive SHA-256: ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a
+ 
+ Validation:
+-- ARM64 relocatable ELF; no debug sections remain after strip.
+-- Every allocated ELF section, .modinfo, __versions and Build ID note matches raw input.
+-- Required helper/WEXT symbols and new SSR diagnostics are present.
+-- All 13 host ASan/UBSan checks passed on the identical source files.
+-- ZIP CRC, payload bytes, binary Build ID notes and executable permissions verified.
+-- No device deployment or phone test was performed for v8; SSR still needs device validation.
+-- These checks do not validate every ROM dependency CRC or firmware/RF behavior.
+-
+-Combined source patch SHA-256: c539c1ef09cc68390eb8350894f698ea2f8caa048108ce39db2025da606ab89c
++- Modules byte-identical to v8, ARM64 relocatable, no debug sections.
++- Loaded identity notes equal the ELF Build ID sections and v8 records.
++- All shell/command scripts equal the committed script implementation.
++- 17 script host regressions and existing Build ID/unload regression passed.
++- New control scripts passed ShellCheck; changed shell scripts passed syntax checks.
++- ZIP CRC, every file's bytes, module set and file permissions verified.
++- v8 modules previously passed targeted phone checks documented in NATIVE_INJECTION.md.
++- v8.1 scripts have not been deployed or phone-tested; no device action in this packaging run.
+ 
+ Module manifest:
+-- cfg80211.ko: 2070456 bytes stripped (raw 10201736)
++- cfg80211.ko: 2070456 bytes
+   sha256 488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626
+-  raw_sha256 b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c
+   Build ID 40533847cea5b0e9aeac19849b37f1dfc7dc9f44
+   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
+-  depends rfkill
+-- mac80211.ko: 1963888 bytes stripped (raw 17277376)
++- mac80211.ko: 1963888 bytes
+   sha256 6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d
+-  raw_sha256 3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0
+   Build ID abacfa26d25bc862a3383f8f21c4f3eccd333778
+   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
+-  depends cfg80211,libarc4
+-- qca_cld3_peach_v2.ko: 19785976 bytes stripped (raw 513212536)
++- qca_cld3_peach_v2.ko: 19785976 bytes
+   sha256 a504e2d440037a241c07748f9076c36f9c39aa194e5977c66f5e903f6d974ea7
+-  raw_sha256 f23d88a5121e2fe31753f564365c94d907002a9a6ab63e19bdb76a8619161d4d
+   Build ID ff0f34e4ea4eba64f788c495b3a9eabb401d3157
+   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
+-  depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
+-
+-Completed unified build phases:
+-kpl-time-check kernel start 18:10:43
+-kpl-time-check kernel end 18:11:08
+-kpl-time-check oplus DDK start 18:11:08
+-kpl-time-check oplus DDK end 18:17:13
+-kpl-time-check kernel copy start 18:17:13
+-kpl-time-check kernel copy end 18:17:14
+-kpl-time-check Preparing UAPI headers start 18:17:18
+-kpl-time-check Preparing UAPI headers end 18:17:18
+-kpl-time-check setting up Android tree start 18:17:18
+-kpl-time-check setting up Android tree end 18:17:21
+-kpl-time-check Building WLAN platform start 18:17:21
+-kpl-time-check Building WLAN platform end 18:17:30
+-kpl-time-check Building WLAN qcacld start 18:17:30
+-kpl-time-check Building WLAN qcacld end 18:20:36
+-kpl-time-check Installing WLAN modules start 18:20:36
+-kpl-time-check Installing WLAN modules end 18:20:36
+-kpl-time-check Compiling vendor devicetree start 18:20:36
+-kpl-time-check Compiling vendor devicetree end 18:20:41
+-kpl-time-check Merging vendor devicetree start 18:20:41
+-kpl-time-check Merging vendor devicetree end 18:21:53
+diff --git a/ksu/op13_nethunter_ksu/docs/NATIVE_INJECTION.md b/ksu/op13_nethunter_ksu/docs/NATIVE_INJECTION.md
+index c81d4e5..0f66676 100644
+--- a/ksu/op13_nethunter_ksu/docs/NATIVE_INJECTION.md
++++ b/ksu/op13_nethunter_ksu/docs/NATIVE_INJECTION.md
+@@ -171,7 +171,7 @@ repeating these tests; do not classify this first environment failure as a
+ driver regression. Full evidence is in `/root/pt/op13-v7-runtime-20260916/`
+ and the workspace report `oplus/说明/op13_v7_runtime_20260916.md`.
+ 
+-## v7 extended testing and v8 SSR rebuild
++## v7 extended testing and SSR follow-up (built as v8)
+ 
+ Further device testing on 2026-09-16 completed 601.3 seconds of mixed-width
+ hopping: 517 phases, 6864 submitted/completed Probe frames, 1768 RX-only host
+@@ -218,10 +218,67 @@ test covers live/dead firmware, failed enqueue, wait failure and missing vdev.
+ The TX restore test covers the new readiness gate, full centers, RX-only
+ queues and paused interfaces. Firmware/DP calls are modeled, not device proof.
+ 
+-This v8 package includes the follow-up from source commit
+-`30426bf8a3e1b57596ee741086e2c491617c58d1`. The single unified `sun perf`
+-build and strip/package verification passed. v8 has not been deployed or
+-tested on the phone. The older v7 ZIP still contains the demonstrated SSR
+-failure. Next validate idle SSR before inflight SSR, including WEXT, RX,
+-queue draining, DMA recovery and ordinary Wi-Fi. Host tests and a successful
+-build do not establish firmware recovery. See `BUILD_INFO.txt` for identity.
++The follow-up was built and packaged as v8 from commit
++`30426bf8a3e1b57596ee741086e2c491617c58d1`. The older v7 ZIP still contains
++the demonstrated SSR failure. The following results are later evidence;
++this documentation update does not change the v8 runtime code.
++
++## v8 build and SSR device evidence (2026-09-17)
++
++The single unified `sun perf` build ran on 2026-09-16 from 18:10:43 to
++18:22:15 UTC. The three-module package was stripped with `--strip-debug`;
++no CNSS modules were added. ZIP SHA-256 is
++`ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a`,
++and qcacld Build ID is `ff0f34e4ea4eba64f788c495b3a9eabb401d3157`.
++
++After the user installed and hot-switched v8, all three installed module
++hashes and loaded Build ID notes matched the package. Four firmware SSR
++scenarios passed targeted checks, with the same boot ID after every SSR:
++
++- Idle channel 1/20 MHz: helper ready was first observed after 2.506 seconds;
++  the saved channel and WEXT were restored. Six new Probe requests completed,
++  with 166 Beacons and 16 addressed Probe responses captured.
++- During traffic: 640 host send calls overlapped the fault, with 32 inflight
++  and 30 queued frames observed. The queued frames were dropped and the
++  inflight frames were host-drained, not counted as firmware completions.
++  The uncertain DMA pool was retained, then reclaimed after fresh firmware
++  boot (`reset_reclaims=1`). Helper readiness returned after 2.115 seconds;
++  six new Probes completed, with 211 Beacons and 11 Probe responses captured.
++  Host send calls do not imply that all 640 frames reached the firmware.
++- Channel 1/40 MHz RX-only: recovery preserved primary 2412/center 2422 and
++  did not create a TX helper. The capture contained 207 Beacons. Six host
++  send attempts left TX counters unchanged and all qdiscs empty; retuning
++  to 20 MHz caused no old-frame transmission, while one new Probe completed.
++- Administratively down: IFF_UP stayed clear across SSR. An explicit up
++  restored the visible 2412/20 MHz channel. This checked the paused state;
++  it did not attempt sending while the interface was down.
++
++Normal Wi-Fi subsequently connected, obtained IPv4 and VALIDATED status,
++and scanned successfully. Full monitor exit/re-entry passed, with WEXT
++working and directed aireplay Probe responses of 20/30 without the negative
++channel override. The saved idle/traffic SSR logs show both monitor RX and
++TX restoration and no new checked kernel BUG/WARNING/Call trace/KASAN during
++the captured interval; complete logs for the later stages were not collected.
++
++The user unplugged USB before the final agent down/up command could run.
++The user then performed the requested phone-side follow-up and supplied
++monitor channel 1/20 MHz, working WEXT, and Probe results of 23/30 for
++`tdgcxh` at 01:12:59-01:13:03 (terminal timezone unspecified). This is a user
++report: the pasted excerpt omits the down/up commands and module identity.
++It is not an uninterrupted agent observation.
++
++The user's final counters were accepted=207, submitted=177, completed=145,
++dropped=30, drained=32, failed=60 and reset_reclaims=1. Queued/inflight/used/
++retained/timeouts/stale/retries/backpressure were zero. The two TX-count
++differences match the observed SSR queue drop and host drain. One DMA pool
++remained active (allocs=6, frees=5) with monitor still running. The earlier
++failed=30 matched NO_ACK; the later increase lacks a TX status breakdown
++and must not be classified as SSR failures. No final monstop or loaded
++identity recheck was performed after the user's follow-up.
++
++The user reports no known 160 MHz signal source in the current environment;
++160 MHz RX testing is deferred, not classified as a driver failure. Wider
++80/160 MHz SSR, concurrent retuning/exit, NETDEV_TX_BUSY and long-duration
++or screen-off/resume behavior remain outside this validation. This update
++does not start another build or device test. Full records are in the workspace
++`oplus/说明/op13_v8_runtime_20260917.md` and `op13-v8-runtime-20260917/`.
+diff --git a/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md b/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md
+index 94da3ce..54d9490 100644
+--- a/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md
++++ b/ksu/op13_nethunter_ksu/docs/QUICK_MONITOR_GUIDE.md
+@@ -21,7 +21,7 @@ aireplay-ng --test -a <自有测试AP的BSSID> wlan0
+ 
+ ```sh
+ monstop            # 退出 con_mode=4，等待 managed 接口；不等于 Wi-Fi 已连接
+-sh /data/adb/modules/op13_nethunter_ksu/monitor_control.sh status
++sh /data/adb/modules/op13_coloros16_nethunter/monitor_control.sh status
+ # 模块实际安装目录不同时，请替换上述路径。
+ ```
+ 
+diff --git a/ksu/op13_nethunter_ksu/docs/README.md b/ksu/op13_nethunter_ksu/docs/README.md
+index cd4ee26..be6e117 100644
+--- a/ksu/op13_nethunter_ksu/docs/README.md
++++ b/ksu/op13_nethunter_ksu/docs/README.md
+@@ -1,18 +1,23 @@
+ # OnePlus 13 ColorOS16 NetHunter KernelSU Module
+ 
+-This v8 package uses native global monitor (`con_mode=4`, `wlan0`) with
+-sam-derived internal STA helper TX. It retains the WEXT and host qdisc fixes
+-and adds monitor SSR reconstruction: a separate saved channel context,
+-DP RX/power/channel restoration, guarded TX restart and firmware-down teardown.
+-WEXT queries and current 20 MHz channel confirmation are supported; use
+-nl80211 (`iw`) for actual channel changes. Loaded module identities are
+-checked against the binary ELF notes bundled under `module_build_ids/`.
++This v8.1 package updates the control scripts and documentation. All three
++WLAN module files are byte-for-byte identical to the stripped v8 payload.
++There is no new kernel build. Native global monitor uses `con_mode=4` and
++`wlan0` for RX, with sam-derived internal firmware-only STA helper TX.
+ 
+-v7 passed Probe, WEXT, 40/80 MHz RX/queue, mode transitions, ordinary Wi-Fi
+-and ten-minute hopping checks, but failed automatic monitor recovery after
+-an idle SSR. v8 contains the source fix, passed the unified build and has
+-13 passing host ASan/UBSan checks; it still needs device validation.
+-See `NATIVE_INJECTION.md` and `BUILD_INFO.txt` for scope and module identity.
++The scripts validate channel arguments before mode changes, propagate failures,
++roll back a failed new monitor session, and share a file lock across monitor,
++reset, hot-switch, Action and bind controls. Status distinguishes paused,
++channel-not-confirmed, TX-ready, RX-only and recovery states. Active hotspot/P2P
++checks help avoid interrupting an existing OPPO tablet-sharing session.
++See `QUICK_MONITOR_GUIDE.md` for behavior and limits.
++
++v8 modules passed targeted device checks for four SSR scenarios, Probe, WEXT,
++40 MHz receive-only queue handling, mode transitions and ordinary Wi-Fi.
++v8.1 control scripts passed 17 host regression tests plus the existing identity
++checks; this script revision has not been tested on the phone. 160 MHz RF
++reception and enabling tablet sharing during monitor remain unverified.
++See `NATIVE_INJECTION.md` and `BUILD_INFO.txt` for evidence and exact identities.
+ 
+ The three WLAN `.ko` files come from the integrated `sun perf` build with
+ `qca_inject/0001-add-qcacldko.patch` plus the sam-derived helper TX port, and are processed with `llvm-strip --strip-debug`.
+@@ -40,10 +45,10 @@ Manual controls:
+   - if current mode is stock: enable bind mounts, then switch to the NetHunter WLAN stack
+   - if current mode is NetHunter: restore the stock WLAN stack and remove bind mounts
+ - **Monitor mode + injection** (requires nethunter stack active)
+-  - `monstart [freq_MHz]` — switch `wlan0` into native global monitor mode
+-    - no freq: capture/scan only (airodump can hop all channels)
++  - `monstart [channel_or_freq_MHz]` — switch `wlan0` into native global monitor mode
++    - no argument: enter monitor without retuning; repeated start retains the current channel
+     - with freq (e.g. `monstart 5745`): locks the global monitor channel for injection
+-  - `monstop` — leave monitor, restore normal WiFi
++  - `monstop` — leave monitor and wait for the managed interface; this does not confirm a Wi-Fi connection
+   - See `docs/QUICK_MONITOR_GUIDE.md` for usage + injection notes
+   - **Note**: the peach_v2 path uses Qualcomm global monitor mode (`con_mode=4`) and keeps RX on the monitor vdev and submits TX through an internal firmware-only STA helper; no extra netdev is created
+ - `runtime_status.txt`
+diff --git a/ksu/op13_nethunter_ksu/module.prop b/ksu/op13_nethunter_ksu/module.prop
+index 0dd009d..9cfad70 100644
+--- a/ksu/op13_nethunter_ksu/module.prop
++++ b/ksu/op13_nethunter_ksu/module.prop
+@@ -1,6 +1,6 @@
+ id=op13_coloros16_nethunter
+ name=OnePlus 13 ColorOS16 NetHunter
+-version=2026.09.16-peach-native-global-v8
+-versionCode=2026091608
++version=2026.09.17-peach-native-global-v8.1
++versionCode=2026091701
+ author=shandongtlb
+-description=peach_v2 global monitor with sam-derived STA TX helper, WEXT-qdisc fixes and monitor SSR rebuild
++description=v8 WLAN modules with monitor control guards, shared operation lock and accurate TX/RX status
+diff --git "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md" "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
+index acfe748..4a17e3b 100644
+--- "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
++++ "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
+@@ -367,3 +367,19 @@ gitlink及原项目内容另已核对）；复核脚本`oplus/补丁/native_glob
+ 详见 [脚本保护记录](op13_script_guards_20260917.md)。新脚本在KSU源码目录，未部署或
+ 打入已交付v8 ZIP；无需重编内核。源码补丁仍至0014且两条重放结论不变；脚本改动另行
+ 导出到 `补丁/ksu_scripts/`，不混入内核合并补丁。
++
++
++## v8.1 脚本更新版已打包（2026-09-17）
++
++用户随后要求“打包吧”。已交付 `ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip`，
++7,070,037 bytes，SHA-256 `7c6496ba85f455c13afe304293b81dc0dcfd4601617765646aa5d87fcf950b15`。
++版本 `2026.09.17-peach-native-global-v8.1` / versionCode `2026091701`。
++
++沿用 v8 已 strip 的三个模块，逐字节/SHA/Build ID 与原 v8 ZIP 和历史清单一致；
++没有重新编译或再次 strip，不含 CNSS。所有 shell/命令脚本与脚本提交 `3bfce664`
++一致。包内更新版本、模块身份记录、验证说明及实际模块安装路径；新公共锁脚本
++已包含并保留执行权限。92个文件的ZIP CRC、逐项内容、权限、模块集合检查通过。
++旧v8 ZIP原哈希保持不变。新脚本尚未真机验收，本轮未部署或操作手机。
++
++持久证据：`说明/验证/op13-v8.1-package-20260917.json`；完整脚本、文件清单与暂存
++目录：`/root/pt/op13-v8.1-package-20260917/`。此前“新脚本尚未打包”已被本节更新。
+diff --git "a/\350\257\264\346\230\216/op13_script_guards_20260917.md" "b/\350\257\264\346\230\216/op13_script_guards_20260917.md"
+index bd4d9f1..80937be 100644
+--- "a/\350\257\264\346\230\216/op13_script_guards_20260917.md"
++++ "b/\350\257\264\346\230\216/op13_script_guards_20260917.md"
+@@ -62,3 +62,19 @@ Android 命令，不写手机。覆盖参数/禁用频道的零模式变更、
+ ShellCheck 对新公共脚本和监听脚本无 warning/error；所有改动 shell 文件语法检查。
+ 主机环境用 Linux sh/flock 和模拟 Android 输出，不证明手机 mksh/BusyBox、ColorOS
+ 具体 dumpsys 格式或真实模块重载行为。下一次脚本交付后再验收这些设备差异。
++
++
++## v8.1 脚本更新版已打包（2026-09-17）
++
++用户随后要求“打包吧”。已交付 `ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip`，
++7,070,037 bytes，SHA-256 `7c6496ba85f455c13afe304293b81dc0dcfd4601617765646aa5d87fcf950b15`。
++版本 `2026.09.17-peach-native-global-v8.1` / versionCode `2026091701`。
++
++沿用 v8 已 strip 的三个模块，逐字节/SHA/Build ID 与原 v8 ZIP 和历史清单一致；
++没有重新编译或再次 strip，不含 CNSS。所有 shell/命令脚本与脚本提交 `3bfce664`
++一致。包内更新版本、模块身份记录、验证说明及实际模块安装路径；新公共锁脚本
++已包含并保留执行权限。92个文件的ZIP CRC、逐项内容、权限、模块集合检查通过。
++旧v8 ZIP原哈希保持不变。新脚本尚未真机验收，本轮未部署或操作手机。
++
++持久证据：`说明/验证/op13-v8.1-package-20260917.json`；完整脚本、文件清单与暂存
++目录：`/root/pt/op13-v8.1-package-20260917/`。此前“新脚本尚未打包”已被本节更新。
+diff --git "a/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.1-package-20260917.json" "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.1-package-20260917.json"
+new file mode 100644
+index 0000000..158a02f
+--- /dev/null
++++ "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.1-package-20260917.json"
+@@ -0,0 +1,122 @@
++{
++  "archive": "/root/pt/oplus/ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip",
++  "bytes": 7070037,
++  "sha256": "7c6496ba85f455c13afe304293b81dc0dcfd4601617765646aa5d87fcf950b15",
++  "files": 92,
++  "version": "2026.09.17-peach-native-global-v8.1",
++  "version_code": 2026091701,
++  "packaged_utc": "2026-09-17T02:59:54.298000+00:00",
++  "script_commit": "3bfce6641c35b490adfddc0cba47bb19007c4639",
++  "kernel_build_commit": "30426bf8a3e1b57596ee741086e2c491617c58d1",
++  "kernel_current_commit": "3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb",
++  "original_archive_sha256": "ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a",
++  "modules": {
++    "cfg80211.ko": {
++      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/cfg80211.ko",
++      "raw_bytes": 10201736,
++      "raw_sha256": "b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c",
++      "bytes": 2070456,
++      "sha256": "488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626",
++      "build_id": "40533847cea5b0e9aeac19849b37f1dfc7dc9f44",
++      "build_id_note_sha256": "14f9436fa03a8da75c11059705c7599df9d4ae81a8fd7049455472cf94173140",
++      "vermagic": "6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64",
++      "depends": "rfkill",
++      "modversions": 195,
++      "allocated_sections_preserved": 43
++    },
++    "mac80211.ko": {
++      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/mac80211.ko",
++      "raw_bytes": 17277376,
++      "raw_sha256": "3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0",
++      "bytes": 1963888,
++      "sha256": "6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d",
++      "build_id": "abacfa26d25bc862a3383f8f21c4f3eccd333778",
++      "build_id_note_sha256": "d34583b9ac9aecb9b14208822628ba2cc995241386d0d708c76425a4d992b880",
++      "vermagic": "6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64",
++      "depends": "cfg80211,libarc4",
++      "modversions": 317,
++      "allocated_sections_preserved": 43
++    },
++    "qca_cld3_peach_v2.ko": {
++      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/qca_cld3_peach_v2.ko",
++      "raw_bytes": 513212536,
++      "raw_sha256": "f23d88a5121e2fe31753f564365c94d907002a9a6ab63e19bdb76a8619161d4d",
++      "bytes": 19785976,
++      "sha256": "a504e2d440037a241c07748f9076c36f9c39aa194e5977c66f5e903f6d974ea7",
++      "build_id": "ff0f34e4ea4eba64f788c495b3a9eabb401d3157",
++      "build_id_note_sha256": "54f54d0a8a516a55c475efa2b3719993a3202c9e5658e92a6ce52ace43abc4e8",
++      "vermagic": "6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64",
++      "depends": "cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers",
++      "modversions": 600,
++      "allocated_sections_preserved": 41,
++      "verified_symbols": [
++        "wma_inject_ensure_tx_vdev",
++        "wma_inject_mon_frame",
++        "wma_inject_resume",
++        "wma_inject_set_host_blocked",
++        "wma_inject_tx_ready",
++        "hdd_mon_wext_giwfreq",
++        "hdd_mon_wext_handler_def",
++        "wlan_hdd_mon_wext_get_freq",
++        "wlan_hdd_mon_wext_set_freq"
++      ],
++      "ssr_diagnostics_present": [
++        "[SSR] monitor RX and saved channel restored",
++        "[SSR] monitor restart failed at %s: %d"
++      ]
++    }
++  },
++  "script_hashes": {
++    "action.sh": "38932bba16c8bcaa6179164b82d5a4e01eff9af9e17f7485d28a14be1255c3f4",
++    "aireplay_test.sh": "d0836f27fb905a66c147ece93c67285f3c4cd68c4ec459d1030903333fb850b5",
++    "bind_mount_control.sh": "15de32a26cca00bea9a6021b4e71c905414c901d3057aef33abf6985a2f8d361",
++    "customize.sh": "a4454ff3070ab24071a633fd2d6853f2d5bd4f631cc58882d3b623c724bcaecd",
++    "enable_nethunter.sh": "56662407623846c595525a543398356365fbc3ff56391db9b21cde21cbbab63f",
++    "module_identity.sh": "5538a7e096cfcbdac84d248112adbc91b8d30bc25573682581dfb5a1d6097587",
++    "monitor_control.sh": "b1353ed414b0322c357b5535fb42a79ba776262b3aa9ff4b72dc18bd71b06edd",
++    "monstart": "ca28d04fab346eb86a8b5242f13917d0cb10838469b7c6ccafa51d45b104fe44",
++    "monstop": "5fa53503e5259ef60ece09cfb22d6066013c0658c15550971036b9edec8e4797",
++    "post-fs-data.sh": "9b3f534f7c4f6904e76d0b22d3d570898387823455914f1a9a77efe4283f13de",
++    "restore_stock_wifi.sh": "19ab5042cdfa5f1db41b60a58b8c044649f6e6afd44a53f0f8aaa44187fc132e",
++    "scanap": "2c3fed02a4f1278e7c1df47c748c7233b574a7c422071f756755c73dbfe34b87",
++    "service.sh": "a8a1ffa3b4d938d83fd92b7f510dfe8e89c3fd3e124de84eacb052eb94bd5172",
++    "show_status.sh": "066592ba9958e9857a023b0c93a52468526e29eba51fb966b42a203fe885fdc5",
++    "uninstall.sh": "f5fad5c7169396f878f27269b57cff953f5e67cb9f32ebe1fd6c36a60b1a4ea4",
++    "update_runtime_status.sh": "2155aed43b90fbead5400326fc1aab6b75c939ee187a82aec85ca59222af13b9",
++    "wlan_control_common.sh": "955d6d0dc4283f8c702db9f33e2c019aeb9c00f216ccb07a5bd912a21c1436b8",
++    "wlan_stack_control.sh": "0fec70d77e73980a82f8716ccd16f513dfb1e76e0763fdbeb466436e00e6950d"
++  },
++  "changed_vs_v8": [
++    "action.sh",
++    "aireplay_test.sh",
++    "bind_mount_control.sh",
++    "customize.sh",
++    "docs/BUILD_INFO.txt",
++    "docs/NATIVE_INJECTION.md",
++    "docs/QUICK_MONITOR_GUIDE.md",
++    "docs/README.md",
++    "module.prop",
++    "monitor_control.sh",
++    "monstop",
++    "service.sh",
++    "update_runtime_status.sh",
++    "wlan_stack_control.sh"
++  ],
++  "added_vs_v8": [
++    "wlan_control_common.sh"
++  ],
++  "removed_vs_v8": [],
++  "validation": {
++    "zip_crc_contents_permissions": true,
++    "identical_v8_modules": true,
++    "build_id_notes_match": true,
++    "already_stripped": true,
++    "exactly_three_modules": true,
++    "scripts_match_commit": true,
++    "host_regressions": 17
++  },
++  "build_performed": false,
++  "strip_performed": false,
++  "device_operations": false,
++  "script_device_tested": false
++}
+-- 
+2.53.0
+

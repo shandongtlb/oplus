@@ -1,0 +1,38 @@
+{
+  "base_commit": "af83a9622345530317a8c4b3cde61131477a292d",
+  "target_commit": "079372701e03382d9e968f8751b0d02333e431a8",
+  "target_tree": "a4aa77c02f267330645a6c06fc6b681ffc63543b",
+  "mail_replay_clean": true,
+  "mail_replay_directory": "/root/pt/op13-v8.1-runtime-20260917/script-replay",
+  "mail_steps": [
+    {
+      "patch": "0001-monitor-control-guards.patch",
+      "source_commit": "3bfce6641c35b490adfddc0cba47bb19007c4639",
+      "tree": "d11cce5f9ded3789719670b24388a5d68bc86de6",
+      "sha256": "bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790"
+    },
+    {
+      "patch": "0002-record-control-guard-export.patch",
+      "source_commit": "2889fd3e2dd8b4f52c35188b50e65f540bfd5a94",
+      "tree": "338956349e6ffc3dad397a0dc7b09c6710c6e2e8",
+      "sha256": "46f601d67bae3e7613cc4b663698507a2ed4a7e9eb58422243a4b7935a200015"
+    },
+    {
+      "patch": "0003-record-v8.1-package.patch",
+      "source_commit": "0b9e13ade8cb5a1c4857c8c9e0de9e527dfe7701",
+      "tree": "63ef124ce5c1ec48b3eebd7ec0ea045ea947ee18",
+      "sha256": "30986c1c0e6975d4bdb4dec1fd25c8823a6f892444bddefe40edd82fff9223e0"
+    },
+    {
+      "patch": "0004-fix-mksh-lock-and-wifi-state.patch",
+      "source_commit": "079372701e03382d9e968f8751b0d02333e431a8",
+      "tree": "a4aa77c02f267330645a6c06fc6b681ffc63543b",
+      "sha256": "f7bd083c2a862d74152931bf64323ac06d15977109ff90e4a4e2ccf995862005"
+    }
+  ],
+  "combined_sha256": "4baf3eda73eea8f82149795744fdcc421b1006adffefac20576fb1b5d8ec200d",
+  "combined_replay_tree": "a4aa77c02f267330645a6c06fc6b681ffc63543b",
+  "kernel_changed": false,
+  "package_changed": false,
+  "phone_scripts_patched": true
+}

@@ -1,19 +1,28 @@
-# KSU 脚本保护补丁
+# KSU 脚本补丁与真机修复
 
-此目录属于 `/root/pt/oplus` 脚本仓库，不应用到内核仓库，也不叠加到
-`native_global/0001-peach-v2-native-global-monitor.patch`。
+此目录应用到 `oplus` 仓库，不能应用到内核仓库。内核仍为3b8463c2，
+三个运行模块仍来自v8统一构建。现存v8.1 ZIP不含本轮mksh/ColorOS脚本修复。
 
-- 基线：`af83a9622345530317a8c4b3cde61131477a292d`
-- 脚本提交：`3bfce6641c35b490adfddc0cba47bb19007c4639`
-- 目标完整 tree：`d11cce5f9ded3789719670b24388a5d68bc86de6`
+基线：`af83a9622345530317a8c4b3cde61131477a292d`
+目标提交：`079372701e03382d9e968f8751b0d02333e431a8`
+目标完整tree：`a4aa77c02f267330645a6c06fc6b681ffc63543b`
 
-从上述脚本仓库基线应用：
+从基线依次应用四封补丁（两个中间提交保存此前导出记录和v8.1包元数据）：
 
 ```sh
-git am /path/to/0001-monitor-control-guards.patch
+git am /path/to/0001-monitor-control-guards.patch \
+       /path/to/0002-record-control-guard-export.patch \
+       /path/to/0003-record-v8.1-package.patch \
+       /path/to/0004-fix-mksh-lock-and-wifi-state.patch
 ```
 
-补丁包含脚本、17项主机回归和相关说明。临时索引从基线应用后完整tree与脚本提交相同，
-详见 `verification.json`。本目录自身的导出记录是后续文档提交，不属于补丁目标tree。
+已有v8.1打包提交 `0b9e13ade8cb5a1c4857c8c9e0de9e527dfe7701` 时只应用0004。
+也可从同一基线应用 `combined-monitor-control.patch`；不要与四封序列叠加。
 
-内核源码/模块未变，不需要重编；新脚本尚未打包或部署，现有v8 ZIP保持原样。
+四封逐个实际git am，每个完整tree与原提交相等，重放工作区干净；合并补丁
+另从基线应用到临时索引，最终完整tree相等。证据 `verification-runtime-fixes.json`。
+当前导出文件及此README属于后续导出记录，避免补丁递归包含自身，目标tree明确
+止于上述实现/实测提交。原 `verification.json` 仅是0001的历史验证。
+
+报告 `../../说明/op13_v8_1_runtime_20260917.md`：两处脚本修复已部署并验证；
+压力换频固件assert与scheduled-scan警告仍待查，不能称为全功能无故障。
