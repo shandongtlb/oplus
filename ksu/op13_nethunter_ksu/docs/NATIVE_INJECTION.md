@@ -171,7 +171,7 @@ repeating these tests; do not classify this first environment failure as a
 driver regression. Full evidence is in `/root/pt/op13-v7-runtime-20260916/`
 and the workspace report `oplus/说明/op13_v7_runtime_20260916.md`.
 
-## v7 extended testing and v8 SSR rebuild
+## v7 extended testing and SSR follow-up (built as v8)
 
 Further device testing on 2026-09-16 completed 601.3 seconds of mixed-width
 hopping: 517 phases, 6864 submitted/completed Probe frames, 1768 RX-only host
@@ -218,10 +218,67 @@ test covers live/dead firmware, failed enqueue, wait failure and missing vdev.
 The TX restore test covers the new readiness gate, full centers, RX-only
 queues and paused interfaces. Firmware/DP calls are modeled, not device proof.
 
-This v8 package includes the follow-up from source commit
-`30426bf8a3e1b57596ee741086e2c491617c58d1`. The single unified `sun perf`
-build and strip/package verification passed. v8 has not been deployed or
-tested on the phone. The older v7 ZIP still contains the demonstrated SSR
-failure. Next validate idle SSR before inflight SSR, including WEXT, RX,
-queue draining, DMA recovery and ordinary Wi-Fi. Host tests and a successful
-build do not establish firmware recovery. See `BUILD_INFO.txt` for identity.
+The follow-up was built and packaged as v8 from commit
+`30426bf8a3e1b57596ee741086e2c491617c58d1`. The older v7 ZIP still contains
+the demonstrated SSR failure. The following results are later evidence;
+this documentation update does not change the v8 runtime code.
+
+## v8 build and SSR device evidence (2026-09-17)
+
+The single unified `sun perf` build ran on 2026-09-16 from 18:10:43 to
+18:22:15 UTC. The three-module package was stripped with `--strip-debug`;
+no CNSS modules were added. ZIP SHA-256 is
+`ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a`,
+and qcacld Build ID is `ff0f34e4ea4eba64f788c495b3a9eabb401d3157`.
+
+After the user installed and hot-switched v8, all three installed module
+hashes and loaded Build ID notes matched the package. Four firmware SSR
+scenarios passed targeted checks, with the same boot ID after every SSR:
+
+- Idle channel 1/20 MHz: helper ready was first observed after 2.506 seconds;
+  the saved channel and WEXT were restored. Six new Probe requests completed,
+  with 166 Beacons and 16 addressed Probe responses captured.
+- During traffic: 640 host send calls overlapped the fault, with 32 inflight
+  and 30 queued frames observed. The queued frames were dropped and the
+  inflight frames were host-drained, not counted as firmware completions.
+  The uncertain DMA pool was retained, then reclaimed after fresh firmware
+  boot (`reset_reclaims=1`). Helper readiness returned after 2.115 seconds;
+  six new Probes completed, with 211 Beacons and 11 Probe responses captured.
+  Host send calls do not imply that all 640 frames reached the firmware.
+- Channel 1/40 MHz RX-only: recovery preserved primary 2412/center 2422 and
+  did not create a TX helper. The capture contained 207 Beacons. Six host
+  send attempts left TX counters unchanged and all qdiscs empty; retuning
+  to 20 MHz caused no old-frame transmission, while one new Probe completed.
+- Administratively down: IFF_UP stayed clear across SSR. An explicit up
+  restored the visible 2412/20 MHz channel. This checked the paused state;
+  it did not attempt sending while the interface was down.
+
+Normal Wi-Fi subsequently connected, obtained IPv4 and VALIDATED status,
+and scanned successfully. Full monitor exit/re-entry passed, with WEXT
+working and directed aireplay Probe responses of 20/30 without the negative
+channel override. The saved idle/traffic SSR logs show both monitor RX and
+TX restoration and no new checked kernel BUG/WARNING/Call trace/KASAN during
+the captured interval; complete logs for the later stages were not collected.
+
+The user unplugged USB before the final agent down/up command could run.
+The user then performed the requested phone-side follow-up and supplied
+monitor channel 1/20 MHz, working WEXT, and Probe results of 23/30 for
+`tdgcxh` at 01:12:59-01:13:03 (terminal timezone unspecified). This is a user
+report: the pasted excerpt omits the down/up commands and module identity.
+It is not an uninterrupted agent observation.
+
+The user's final counters were accepted=207, submitted=177, completed=145,
+dropped=30, drained=32, failed=60 and reset_reclaims=1. Queued/inflight/used/
+retained/timeouts/stale/retries/backpressure were zero. The two TX-count
+differences match the observed SSR queue drop and host drain. One DMA pool
+remained active (allocs=6, frees=5) with monitor still running. The earlier
+failed=30 matched NO_ACK; the later increase lacks a TX status breakdown
+and must not be classified as SSR failures. No final monstop or loaded
+identity recheck was performed after the user's follow-up.
+
+The user reports no known 160 MHz signal source in the current environment;
+160 MHz RX testing is deferred, not classified as a driver failure. Wider
+80/160 MHz SSR, concurrent retuning/exit, NETDEV_TX_BUSY and long-duration
+or screen-off/resume behavior remain outside this validation. This update
+does not start another build or device test. Full records are in the workspace
+`oplus/说明/op13_v8_runtime_20260917.md` and `op13-v8-runtime-20260917/`.

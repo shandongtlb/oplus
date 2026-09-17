@@ -62,3 +62,19 @@ Android 命令，不写手机。覆盖参数/禁用频道的零模式变更、�
 ShellCheck 对新公共脚本和监听脚本无 warning/error；所有改动 shell 文件语法检查。
 主机环境用 Linux sh/flock 和模拟 Android 输出，不证明手机 mksh/BusyBox、ColorOS
 具体 dumpsys 格式或真实模块重载行为。下一次脚本交付后再验收这些设备差异。
+
+
+## v8.1 脚本更新版已打包（2026-09-17）
+
+用户随后要求“打包吧”。已交付 `ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip`，
+7,070,037 bytes，SHA-256 `7c6496ba85f455c13afe304293b81dc0dcfd4601617765646aa5d87fcf950b15`。
+版本 `2026.09.17-peach-native-global-v8.1` / versionCode `2026091701`。
+
+沿用 v8 已 strip 的三个模块，逐字节/SHA/Build ID 与原 v8 ZIP 和历史清单一致；
+没有重新编译或再次 strip，不含 CNSS。所有 shell/命令脚本与脚本提交 `3bfce664`
+一致。包内更新版本、模块身份记录、验证说明及实际模块安装路径；新公共锁脚本
+已包含并保留执行权限。92个文件的ZIP CRC、逐项内容、权限、模块集合检查通过。
+旧v8 ZIP原哈希保持不变。新脚本尚未真机验收，本轮未部署或操作手机。
+
+持久证据：`说明/验证/op13-v8.1-package-20260917.json`；完整脚本、文件清单与暂存
+目录：`/root/pt/op13-v8.1-package-20260917/`。此前“新脚本尚未打包”已被本节更新。

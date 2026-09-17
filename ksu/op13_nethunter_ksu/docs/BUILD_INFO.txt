@@ -1,77 +1,45 @@
-OnePlus 13 peach_v2 native global monitor + sam-derived helper TX package
+OnePlus 13 peach_v2 native global monitor — v8.1 control-script update
 
-Package: 2026.09.16-peach-native-global-v8 / versionCode 2026091608
-Source commit: 30426bf8a3e1b57596ee741086e2c491617c58d1
-Source tree: a3215426a531edd58dd9636b262da0296bac76e4
-Source status: WLAN worktree clean; source unchanged throughout the build.
-Existing oplus_modules_variant.bzl workspace configuration was retained.
-Build started UTC: 2026-09-16T18:10:43+00:00
-Build finished UTC: 2026-09-16T18:22:15+00:00
-Elapsed seconds: 692.45
-Target: sun perf, peach_v2, ARM64 4 KiB
-Build command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
-One unified build completed successfully; no rebuild was run for packaging.
-Build evidence: /root/pt/op13-ssr-build-20260916/build.log
-Host tests: /root/pt/op13-ssr-fix-20260916/host-tests.json
-Implementation: global con_mode=4 monitor wlan0 owns RX; sam-derived internal STA helper owns TX.
-v8 includes the 0013 monitor SSR reconstruction fix, plus all v7 WEXT/qdisc changes.
-The bounded queue, completion-driven worker and DMA recovery boundaries remain.
+Package: 2026.09.17-peach-native-global-v8.1 / versionCode 2026091701
+Packaged UTC: 2026-09-17T02:59:54.298000+00:00
+Script implementation commit (oplus repository): 3bfce6641c35b490adfddc0cba47bb19007c4639
+Package input repository commit: 2889fd3e2dd8b4f52c35188b50e65f540bfd5a94
+Script patch SHA-256: bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790
+Package metadata and documentation were refreshed during packaging.
+Kernel build source commit: 30426bf8a3e1b57596ee741086e2c491617c58d1
+Current kernel source commit: 3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb (documentation-only changes since build)
+Current combined kernel patch SHA-256: a6b1cd91130995fb8e837e000b0ae89c5a98d3991f27b028c6bb22342ac05ce9
 
-Payload: exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko.
-Input: kernel_platform/out/msm-kernel-sun-perf/dist from this unified build.
-Strip: llvm-strip --strip-debug on package copies; raw build outputs preserved.
-CNSS modules are build dependencies only and are not packaged.
-Unchanged cfg80211/mac80211 may be reused by the unified build cache.
+Module origin:
+- Reuse the exact three already-stripped files from the verified v8 payload.
+- Original unified build: 2026-09-16 18:10:43–18:22:15 UTC, sun perf, ARM64 4 KiB.
+- Build command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+- Original strip: llvm-strip --strip-debug on copies; raw build outputs preserved.
+- No rebuild or second strip was performed for v8.1.
+- Exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko; no CNSS modules.
+- Original archive: op13_nethunter_ksu-peach-native-global-v8-integrated.zip
+- Original archive SHA-256: ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a
 
 Validation:
-- ARM64 relocatable ELF; no debug sections remain after strip.
-- Every allocated ELF section, .modinfo, __versions and Build ID note matches raw input.
-- Required helper/WEXT symbols and new SSR diagnostics are present.
-- All 13 host ASan/UBSan checks passed on the identical source files.
-- ZIP CRC, payload bytes, binary Build ID notes and executable permissions verified.
-- No device deployment or phone test was performed for v8; SSR still needs device validation.
-- These checks do not validate every ROM dependency CRC or firmware/RF behavior.
-
-Combined source patch SHA-256: c539c1ef09cc68390eb8350894f698ea2f8caa048108ce39db2025da606ab89c
+- Modules byte-identical to v8, ARM64 relocatable, no debug sections.
+- Loaded identity notes equal the ELF Build ID sections and v8 records.
+- All shell/command scripts equal the committed script implementation.
+- 17 script host regressions and existing Build ID/unload regression passed.
+- New control scripts passed ShellCheck; changed shell scripts passed syntax checks.
+- ZIP CRC, every file's bytes, module set and file permissions verified.
+- v8 modules previously passed targeted phone checks documented in NATIVE_INJECTION.md.
+- v8.1 scripts have not been deployed or phone-tested; no device action in this packaging run.
 
 Module manifest:
-- cfg80211.ko: 2070456 bytes stripped (raw 10201736)
+- cfg80211.ko: 2070456 bytes
   sha256 488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626
-  raw_sha256 b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c
   Build ID 40533847cea5b0e9aeac19849b37f1dfc7dc9f44
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
-  depends rfkill
-- mac80211.ko: 1963888 bytes stripped (raw 17277376)
+- mac80211.ko: 1963888 bytes
   sha256 6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d
-  raw_sha256 3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0
   Build ID abacfa26d25bc862a3383f8f21c4f3eccd333778
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
-  depends cfg80211,libarc4
-- qca_cld3_peach_v2.ko: 19785976 bytes stripped (raw 513212536)
+- qca_cld3_peach_v2.ko: 19785976 bytes
   sha256 a504e2d440037a241c07748f9076c36f9c39aa194e5977c66f5e903f6d974ea7
-  raw_sha256 f23d88a5121e2fe31753f564365c94d907002a9a6ab63e19bdb76a8619161d4d
   Build ID ff0f34e4ea4eba64f788c495b3a9eabb401d3157
   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
-  depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
-
-Completed unified build phases:
-kpl-time-check kernel start 18:10:43
-kpl-time-check kernel end 18:11:08
-kpl-time-check oplus DDK start 18:11:08
-kpl-time-check oplus DDK end 18:17:13
-kpl-time-check kernel copy start 18:17:13
-kpl-time-check kernel copy end 18:17:14
-kpl-time-check Preparing UAPI headers start 18:17:18
-kpl-time-check Preparing UAPI headers end 18:17:18
-kpl-time-check setting up Android tree start 18:17:18
-kpl-time-check setting up Android tree end 18:17:21
-kpl-time-check Building WLAN platform start 18:17:21
-kpl-time-check Building WLAN platform end 18:17:30
-kpl-time-check Building WLAN qcacld start 18:17:30
-kpl-time-check Building WLAN qcacld end 18:20:36
-kpl-time-check Installing WLAN modules start 18:20:36
-kpl-time-check Installing WLAN modules end 18:20:36
-kpl-time-check Compiling vendor devicetree start 18:20:36
-kpl-time-check Compiling vendor devicetree end 18:20:41
-kpl-time-check Merging vendor devicetree start 18:20:41
-kpl-time-check Merging vendor devicetree end 18:21:53

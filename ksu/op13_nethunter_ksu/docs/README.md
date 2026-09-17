@@ -1,18 +1,23 @@
 # OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
-This v8 package uses native global monitor (`con_mode=4`, `wlan0`) with
-sam-derived internal STA helper TX. It retains the WEXT and host qdisc fixes
-and adds monitor SSR reconstruction: a separate saved channel context,
-DP RX/power/channel restoration, guarded TX restart and firmware-down teardown.
-WEXT queries and current 20 MHz channel confirmation are supported; use
-nl80211 (`iw`) for actual channel changes. Loaded module identities are
-checked against the binary ELF notes bundled under `module_build_ids/`.
+This v8.1 package updates the control scripts and documentation. All three
+WLAN module files are byte-for-byte identical to the stripped v8 payload.
+There is no new kernel build. Native global monitor uses `con_mode=4` and
+`wlan0` for RX, with sam-derived internal firmware-only STA helper TX.
 
-v7 passed Probe, WEXT, 40/80 MHz RX/queue, mode transitions, ordinary Wi-Fi
-and ten-minute hopping checks, but failed automatic monitor recovery after
-an idle SSR. v8 contains the source fix, passed the unified build and has
-13 passing host ASan/UBSan checks; it still needs device validation.
-See `NATIVE_INJECTION.md` and `BUILD_INFO.txt` for scope and module identity.
+The scripts validate channel arguments before mode changes, propagate failures,
+roll back a failed new monitor session, and share a file lock across monitor,
+reset, hot-switch, Action and bind controls. Status distinguishes paused,
+channel-not-confirmed, TX-ready, RX-only and recovery states. Active hotspot/P2P
+checks help avoid interrupting an existing OPPO tablet-sharing session.
+See `QUICK_MONITOR_GUIDE.md` for behavior and limits.
+
+v8 modules passed targeted device checks for four SSR scenarios, Probe, WEXT,
+40 MHz receive-only queue handling, mode transitions and ordinary Wi-Fi.
+v8.1 control scripts passed 17 host regression tests plus the existing identity
+checks; this script revision has not been tested on the phone. 160 MHz RF
+reception and enabling tablet sharing during monitor remain unverified.
+See `NATIVE_INJECTION.md` and `BUILD_INFO.txt` for evidence and exact identities.
 
 The three WLAN `.ko` files come from the integrated `sun perf` build with
 `qca_inject/0001-add-qcacldko.patch` plus the sam-derived helper TX port, and are processed with `llvm-strip --strip-debug`.
@@ -40,10 +45,10 @@ Manual controls:
   - if current mode is stock: enable bind mounts, then switch to the NetHunter WLAN stack
   - if current mode is NetHunter: restore the stock WLAN stack and remove bind mounts
 - **Monitor mode + injection** (requires nethunter stack active)
-  - `monstart [freq_MHz]` — switch `wlan0` into native global monitor mode
-    - no freq: capture/scan only (airodump can hop all channels)
+  - `monstart [channel_or_freq_MHz]` — switch `wlan0` into native global monitor mode
+    - no argument: enter monitor without retuning; repeated start retains the current channel
     - with freq (e.g. `monstart 5745`): locks the global monitor channel for injection
-  - `monstop` — leave monitor, restore normal WiFi
+  - `monstop` — leave monitor and wait for the managed interface; this does not confirm a Wi-Fi connection
   - See `docs/QUICK_MONITOR_GUIDE.md` for usage + injection notes
   - **Note**: the peach_v2 path uses Qualcomm global monitor mode (`con_mode=4`) and keeps RX on the monitor vdev and submits TX through an internal firmware-only STA helper; no extra netdev is created
 - `runtime_status.txt`

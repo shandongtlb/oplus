@@ -1,0 +1,122 @@
+{
+  "archive": "/root/pt/oplus/ksu/op13_nethunter_ksu-peach-native-global-v8.1-integrated.zip",
+  "bytes": 7070037,
+  "sha256": "7c6496ba85f455c13afe304293b81dc0dcfd4601617765646aa5d87fcf950b15",
+  "files": 92,
+  "version": "2026.09.17-peach-native-global-v8.1",
+  "version_code": 2026091701,
+  "packaged_utc": "2026-09-17T02:59:54.298000+00:00",
+  "script_commit": "3bfce6641c35b490adfddc0cba47bb19007c4639",
+  "kernel_build_commit": "30426bf8a3e1b57596ee741086e2c491617c58d1",
+  "kernel_current_commit": "3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb",
+  "original_archive_sha256": "ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a",
+  "modules": {
+    "cfg80211.ko": {
+      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/cfg80211.ko",
+      "raw_bytes": 10201736,
+      "raw_sha256": "b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c",
+      "bytes": 2070456,
+      "sha256": "488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626",
+      "build_id": "40533847cea5b0e9aeac19849b37f1dfc7dc9f44",
+      "build_id_note_sha256": "14f9436fa03a8da75c11059705c7599df9d4ae81a8fd7049455472cf94173140",
+      "vermagic": "6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64",
+      "depends": "rfkill",
+      "modversions": 195,
+      "allocated_sections_preserved": 43
+    },
+    "mac80211.ko": {
+      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/mac80211.ko",
+      "raw_bytes": 17277376,
+      "raw_sha256": "3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0",
+      "bytes": 1963888,
+      "sha256": "6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d",
+      "build_id": "abacfa26d25bc862a3383f8f21c4f3eccd333778",
+      "build_id_note_sha256": "d34583b9ac9aecb9b14208822628ba2cc995241386d0d708c76425a4d992b880",
+      "vermagic": "6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64",
+      "depends": "cfg80211,libarc4",
+      "modversions": 317,
+      "allocated_sections_preserved": 43
+    },
+    "qca_cld3_peach_v2.ko": {
+      "source": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/qca_cld3_peach_v2.ko",
+      "raw_bytes": 513212536,
+      "raw_sha256": "f23d88a5121e2fe31753f564365c94d907002a9a6ab63e19bdb76a8619161d4d",
+      "bytes": 19785976,
+      "sha256": "a504e2d440037a241c07748f9076c36f9c39aa194e5977c66f5e903f6d974ea7",
+      "build_id": "ff0f34e4ea4eba64f788c495b3a9eabb401d3157",
+      "build_id_note_sha256": "54f54d0a8a516a55c475efa2b3719993a3202c9e5658e92a6ce52ace43abc4e8",
+      "vermagic": "6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64",
+      "depends": "cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers",
+      "modversions": 600,
+      "allocated_sections_preserved": 41,
+      "verified_symbols": [
+        "wma_inject_ensure_tx_vdev",
+        "wma_inject_mon_frame",
+        "wma_inject_resume",
+        "wma_inject_set_host_blocked",
+        "wma_inject_tx_ready",
+        "hdd_mon_wext_giwfreq",
+        "hdd_mon_wext_handler_def",
+        "wlan_hdd_mon_wext_get_freq",
+        "wlan_hdd_mon_wext_set_freq"
+      ],
+      "ssr_diagnostics_present": [
+        "[SSR] monitor RX and saved channel restored",
+        "[SSR] monitor restart failed at %s: %d"
+      ]
+    }
+  },
+  "script_hashes": {
+    "action.sh": "38932bba16c8bcaa6179164b82d5a4e01eff9af9e17f7485d28a14be1255c3f4",
+    "aireplay_test.sh": "d0836f27fb905a66c147ece93c67285f3c4cd68c4ec459d1030903333fb850b5",
+    "bind_mount_control.sh": "15de32a26cca00bea9a6021b4e71c905414c901d3057aef33abf6985a2f8d361",
+    "customize.sh": "a4454ff3070ab24071a633fd2d6853f2d5bd4f631cc58882d3b623c724bcaecd",
+    "enable_nethunter.sh": "56662407623846c595525a543398356365fbc3ff56391db9b21cde21cbbab63f",
+    "module_identity.sh": "5538a7e096cfcbdac84d248112adbc91b8d30bc25573682581dfb5a1d6097587",
+    "monitor_control.sh": "b1353ed414b0322c357b5535fb42a79ba776262b3aa9ff4b72dc18bd71b06edd",
+    "monstart": "ca28d04fab346eb86a8b5242f13917d0cb10838469b7c6ccafa51d45b104fe44",
+    "monstop": "5fa53503e5259ef60ece09cfb22d6066013c0658c15550971036b9edec8e4797",
+    "post-fs-data.sh": "9b3f534f7c4f6904e76d0b22d3d570898387823455914f1a9a77efe4283f13de",
+    "restore_stock_wifi.sh": "19ab5042cdfa5f1db41b60a58b8c044649f6e6afd44a53f0f8aaa44187fc132e",
+    "scanap": "2c3fed02a4f1278e7c1df47c748c7233b574a7c422071f756755c73dbfe34b87",
+    "service.sh": "a8a1ffa3b4d938d83fd92b7f510dfe8e89c3fd3e124de84eacb052eb94bd5172",
+    "show_status.sh": "066592ba9958e9857a023b0c93a52468526e29eba51fb966b42a203fe885fdc5",
+    "uninstall.sh": "f5fad5c7169396f878f27269b57cff953f5e67cb9f32ebe1fd6c36a60b1a4ea4",
+    "update_runtime_status.sh": "2155aed43b90fbead5400326fc1aab6b75c939ee187a82aec85ca59222af13b9",
+    "wlan_control_common.sh": "955d6d0dc4283f8c702db9f33e2c019aeb9c00f216ccb07a5bd912a21c1436b8",
+    "wlan_stack_control.sh": "0fec70d77e73980a82f8716ccd16f513dfb1e76e0763fdbeb466436e00e6950d"
+  },
+  "changed_vs_v8": [
+    "action.sh",
+    "aireplay_test.sh",
+    "bind_mount_control.sh",
+    "customize.sh",
+    "docs/BUILD_INFO.txt",
+    "docs/NATIVE_INJECTION.md",
+    "docs/QUICK_MONITOR_GUIDE.md",
+    "docs/README.md",
+    "module.prop",
+    "monitor_control.sh",
+    "monstop",
+    "service.sh",
+    "update_runtime_status.sh",
+    "wlan_stack_control.sh"
+  ],
+  "added_vs_v8": [
+    "wlan_control_common.sh"
+  ],
+  "removed_vs_v8": [],
+  "validation": {
+    "zip_crc_contents_permissions": true,
+    "identical_v8_modules": true,
+    "build_id_notes_match": true,
+    "already_stripped": true,
+    "exactly_three_modules": true,
+    "scripts_match_commit": true,
+    "host_regressions": 17
+  },
+  "build_performed": false,
+  "strip_performed": false,
+  "device_operations": false,
+  "script_device_tested": false
+}

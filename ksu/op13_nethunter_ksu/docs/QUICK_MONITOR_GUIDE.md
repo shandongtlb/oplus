@@ -21,7 +21,7 @@ aireplay-ng --test -a <自有测试AP的BSSID> wlan0
 
 ```sh
 monstop            # 退出 con_mode=4，等待 managed 接口；不等于 Wi-Fi 已连接
-sh /data/adb/modules/op13_nethunter_ksu/monitor_control.sh status
+sh /data/adb/modules/op13_coloros16_nethunter/monitor_control.sh status
 # 模块实际安装目录不同时，请替换上述路径。
 ```
 
