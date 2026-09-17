@@ -333,3 +333,19 @@ failed60中先前30对应NO_ACK，新增30缺TX状态明细，不能归因为SSR
 补丁内容或ZIP，也未编译。80/160 MHz SSR、160 MHz RX、并发换频和长期耐久性
 不在本轮结论内。完整结果见[v8报告](op13_v8_runtime_20260917.md)及
 [证据摘要](验证/op13-v8-runtime-20260917.json)。历史“v8待真机验证”以本节为准。
+
+## v8 源码提交与补丁一致性收尾（2026-09-17）
+
+用户要求commit/补丁完整收尾：源码新增文档提交`3b8463c2`，正式序列至0014，
+合并补丁已更新。运行时代码与v8构建30426bf8完全一致，0014仅同步构建、SSR及
+用户补测记录；当前环境没有已知160 MHz信号源，该项保留未验证，不判断为故障。
+从明确基线4d69a3ed创建两个独立完整checkout，实际逐封git am十四封邮件补丁，
+以及应用“构建接入+合并补丁”；每封tree对应源提交，最终完整tree均为
+`ecae96f26a9713a501edc9950f90731be0375c9d`，与源码HEAD一致，两目录status干净。
+逐文件校验当前非.repo受控文件的字节和权限，36个gitlink修订及子项目受控内容均一致。
+构建生成的sun配置和15个子项目内24个Android.bp/Android.mk删除已保存现场并还原。
+原源码目录仍有活动.repo元数据变化和构建产物：.git本身指向.repo/projects/..git，
+不能声称原目录git status全空，不能回滚活动index/HEAD或把它们打入源码补丁。
+实际重放副本：`op13-v8-closeout-20260917/replay/{mail,combined}/`（未展开子项目，
+gitlink及原项目内容另已核对）；复核脚本`oplus/补丁/native_global/verify_replay.py`。
+持久证据`oplus/说明/验证/op13-v8-closeout-20260917.json`。未编译、操作手机或改v8 ZIP。

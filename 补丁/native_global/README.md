@@ -29,7 +29,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 第一项只接入 `prepare_vendor.sh` 的 WLAN 统一构建，必需保留。第二项是当前
 原生全局实现的合并 diff。不要叠加旧 `qca_inject/0002-0017`。
 
-也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十三个邮件补丁。
+也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十四个邮件补丁。
 这与上面的两项应用方式二选一。对应源码提交：
 
 - `d20c69af`：WLAN 统一构建接入。
@@ -45,16 +45,40 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 - `c79b6f65`：sam WEXT handlers/频道确认与主机 qdisc 切换边界；完整保留 v7 构建快照的 11 个文件。
 - `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
 - `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；v8构建和四种SSR场景验证通过。
+- `3b8463c2`：同步v8构建、四种SSR真机验证、用户补测及160 MHz缺测试条件的结论；仅文档。
 
 v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
 不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
 v7的十二封邮件补丁曾重放到`422e8a00abf0521a986311b445c014a946a822ef`。
-当前含0013的十三封邮件补丁和两项合并应用方案已从基线用隔离index重放，完整tree
-均为`a3215426a531edd58dd9636b262da0296bac76e4`，与`30426bf8`一致。
-证据见`op13-ssr-fix-20260916/patch-replay.json`。
-可随仓库保存的摘要见 [v7 收尾校验记录](../../说明/验证/op13-v7-closeout-20260916.json)。
-若已应用旧v6至0010，追加0011–0013；已应用v7至0012，只追加0013。
+0013结束时tree为`a3215426a531edd58dd9636b262da0296bac76e4`，对应实际v8构建源码
+`30426bf8`。0014只同步验证文档，当前目标提交为
+`3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb`，完整tree为
+`ecae96f26a9713a501edc9950f90731be0375c9d`。除文档外与v8构建逐文件一致。
+收尾在两个独立完整checkout中，从干净基线实际执行十四封`git am`和两项
+`git apply --index`，比较每封提交tree及最终完整tree，见
+[v8补丁重放校验](../../说明/验证/op13-v8-closeout-20260917.json)。
+若已应用旧v6至0010，追加0011–0014；已应用v7至0012，追加0013–0014；
+已应用v8至0013，只追加0014。
 不要在旧补丁上重复叠加合并补丁。
+
+可在主机重新运行校验，输出目录需使用一个新目录；不会编译或操作手机：
+
+```sh
+python3 /root/pt/oplus/补丁/native_global/verify_replay.py \
+  --source /root/pt/oneplus13-kernel-b \
+  --target 3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb \
+  --output /tmp/op13-patch-replay
+```
+
+校验范围包括全部受版本管理文件的内容、权限、符号链接及36个gitlink修订；
+源工作区还逐文件核对非`.repo`文件，递归确认子项目受控文件干净。
+`4d69a3ed`是本仓库明确基线，不能替换成任意上游版本。基线已有kernel/prebuilt
+子项目，补丁不负责下载它们；独立校验目录不初始化子项目，gitlink修订逐项核对。
+该仓库历史上把`.repo`纳入版本管理，原目录`.git`又指向`.repo/projects/..git`，
+其中HEAD/index/日志会随Git操作变化，不应提交或还原活动元数据。完整tree比较
+包含其已提交版本；当前`.repo`运行时状态、缓存和构建产物不属于源码一致性承诺。
+构建生成的`oplus_modules_variant.bzl`及子项目24个Android.bp/Android.mk删除已保存
+现场并还原；统一构建入口下次会再次生成这些内容。原日志和产物继续保留。
 
 构建日志必须包含 kernel、WLAN platform、WLAN qcacld、Installing WLAN modules
 及 DT 合并完成阶段；外层脚本退出码不能单独证明内部成功。
