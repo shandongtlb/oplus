@@ -178,11 +178,11 @@ case "$1" in
     [ "$#" -le 2 ] || { die '用法: monstart [频道或 MHz 频率]'; exit 1; }
     # Validate syntax before taking the lock or changing any state.
     [ "$#" -lt 2 ] || chan_to_freq "$2" >/dev/null || { die "无效频道: $2"; exit 1; }
-    wlan_control_lock || exit 1
+    wlan_control_lock "$@" || exit 1
     mon_on "${2:-}";;
   off|disable|stop|reset|restart)
     [ "$#" -eq 1 ] || { die '此操作不接受额外参数'; exit 1; }
-    wlan_control_lock || exit 1
+    wlan_control_lock "$@" || exit 1
     case "$1" in off|disable|stop) mon_off;; *) mon_reset;; esac;;
   status|"") mon_status;;
   *) echo "usage: $0 [on [channel/freq]|off|reset|status]" >&2; exit 1;;

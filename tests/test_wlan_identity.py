@@ -46,3 +46,17 @@ unload_module() { echo "$1"; [ "$1" != qca_cld3_peach_v2 ]; }
 out=run(mock+func(s,'prepare_switch')+'if prepare_switch; then exit 1; fi')
 assert out.splitlines()[-1]=='qca_cld3_peach_v2' and 'cfg80211' not in out
 print('Loaded Build ID, stale marker, userspace quiescence and core unload failure checks passed')
+# Runtime status takes priority over stale ColorOS wifi_on and scan prose.
+mock='''
+settings() { echo 1; }
+cmd() { printf 'Wifi is disabled\\nWifi scanning is only available when wifi is enabled\\n'; }
+dumpsys() { echo 'Wi-Fi is enabled'; }
+'''
+assert run(mock+func(s,'wifi_is_enabled')+'if wifi_is_enabled; then exit 1; fi; echo passed')=='passed'
+mock='''
+settings() { echo 0; }
+cmd() { echo 'Wifi is enabled'; }
+dumpsys() { echo 'Wi-Fi is disabled'; }
+'''
+assert run(mock+func(s,'wifi_is_enabled')+'wifi_is_enabled; echo passed')=='passed'
+print('Current Wi-Fi state overrides stale settings and scan-only prose: passed')

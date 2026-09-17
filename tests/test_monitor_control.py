@@ -258,8 +258,10 @@ class MonitorControl(unittest.TestCase):
         self.assertEqual(self.run_script('monitor_control.sh', 'on', '1').returncode, 0)
 
     def test_lock_released_on_killed_owner(self):
-        script = f'MODDIR={shlex.quote(str(self.mod))}; . "$MODDIR/wlan_control_common.sh"; wlan_control_lock || exit 1; echo ready; read line'
-        proc = subprocess.Popen(['sh', '-c', script], env=self.env, text=True,
+        script = f'MODDIR={shlex.quote(str(self.mod))}; . "$MODDIR/wlan_control_common.sh"; wlan_control_lock "$@" || exit 1; echo ready; read line'
+        holder = self.mod / 'hold-lock.sh'
+        holder.write_text(script)
+        proc = subprocess.Popen(['sh', str(holder)], env=self.env, text=True,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             self.assertEqual(proc.stdout.readline().strip(), 'ready')

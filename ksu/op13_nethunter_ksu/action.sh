@@ -14,7 +14,7 @@ if [ ! -x "$MODDIR/wlan_stack_control.sh" ]; then
   exit 1
 fi
 
-wlan_control_lock || exit 1
+wlan_control_lock "$@" || exit 1
 wlan_check_sharing || exit 1
 
 if [ "$(payload_stack_mode)" = nethunter ]; then

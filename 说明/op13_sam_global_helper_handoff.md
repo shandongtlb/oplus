@@ -383,3 +383,23 @@ gitlink及原项目内容另已核对）；复核脚本`oplus/补丁/native_glob
 
 持久证据：`说明/验证/op13-v8.1-package-20260917.json`；完整脚本、文件清单与暂存
 目录：`/root/pt/op13-v8.1-package-20260917/`。此前“新脚本尚未打包”已被本节更新。
+
+
+## v8.1 真机补测：脚本已热修，驱动压力故障待查（2026-09-17）
+
+用户新授权手机全项补测，已执行，覆盖锁/参数/真实热点/P2P防呆、监听内请求共享、
+reset、stock/payload往返、带流量down/up与退出、80/160MHz SSR、短时定频压力、
+换频队列、息屏和交互式airodump。mksh FD close-on-exec导致旧flock失败、ColorOS
+Wi-Fi状态误判两处脚本问题已修复并备份后部署手机，主机回归通过。
+
+长时边注入边换频在约110秒触发非主动固件assert：0x1f07818:0x1f0134c,line1444；
+发生在helper STOP确认前，SSR自动恢复，Probe随后正常，但该压力项失败。无注入
+300次同序列换频通过，仅缩小范围。不得改测试把EAGAIN忽略后当通过，不加固定
+sleep掩盖；下一步拆20MHz同/跨频段与20↔宽带宽，并查helper peer/STOP生命周期。
+另一次旧Wi-Fi误判后的模式切换在cfg80211 core.c1535出现残留PNO请求WARNING，
+根因尚未修。真正suspend、160MHz空口RX、平板端共享及长期稳定性仍不能宣称通过。
+
+收尾con_mode0、pool2/2无残留、Wi-Fi重新连接且VALIDATED、始终扫描1、Dozing，
+boot未变。手机三模块仍v8；源码HEAD3b8463c2未改、无编译。手机五个脚本已热修
+但module.prop暂仍v8.1；现存v8.1 ZIP仍为旧脚本，后续打包必须用本轮修复。
+报告[真机补测](op13_v8_1_runtime_20260917.md)，证据op13-v8.1-runtime-20260917/。

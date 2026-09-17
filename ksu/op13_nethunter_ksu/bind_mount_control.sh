@@ -145,7 +145,7 @@ for arg in "$@"; do
 done
 
 case "$COMMAND" in
-  on|off|apply_if_enabled|apply|remove) wlan_control_lock || exit 1;;
+  on|off|apply_if_enabled|apply|remove) wlan_control_lock "$@" || exit 1;;
 esac
 
 case "$COMMAND" in

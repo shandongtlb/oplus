@@ -12,12 +12,16 @@ channel-not-confirmed, TX-ready, RX-only and recovery states. Active hotspot/P2P
 checks help avoid interrupting an existing OPPO tablet-sharing session.
 See `QUICK_MONITOR_GUIDE.md` for behavior and limits.
 
-v8 modules passed targeted device checks for four SSR scenarios, Probe, WEXT,
-40 MHz receive-only queue handling, mode transitions and ordinary Wi-Fi.
-v8.1 control scripts passed 17 host regression tests plus the existing identity
-checks; this script revision has not been tested on the phone. 160 MHz RF
-reception and enabling tablet sharing during monitor remain unverified.
-See `NATIVE_INJECTION.md` and `BUILD_INFO.txt` for evidence and exact identities.
+The control scripts now include the phone-tested mksh flock inheritance and
+ColorOS Wi-Fi status fixes. Reset, stack switching, hotspot/P2P guards and
+80/160 MHz SSR were exercised on the phone. Continuous injection combined
+with rapid retuning triggered one firmware assert; automatic recovery and
+subsequent Probe worked, but endurance has not passed. A scheduled-scan
+warning on a mode transition also remains under investigation.
+The existing v8.1 ZIP predates these script fixes. This source directory is
+newer than that archive; BUILD_INFO.txt still describes its packaged snapshot.
+160 MHz RF reception, actual system suspend and tablet sharing end-to-end
+remain unverified. See the runtime report in the workspace documentation.
 
 The three WLAN `.ko` files come from the integrated `sun perf` build with
 `qca_inject/0001-add-qcacldko.patch` plus the sam-derived helper TX port, and are processed with `llvm-strip --strip-debug`.

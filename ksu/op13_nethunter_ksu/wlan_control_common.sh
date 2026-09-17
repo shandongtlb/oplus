@@ -27,11 +27,12 @@ wlan_control_lock() {
     wlan_flock -n 9 || { wlan_error '已有 WLAN 操作进行中，请稍后重试。'; return 1; }
     return 0
   fi
+  # Android mksh marks `exec 9>file` descriptors close-on-exec. Open the FD
+  # as part of the actual exec instead, so flock and nested scripts inherit it.
+  # Re-enter the original command with all arguments before any mutation.
   # Never unlink this file: replacing its inode would allow two owners.
-  exec 9>"$wlan_lock_path" || return 1
-  wlan_flock -n 9 || { wlan_error '已有 WLAN 操作进行中，请稍后重试。'; return 1; }
-  OP13_WLAN_LOCK=$wlan_lock_path
-  export OP13_WLAN_LOCK
+  export OP13_WLAN_LOCK="$wlan_lock_path"
+  exec sh "$0" "$@" 9>"$wlan_lock_path"
 }
 
 wlan_require_commands() {

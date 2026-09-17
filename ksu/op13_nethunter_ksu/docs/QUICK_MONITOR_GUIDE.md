@@ -3,10 +3,14 @@
 先在 KSU Action 中切到本包 WLAN 栈，再从 Android root shell 执行：
 
 ```sh
+svc wifi disable
+settings put global wifi_scan_always_enabled 0
 monstart 149        # 原生 wlan0，全局监听，频道 149 / 20 MHz
 monstart 6          # 切到频道 6 / 20 MHz
 monstart            # 进入监听，不主动设置频道；重复执行保留当前频道
 ```
+
+开始前关闭 Android Wi-Fi 和始终扫描，避免框架继续控制同一接口；退出后可按原设置重新打开。
 
 在已正确挂载 `/sys`、`/proc`、`/dev` 的 Kali 环境使用：
 
@@ -59,8 +63,9 @@ P2P 共享不能与当前全局监听一起工作。为了避免误中断现有�
 全局监听且没有实际 AP/P2P 接口时，不用 Android 过期的组状态阻止重复启动/reset。
 退出监听不受共享检查阻挡。
 
-这是脚本入口提示，不覆盖 Android 后续并发请求。监听期间点击共享、框架强制恢复
-等场景尚未做专项真机验证；旧并发监听方案的三处驱动守卫没有直接移植到本版。
+2026-09-17 真机验证：已有热点/P2P-GO 时脚本拒绝进入监听；监听期间请求热点或
+P2P 建组未生成共享接口，Probe 仍可收发。OPPO 平板端完整共享尚无配套设备验证，
+不能据此覆盖所有框架强制恢复路径；旧并发方案三处驱动守卫没有直接移植。
 
 ## 支持范围
 
@@ -71,3 +76,11 @@ P2P 共享不能与当前全局监听一起工作。为了避免误中断现有�
 - `inject_stats` 记录队列/完成/恢复；`inject_tx_status` 区分固件 OK、NO_ACK 等。
   completion 不等于 ACK，固件 OK 也不能代替独立接收证据。
 - 丢失 completion 时保留不确定 DMA；只有确认的新固件启动等既有恢复边界才能回收。
+
+## 本轮发现
+
+v8.1 的 Android mksh 文件锁继承和 ColorOS Wi-Fi 状态误判已修复，真机 reset、
+热切与锁争用已验证。原 v8.1 ZIP 包含旧脚本，不应再作为修复版本安装。
+持续注入并快速跨频道/带宽切换时，约 110 秒触发过一次固件 assert/SSR；自动恢复
+后 Probe 正常，但压力稳定性未通过，不能把恢复成功写成无故障。另有一次模式切换
+触发 cfg80211 的残留 scheduled scan 警告，根因仍待专项排查。

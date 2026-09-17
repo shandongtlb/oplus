@@ -365,20 +365,20 @@ unload_module() {
 }
 
 wifi_is_enabled() {
+  # ColorOS can leave wifi_on=1 while Wi-Fi is disabled. Also, the status
+  # text "scanning ... when wifi is enabled" is not an enabled Wi-Fi state.
+  wifi_current=$(cmd wifi status 2>/dev/null | awk '
+    /^Wifi is enabled\r?$/ {print "enabled"; exit}
+    /^Wifi is disabled\r?$/ {print "disabled"; exit}
+  ')
+  case "$wifi_current" in enabled) return 0;; disabled) return 1;; esac
+  wifi_current=$(dumpsys wifi 2>/dev/null | awk '
+    /^Wi-Fi is enabled\r?$/ {print "enabled"; exit}
+    /^Wi-Fi is disabled\r?$/ {print "disabled"; exit}
+  ')
+  case "$wifi_current" in enabled) return 0;; disabled) return 1;; esac
   state=$(settings get global wifi_on 2>/dev/null || true)
-  if [ "$state" = "1" ]; then
-    return 0
-  fi
-
-  if cmd wifi status 2>/dev/null | grep -qi 'enabled'; then
-    return 0
-  fi
-
-  if dumpsys wifi 2>/dev/null | grep -q 'Wi-Fi is enabled'; then
-    return 0
-  fi
-
-  return 1
+  [ "$state" = 1 ]
 }
 
 wifi_scan_always_available() {
@@ -602,7 +602,7 @@ print_status() {
 case "$1" in
   nethunter|on|enable|stock|off|disable|restore)
     [ "$#" -eq 1 ] || { wlan_error '热切操作不接受额外参数'; exit 1; }
-    wlan_control_lock || exit 1
+    wlan_control_lock "$@" || exit 1
     wlan_check_sharing || exit 1
     if [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/con_mode 2>/dev/null)" = 4 ]; then
       # Stop the helper through the driver lifecycle before rmmod. Child
