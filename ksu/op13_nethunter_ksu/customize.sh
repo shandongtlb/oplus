@@ -16,6 +16,7 @@ set_permissions() {
   set_perm_recursive "$MODPATH" 0 0 0755 0644
   set_perm "$MODPATH/customize.sh" 0 0 0755
   set_perm "$MODPATH/module_identity.sh" 0 0 0755
+  set_perm "$MODPATH/wlan_control_common.sh" 0 0 0755
   set_perm "$MODPATH/aireplay_test.sh" 0 0 0755
   if [ -f "$MODPATH/action.sh" ]; then
     set_perm "$MODPATH/action.sh" 0 0 0755

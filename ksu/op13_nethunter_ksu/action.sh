@@ -3,6 +3,7 @@
 MODDIR=${0%/*}
 STATE_FLAG=$MODDIR/.nethunter_enabled
 . "$MODDIR/module_identity.sh" || exit 1
+. "$MODDIR/wlan_control_common.sh" || exit 1
 
 log() {
   echo "$*"
@@ -12,6 +13,9 @@ if [ ! -x "$MODDIR/wlan_stack_control.sh" ]; then
   log "wlan_stack_control.sh missing"
   exit 1
 fi
+
+wlan_control_lock || exit 1
+wlan_check_sharing || exit 1
 
 if [ "$(payload_stack_mode)" = nethunter ]; then
   log "[toggle] current mode: nethunter"

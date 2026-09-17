@@ -136,7 +136,7 @@ exec sh "$MODDIR/monitor_control.sh" on "\$@"
 EOF
       cat > "$bindir/monstop" <<EOF
 #!/system/bin/sh
-exec sh "$MODDIR/monitor_control.sh" off
+exec sh "$MODDIR/monitor_control.sh" off "\$@"
 EOF
       cat > "$bindir/monreset" <<EOF
 #!/system/bin/sh

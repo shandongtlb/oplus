@@ -67,6 +67,9 @@ update_module_description() {
   echo "cfg80211_bound=$(is_bound /vendor_dlkm/lib/modules/cfg80211.ko && echo yes || echo no)"
   echo "mac80211_bound=$(is_bound /vendor_dlkm/lib/modules/mac80211.ko && echo yes || echo no)"
   echo "qca_cld3_peach_v2_bound=$(is_bound /vendor_dlkm/lib/modules/qca_cld3_peach_v2.ko && echo yes || echo no)"
+  if [ -f "$MODDIR/monitor_control.sh" ]; then
+    sh "$MODDIR/monitor_control.sh" status
+  fi
 } > "$STATUS_FILE"
 
 update_module_description

@@ -1,58 +1,73 @@
-# Monitor Mode + Injection — 快速指南
+# peach_v2 全局监听与管理帧注入
 
-## 使用流程
-```bash
-# 1. KSU 里点 Action 按钮 → nethunter (切换到打补丁的 ko)
-# 2. 终端(adb shell 或 Termux root)
-monstart 149        # 进全局 monitor + 锁 ch149(5G)
-# 或
-monstart 6          # 锁 ch6(2.4G)
-# 或
-monstart            # 不锁频 → airodump 全频扫描
+先在 KSU Action 中切到本包 WLAN 栈，再从 Android root shell 执行：
 
-# 3. 抓包/注入
-airodump-ng wlan0              # 抓包/扫描
-aireplay-ng -9 --ignore-negative-one -a <测试AP的BSSID> wlan0   # 管理帧注入测试
-tcpdump -i wlan0 -nn           # 原始抓包
-
-# 4. 退出
-monstop             # 恢复正常 WiFi
-# 5. (可选) KSU 点 Action → stock (切回原厂栈)
+```sh
+monstart 149        # 原生 wlan0，全局监听，频道 149 / 20 MHz
+monstart 6          # 切到频道 6 / 20 MHz
+monstart            # 进入监听，不主动设置频道；重复执行保留当前频道
 ```
 
-## 注入原理(OnePlus 13 特殊性)
-- 当前实现向 peach_v2 的全局 monitor vdev 直接提交 WMI TX；固件是否接受以及实际空口发送情况尚未验证。
-- 注入测试前锁定信道(`monstart <freq>`)。
-- 不锁频(`monstart` 无参数)可抓包/扫描；注入需要先锁定信道。
-- 这是 `peach_v2` 原生 `con_mode=4`，不会创建 `wlan0mon` 或隐藏 STA/helper vdev。
+在已正确挂载 `/sys`、`/proc`、`/dev` 的 Kali 环境使用：
 
-验证注入是否成功:
-```bash
-dmesg | grep NETHUNTER-INJ
-# 对照 [submit] 与 [completion] 的 desc 和 status。
-# status=0 是固件报告成功；还需要独立接收端确认空口帧。
-# submitted == completed 只说明完成事件数量一致，不能单独证明发送成功。
+```sh
+iw dev wlan0 info
+iwconfig wlan0
+airodump-ng wlan0
+aireplay-ng --test -a <自有测试AP的BSSID> wlan0
 ```
 
-## 前置条件
-- **关闭 P2P/Wi-Fi Direct**(手机→平板网络共享/跨设备互联/投屏),否则驱动策略禁止开 monitor。
+退出和查看状态：
 
-## 信道参考
-**简写(推荐)**:
-- 2.4G: `1` `2` `3` `6` `9` `10` `11`
-- 5G: `36` `40` `44` `48` `149` `153` `157` `161` `165`
+```sh
+monstop            # 退出 con_mode=4，等待 managed 接口；不等于 Wi-Fi 已连接
+sh /data/adb/modules/op13_nethunter_ksu/monitor_control.sh status
+# 模块实际安装目录不同时，请替换上述路径。
+```
 
-或直接用频率 MHz:
-- 2.4G: `2412`(ch1), `2437`(ch6), `2462`(ch11)
-- 5G: `5180`(ch36), `5745`(ch149), `5825`(ch165)
+TX 使用 sam 方案的内部 firmware-only STA helper，RX 和主机接口仍是原生 `wlan0`；
+不会创建 `wlan0mon` 或额外 STA netdev。v8 的 Probe、针对性 SSR 恢复与普通 Wi-Fi
+回归已有记录；完整验证范围见源码文档和工作区 `说明/op13_v8_runtime_20260917.md`。
+`BUILD_INFO.txt` 是已构建模块的身份快照，不代表后续脚本修改已经上机。
 
-构建来源和验证范围见 `BUILD_INFO.txt`。
+## 脚本保护
 
-## 新版范围
+- 参数格式、频道是否由当前网卡提供且未禁用，在切换模式前检查；不接受多余参数。
+  请求频道按 20 MHz 设置，设置成功后回读主频道和带宽。监管与固件最终检查仍由驱动执行。
+- 新进入监听后若接口 UP、设频或回读失败，尝试退出本次新会话并返回失败。
+  已经处于监听时的换频失败不会自动关闭原会话；请查询实际频道。
+- monstart、monstop、reset、KSU Action、模块热切和 bind 修改共用文件锁。
+  争用立即报忙；子脚本继承同一把锁，进程结束由内核释放，不靠固定 sleep 解锁。
+  不要删除 `.wlan_control.lock`；存在空锁文件不代表正在忙。
+  需要系统 `flock` 或 KSU/Magisk 的 BusyBox `flock`。
+- 热切先正常退出监听，再卸载模块；退出或重载失败会返回失败，不伪报完成。
+- 状态区分接口未就绪、未确认频道、管理员暂停、20 MHz TX READY、宽信道 RX ONLY、
+  TX 不可用和需要恢复。状态是查询时快照，READY 不证明实际空口发送成功。
 
-当前仅接入 WMI 管理帧 TX，固件是否接受尚待真机验收。输入必须带 Radiotap；
-控制帧、数据帧和 DATAPAD 不支持。速率、NOACK、NOSEQ 等提示不保证由固件执行。
-注入期间保持固定信道。旧 v2 的监听验证不能替代新版的发送和恢复测试。
+`monreset` 仍用于请求完整 WLAN 栈重载，失败不会强制卸载模块或释放不确定的 DMA。
+若驱动仍处于恢复中或拒绝退出，应先查看状态与日志。
 
-如果退出时日志报告保留未完成 DMA 缓冲，模块可能拒绝卸载，后续注入禁用；
-此异常需要重启恢复。目前没有自动回收漏 completion 的实现。
+## OPPO 与平板网络共享
+
+全局模式切换会停止、关闭普通模式的接口，并拒绝新增虚接口；普通 Wi-Fi、热点、
+P2P 共享不能与当前全局监听一起工作。为了避免误中断现有共享，启动监听或热切前
+检查同一无线网卡的 AP/P2P-GO/P2P-client 接口，并在可用时读取当前 `wifip2p` 状态。
+发现占用会提示先关闭个人热点、与平板网络共享或 Wi-Fi Direct 投屏。
+
+空闲 P2P-device、其他无线网卡、历史事件与持久组列表不算当前占用。P2P 服务不可读
+或状态格式未知时，仅依据可读取的接口检查，不因可选信息缺失锁死入口。已经处于
+全局监听且没有实际 AP/P2P 接口时，不用 Android 过期的组状态阻止重复启动/reset。
+退出监听不受共享检查阻挡。
+
+这是脚本入口提示，不覆盖 Android 后续并发请求。监听期间点击共享、框架强制恢复
+等场景尚未做专项真机验证；旧并发监听方案的三处驱动守卫没有直接移植到本版。
+
+## 支持范围
+
+- TX：启用的非被动、非 DFS 的 2.4/5 GHz 20 MHz 频道，排除频道 14；输入必须带
+  Radiotap，目前支持管理帧，不支持数据帧、控制帧与 DATAPAD。
+- 40/80/160 MHz：RX-only；160 MHz 实际接收仍缺已知信号源验证。
+- 速率、NOACK、NOSEQ 等 Radiotap 提示不保证由固件执行。
+- `inject_stats` 记录队列/完成/恢复；`inject_tx_status` 区分固件 OK、NO_ACK 等。
+  completion 不等于 ACK，固件 OK 也不能代替独立接收证据。
+- 丢失 completion 时保留不确定 DMA；只有确认的新固件启动等既有恢复边界才能回收。

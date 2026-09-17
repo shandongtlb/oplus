@@ -4,6 +4,7 @@ MODDIR=${0%/*}
 LOGTAG=op13_usb_arsenal
 BIND_FLAG=$MODDIR/.bind_mount_enabled
 QUIET=0
+. "$MODDIR/wlan_control_common.sh" || exit 1
 
 log_i() {
   if [ "$QUIET" -ne 1 ]; then
@@ -142,6 +143,10 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+case "$COMMAND" in
+  on|off|apply_if_enabled|apply|remove) wlan_control_lock || exit 1;;
+esac
 
 case "$COMMAND" in
   on)

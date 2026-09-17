@@ -6,6 +6,7 @@ STAGED_FW_DIR=/mnt/vendor/persist/copy
 STAGED_FW_FILE=$STAGED_FW_DIR/rt2870.bin
 STATE_FLAG=$MODDIR/.nethunter_enabled
 . "$MODDIR/module_identity.sh" || exit 1
+. "$MODDIR/wlan_control_common.sh" || exit 1
 
 log_i() {
   log -t "$LOGTAG" "$*"
@@ -597,6 +598,19 @@ print_status() {
     "$MODDIR/bind_mount_control.sh" status
   fi
 }
+
+case "$1" in
+  nethunter|on|enable|stock|off|disable|restore)
+    [ "$#" -eq 1 ] || { wlan_error '热切操作不接受额外参数'; exit 1; }
+    wlan_control_lock || exit 1
+    wlan_check_sharing || exit 1
+    if [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/con_mode 2>/dev/null)" = 4 ]; then
+      # Stop the helper through the driver lifecycle before rmmod. Child
+      # scripts retain this operation's lock via descriptor 9.
+      sh "$MODDIR/monitor_control.sh" off || exit 1
+    fi
+    ;;
+esac
 
 case "$1" in
   nethunter|on|enable)

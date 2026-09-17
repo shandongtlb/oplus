@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Run from Android root after monstart <channel>; no helper STA is created.
+# Run from Android root after monstart <channel>; TX uses an internal STA helper.
 MODDIR=${0%/*}
 KALI_ROOT=${KALI_ROOT:-/data/local/nhsystem/kalifs}
 . "$MODDIR/module_identity.sh" || exit 1
