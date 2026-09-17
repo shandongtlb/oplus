@@ -1,0 +1,915 @@
+From d4f61418db866ca2bbd9fa1e97ee69b6495bb78f Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 11:57:05 +0000
+Subject: [PATCH] docs: record v8.2 PNO and 15-minute retuning device
+ validation
+
+Verify installed and loaded v8.2 identities, clean PNO final-stop return, 2293 successful channel requests and 123772 completions without firmware assertion or SSR. Record real tablet guard interception, the managed-mode test harness mistake, RX-only queue checks, WMI ownership evidence, ordinary Wi-Fi recovery and restoration of original settings. No source, module or archive changes.
+---
+ .../native_global/README.md"                  |  11 +-
+ .../op13_sam_global_helper_handoff.md"        |  16 +
+ .../op13_v8_2_runtime_20260917.md"            | 113 +++
+ .../op13-v8.2-runtime-20260917.json"          | 713 ++++++++++++++++++
+ 4 files changed, 849 insertions(+), 4 deletions(-)
+ create mode 100644 "\350\257\264\346\230\216/op13_v8_2_runtime_20260917.md"
+ create mode 100644 "\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.2-runtime-20260917.json"
+
+diff --git "a/\350\241\245\344\270\201/native_global/README.md" "b/\350\241\245\344\270\201/native_global/README.md"
+index 389d9284db0b16a30c23e2dc557f0da41ed588c5..bd7c1e3d2d967988c9105460eed6c229ec196f9e 100644
+--- "a/\350\241\245\344\270\201/native_global/README.md"
++++ "b/\350\241\245\344\270\201/native_global/README.md"
+@@ -17,8 +17,10 @@ v8已完成四种SSR场景及用户down/up补测，详见[v8真机记录](../../
+ 主机检查和补丁重放见[源码校验](../../说明/验证/op13-ssr-fix-20260916.json)。
+ 
+ 最新源码已追加0015：修正helper self-peer所有权和最终注销时的PNO请求清理。
+-真机持续发包换频道仍复现固件assert；修正已通过主机回归及统一构建，打入v8.2；新模块尚未上机验证。
+-并发换频道450请求已测，详见[本次调试记录](../../说明/op13_retune_debug_20260917.md)。
++旧v8曾在持续发包换频道时复现固件assert；修正已通过主机回归及统一构建，打入v8.2。
++v8.2现已通过PNO注销及15分钟带Probe混合换频道针对性真机验证，见
++[验收报告](../../说明/op13_v8_2_runtime_20260917.md)。旧版并发450请求及故障定位见
++[调试记录](../../说明/op13_retune_debug_20260917.md)。
+ 
+ ## 应用与统一编译
+ 
+@@ -50,7 +52,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+ - `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
+ - `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；v8构建和四种SSR场景验证通过。
+ - `3b8463c2`：同步v8构建、四种SSR真机验证、用户补测及160 MHz缺测试条件的结论；仅文档。
+-- `7387a666`：区分host创建与固件已有self-peer，修正最终接口注销PNO清理；两项新测试及五项回归通过，已随v8.2统一构建并打包，真机验收待做。
++- `7387a666`：区分host创建与固件已有self-peer，修正最终接口注销PNO清理；两项新测试及五项回归通过，已随v8.2统一构建并打包，PNO注销/15分钟换频道针对性真机验证通过。
+ 
+ v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
+ 不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
+@@ -160,5 +162,6 @@ Wi-Fi恢复及退出重进通过，用户down/up补测Probe23/30。该次记录
+ 
+ 0015对应源码7387a666已完成一轮sun perf构建与三模块副本strip-debug打包。
+ 包内同时包含0793727的手机脚本热修，Build ID note同步新模块；未加入CNSS。
+-新模块尚未上机，持续换频道assert和PNO注销需要针对性复测。
++2026-09-17真机PNO最终注销返回0且无原警告；15分钟2293个频道设置请求全成功，
++完成123772帧，无assert/SSR/超时，最终排空。详见[v8.2验收报告](../../说明/op13_v8_2_runtime_20260917.md)。
+ 下载位置、SHA-256及验证见[v8.2包记录](../../说明/op13_v8_2_package_20260917.md)。
+diff --git "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md" "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
+index 6cddc7450dce59b3805f87c59385b169b8f33c89..18bdc4bf2c9a83fdc262958b27578b5b0b51ec04 100644
+--- "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
++++ "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
+@@ -431,3 +431,19 @@ boot不变。下一步统一构建后对照复测PNO与持续换频道，不连
+ 装载段/元数据/CRC/Build ID、92文件内容/权限/ZIP校验通过，身份note已同步。
+ 本轮未部署/操作手机，新模块耐久与PNO仍待验。源码补丁保持不变，详见
+ [v8.2包记录](op13_v8_2_package_20260917.md)。上文“尚未构建打包”已由本节更新。
++
++
++## v8.2 两项针对性真机验收通过（2026-09-17）
++
++用户刷入热切后授权，11:29–11:52 UTC确认三模块文件/loaded notes匹配v8.2。
++开始检测到真实OPPO Pad Mini P2P-client，防呆正确拦截，用户关闭后继续；没有强行断开。
++PNO直接stop0、再次start后切模式最终cfg stop0，旧core.c1535 WARN未复现。
++15分钟混合带Probe压力2293设置请求全0，新增123772完成、41800切换丢弃，
++最终队列/qdisc空，timeout/stale/retained/SSR0。WMI确认EXISTS self-peer不再host删除，
++STOP/DELETE响应正常；本轮通过不等于固件断言源码映射已明确或所有长期场景已覆盖。
++40/80队列不跨频道补发，80短窗口0Beacon不算监听RX验收；160MHz仍缺信号源。
++压力后6Probe完成/10响应，monstop后pool1/1，临时Wi-Fi连接/IP/VALIDATED/新扫描正常。
++最终恢复开测前Wi-Fi关闭、始终扫描1，managed/Dozing，boot不变，trace实例已删除。
++早期入口拦截后误运行Probe的编排错误保留，驱动计数0；不记为新模块注入失败。
++报告[本次验收](op13_v8_2_runtime_20260917.md)，证据op13-v8.2-runtime-20260917/。
++本轮未改源码/构建/打包，7387a666/0015及v8.2 ZIP保持不变。
+diff --git "a/\350\257\264\346\230\216/op13_v8_2_runtime_20260917.md" "b/\350\257\264\346\230\216/op13_v8_2_runtime_20260917.md"
+new file mode 100644
+index 0000000000000000000000000000000000000000..a03ca896dac40ddafe93094fa9ed1a44b672993f
+--- /dev/null
++++ "b/\350\257\264\346\230\216/op13_v8_2_runtime_20260917.md"
+@@ -0,0 +1,113 @@
++# v8.2 真机针对性验收（2026-09-17）
++
++v8.2 的两处修正通过本轮针对性验证：scheduled scan 最终注销返回成功且不再出现
++原警告；持续 Probe 流量混合换频道跑满15分钟，未复现旧版固件assert。
++这支持本次self-peer所有权修正有效，但不扩大为所有负载下永久稳定或固件断言源码已定位。
++
++## 设备、模块与范围
++
++用户安装并热切后授权测试。11:29:19–11:52:57 UTC，PJZ110，序列号
++`3B1F5QE8WTX87GZQ`，整轮boot ID `0d53ec60-3129-4161-afbe-ea36a52510d9`未变。
++三模块安装文件及实际加载Build ID note，开测和收尾均匹配v8.2包：
++
++- 源码：`7387a666ebca7d4a22676c350e4c598ffd831d1f`。
++- qcacld Build ID：`947cc6c343cb6c76d4e465450dd84eb95d8be382`。
++- qcacld文件SHA-256：`2799780c1e19f737a28db71a1582f2b8cffd6252f3f27ddbc22e7888fadcc53a`。
++- 包SHA-256：`51d2b905dd351cb31d740ed6fd13bc5d34b60393e08e0515b8b108e85fd3f76c`。
++
++14个已安装控制shell脚本逐字节匹配包；customize安装脚本已不存在，monstart/monstop
++为安装后的绝对路径转发脚本，scanap匹配service.sh生成内容。不能把这几项差异误判为
++旧版本，也不能声称18文件安装后全都与ZIP字节相同。
++
++本轮只做被动PNO、Probe、频道设置及本机模式/网络恢复；未发deauth/disassoc。
++未编译、修改源码、换模块或重新打包。完整现场在`/root/pt/op13-v8.2-runtime-20260917/`，
++[证据摘要](验证/op13-v8.2-runtime-20260917.json)记录原始文件哈希与结构化结果。
++
++## 平板防呆与测试器错误记录
++
++初始Wi-Fi关闭、始终扫描1、managed未连接、Dozing。11:29:51手机自动加入
++`DIRECT-Gi-OPPO Pad Mini`，p2p0成为真实P2P-client，wifip2p状态CONNECTED。
++第一次PNO启动/直接停止/重启成功，但monitor入口正确拒绝现有共享占用。
++用户明确回复“关了”，随后readback为managed/disconnected，才继续测试。
++这覆盖实际OPPO平板P2P占用拦截；没有验证整个平板共享的数据传输流程。
++
++第一次入口被拒后，测试器仍误运行了一次Probe检查，接口还在managed，驱动计数全0，
++无监听收包，返回1。该记录保留为编排错误，不属于新模块注入失败。之后Probe脚本在
++发包前强制检查state2。未绕过防呆；测试PNO请求主动清理，诊断trace实例随脚本退出删除。
++
++## PNO清理对照
++
++使用同旧版相同的被动扫描请求：
++`iw dev wlan0 scan sched_start interval 10000 freqs 2412 matches ssid OP13-PNO-DIAG passive`。
++
++| 操作 | v8.2结果 |
++| --- | --- |
++| PNO启动 | 0 |
++| 用户态直接sched_stop对照 | 0 |
++| 再次启动 | 0 |
++| 切全局监听时最终接口注销 | rdev_sched_scan_stop返回0，监听成功 |
++
++trace记录最终stop在内核时钟8273.310910，8273.310916返回0。旧版同路径两次返回-11，
++并出现cfg80211 core.c:1535 WARNING；本次清理一次完成，相关日志中无该WARNING。
++其后6Probe accepted/submitted/completed均增加6，捕获198Beacon、18个定向Probe响应。
++
++## 宽信道队列
++
++40 MHz（2412/center2422）及80 MHz（5745/center5775）各做6次host发包尝试：
++helper保持state0，driver accepted/submitted/completed均不变，全部qdisc backlog为0。
++切回2412/20、不发新帧时计数仍不变；随后新发一个Probe，三项计数均增加1。
++因此这两档未留下旧帧跨频道补发。
++
++40 MHz窗口抓到270Beacon。80 MHz短窗口抓到0Beacon，本项仅判定队列行为通过，
++不能据此宣称80 MHz实际监听RX通过。160 MHz未测，仍无已知信号源。
++
++## 15分钟持续发包换频道
++
++保持旧复现矩阵与发送强度：每批64个broadcast Probe，批间25ms；频道请求结束后
++间隔150ms。以时间900秒为目标、10000请求为硬上限，每20ms检查队列/恢复计数，
++每70ms采样WMI环形日志。单线程任何频道请求非0均算失败，没有忽略EAGAIN或重试掩盖。
++
++运行约901.869秒（含结尾排空），2293个频道设置请求全部返回0。
++首个请求是同频道确认，其余2292次为实际频道/带宽切换：
++
++| 配置 | 成功请求 |
++| --- | ---: |
++| 2412 HT20 | 383 |
++| 2437 HT20 | 382 |
++| 2462 HT20 | 382 |
++| 5745 HT20 | 382 |
++| 2412 HT40+ | 382 |
++| 5745 / 80 / center5775 | 382 |
++
++计数增量：accepted165572，submitted=completed123772，dropped41800。
++丢弃发生在切换前未提交队列；accepted=completed+dropped，最终无残留。
++host send调用1985659次，不代表全部进入驱动或空口，不能当作无线成功帧数。
++观察到32在途+30排队，最大used62，最大完成耗时448ms。
++
++超时、stale、failed、retained、reset_reclaims和backpressure均未增加；pool始终1/0，
++最终queued/inflight/used和所有qdisc backlog为0。421次dmesg采集无读取错误，保存的
++日志未见checked WARNING/BUG/Call trace/firmware assert/hang/STOP failure/SSR恢复标记。
++原有平台诊断日志仍有DP参数等消息，不把此结论写成所有日志无error。
++
++旧版此前约110秒及203秒两次触发固件assert line1444，本次同类测试未复现。
++WMI末段40快照捕获5个self-peer CREATE_CONF status1(EXISTS)，对应helper生命周期
++有STOP/DELETE及响应，没有host PEER_DELETE命令。中段快照亦符合相同变化。
++这是修改实际生效的证据；WMI只保留部分历史，其时钟也不能直接与dmesg绝对值比较。
++
++## 结束后收发、退出与恢复
++
++压力后再发6Probe全部完成，捕获179Beacon、10个定向Probe响应。
++monstop成功，con_mode0/state0，queued/inflight/used/retained/stopping0，pool1/1。
++临时启用Wi-Fi后连接WX-jjcoffetels，获得192.168.77.67，Android标记VALIDATED，
++新扫描结果正常。最后恢复开测前设置：Wi-Fi关闭、始终扫描1，managed、Dozing。
++用户手动关闭的平板共享没有重新开启。
++
++三模块文件及加载身份再次匹配，boot未变，PNO trace实例确认不存在；debugfs仅用
++私有mount namespace挂载。所有本轮测试进程已结束。
++
++## 剩余边界
++
++本轮足以关闭“PNO注销警告可复现”和“旧15分钟目标压力未通过”这两项待验状态。
++仍不包括更长时间/不同流量组合、单播目标频繁切换压力、真正NETDEV_TX_BUSY分支、
++160MHz真实RX、完整平板共享数据链路或深度suspend。本轮backpressure0，不能用
++qdisc重排队计数代替NETDEV_TX_BUSY分支证据，也没有重新验收deauth断线效果。
+diff --git "a/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.2-runtime-20260917.json" "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.2-runtime-20260917.json"
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a706f7cb4fe47392526d5f48d7ac5cc14312903
+--- /dev/null
++++ "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-v8.2-runtime-20260917.json"
+@@ -0,0 +1,713 @@
++{
++  "date": "2026-09-17",
++  "serial": "3B1F5QE8WTX87GZQ",
++  "boot_id": "0d53ec60-3129-4161-afbe-ea36a52510d9",
++  "utc_start": "2026-09-17T11:29:19Z",
++  "utc_final_restore": "2026-09-17T11:52:57Z",
++  "identity": {
++    "modules_match_package": true,
++    "loaded_build_notes_match": true,
++    "script_mismatches": [
++      "customize.sh",
++      "monstart",
++      "monstop",
++      "scanap"
++    ],
++    "kernel_commit": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
++    "serial": "3B1F5QE8WTX87GZQ",
++    "boot_id": "0d53ec60-3129-4161-afbe-ea36a52510d9",
++    "script_notes": {
++      "customize.sh": "Installer-only file absent after install; no running dependency",
++      "monstart/monstop": "Installed absolute-path forwarding stubs; target matches module monitor_control.sh",
++      "scanap": "Matches service.sh generated scanap implementation, not static template",
++      "scanap_generator_verified": true
++    },
++    "control_scripts_match_package": true
++  },
++  "pno": {
++    "start": 0,
++    "direct_stop": 0,
++    "restart": 0,
++    "mode_switch": 0,
++    "final_cleanup_stop": 0,
++    "final_cleanup_kernel_time": 8273.31091,
++    "warning_seen": false,
++    "trace_instance_removed": true
++  },
++  "initial_blocked_attempt": {
++    "reason": "Actual OPPO Pad Mini P2P-client connection",
++    "mode_entry_returncode": 1,
++    "user_disabled_sharing_before_retry": true,
++    "probe_harness_was_run_in_managed": true,
++    "probe_driver_counters_unchanged": true,
++    "not_a_driver_failure": true
++  },
++  "probe_after_pno": {
++    "before": {
++      "state": 2,
++      "accepted": 0,
++      "submitted": 0,
++      "completed": 0,
++      "failed": 0,
++      "dropped": 0,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 0,
++      "max_completion_ms": 0,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "after": {
++      "state": 2,
++      "accepted": 6,
++      "submitted": 6,
++      "completed": 6,
++      "failed": 0,
++      "dropped": 0,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 1,
++      "max_completion_ms": 4,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "beacons": 198,
++    "probe_responses": 18,
++    "responders": [
++      "a2:98:57:2d:00:2c",
++      "a2:98:57:2d:00:3a",
++      "ca:cd:55:8b:df:7b"
++    ]
++  },
++  "wide40": {
++    "before": {
++      "state": 0,
++      "accepted": 6,
++      "submitted": 6,
++      "completed": 6,
++      "failed": 0,
++      "dropped": 0,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 1,
++      "max_completion_ms": 4,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "after": {
++      "state": 0,
++      "accepted": 6,
++      "submitted": 6,
++      "completed": 6,
++      "failed": 0,
++      "dropped": 0,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 1,
++      "max_completion_ms": 4,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "beacons": 270,
++    "probe_responses": 0,
++    "responders": []
++  },
++  "wide80": {
++    "before": {
++      "state": 0,
++      "accepted": 7,
++      "submitted": 7,
++      "completed": 7,
++      "failed": 0,
++      "dropped": 0,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 1,
++      "max_completion_ms": 8,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "after": {
++      "state": 0,
++      "accepted": 7,
++      "submitted": 7,
++      "completed": 7,
++      "failed": 0,
++      "dropped": 0,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 1,
++      "max_completion_ms": 8,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "beacons": 0,
++    "probe_responses": 0,
++    "responders": []
++  },
++  "stress": {
++    "result": "pass",
++    "duration_seconds": 901.8686810620002,
++    "steps": 2293,
++    "per_config": {
++      "2412 HT20": 383,
++      "2437 HT20": 382,
++      "2462 HT20": 382,
++      "5745 HT20": 382,
++      "2412 HT40+": 382,
++      "5745 80 5775": 382
++    },
++    "driver_deltas": {
++      "accepted": 165572,
++      "submitted": 123772,
++      "completed": 123772,
++      "dropped": 41800,
++      "timeouts": 0,
++      "pool_allocs": 0,
++      "failed": 0,
++      "stale": 0,
++      "backpressure": 0
++    },
++    "host_send_calls": 1985659,
++    "dmesg_watch": {
++      "checks": 421,
++      "errors": [],
++      "elapsed": 905.1939818989995,
++      "last_kernel_timestamp": 9285.122773
++    },
++    "checked_fault_markers": []
++  },
++  "stress_final": {
++    "mode": "mixed",
++    "seconds": 901.8686810620002,
++    "steps": 2293,
++    "busy": 0,
++    "faults": [],
++    "error": null,
++    "traffic": {
++      "sent": 1985659
++    },
++    "peaks": {
++      "queued": 62,
++      "inflight": 32,
++      "used": 62
++    },
++    "initial": {
++      "state": 2,
++      "accepted": 8,
++      "submitted": 8,
++      "completed": 8,
++      "failed": 0,
++      "dropped": 0,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 1,
++      "max_completion_ms": 8,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "final": {
++      "state": 2,
++      "accepted": 165580,
++      "submitted": 123780,
++      "completed": 123780,
++      "failed": 0,
++      "dropped": 41800,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 62,
++      "max_completion_ms": 448,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "channel": "Interface wlan0\n\tifindex 38\n\twdev 0x4\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 0\n\tchannel 1 (2412 MHz), width: 20 MHz, center1: 2412 MHz\n\ttxpower 0.00 dBm\n",
++    "qdisc": "qdisc mq 0: root \n Sent 20208672 bytes 459288 pkt (dropped 0, overlimits 0 requeues 2329) \n backlog 0b 0p requeues 2329\nqdisc pfifo_fast 0: parent :11 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :10 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :f bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :e bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 20208672 bytes 459288 pkt (dropped 0, overlimits 0 requeues 2329) \n backlog 0b 0p requeues 2329\nqdisc pfifo_fast 0: parent :d bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :c bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :b bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :a bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :9 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :8 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :7 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :6 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :5 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :4 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :3 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :2 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :1 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\n",
++    "pass": true,
++    "duration_target": 900.0
++  },
++  "post_stress_probe": {
++    "before": {
++      "state": 2,
++      "accepted": 165580,
++      "submitted": 123780,
++      "completed": 123780,
++      "failed": 0,
++      "dropped": 41800,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 62,
++      "max_completion_ms": 448,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "after": {
++      "state": 2,
++      "accepted": 165586,
++      "submitted": 123786,
++      "completed": 123786,
++      "failed": 0,
++      "dropped": 41800,
++      "backpressure": 0,
++      "stale": 0,
++      "retries": 0,
++      "timeouts": 0,
++      "drained": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "peak": 62,
++      "max_completion_ms": 448,
++      "pool_allocs": 1,
++      "pool_frees": 0,
++      "retained": 0,
++      "reset_reclaims": 0,
++      "stopping": 0
++    },
++    "beacons": 179,
++    "probe_responses": 10,
++    "responders": [
++      "a2:98:57:2d:00:2c",
++      "a2:98:57:2d:00:3a",
++      "ca:cd:55:8b:df:7b",
++      "ca:cd:55:8b:e2:07"
++    ]
++  },
++  "wmi_summary": {
++    "counts": {
++      "('CMD', '0x6001')": 7,
++      "('CMD', '0x5006')": 6,
++      "('CMD', '0x5002')": 6,
++      "('Event', '0x5002')": 5,
++      "('Event', '0x5006')": 5,
++      "('Event', '0x601a')": 5
++    },
++    "self_peer_create_confirm_statuses": {
++      "1": 5
++    },
++    "sample_count": 40,
++    "note": "Partial last history window only; WMI clock differs from dmesg uptime"
++  },
++  "final_restore": {
++    "managed": true,
++    "wifi_enabled": false,
++    "wifi_scan_always": 1,
++    "wakefulness": "Dozing",
++    "pool_allocs": 1,
++    "pool_frees": 1,
++    "queued": 0,
++    "inflight": 0,
++    "used": 0,
++    "retained": 0,
++    "same_boot": true,
++    "payload_reverified": true,
++    "wifi_connection_validated_before_restoring_off": true,
++    "fresh_scan_results": true
++  },
++  "build_started": false,
++  "new_package_created": false,
++  "source_changed": false,
++  "evidence_root": "/root/pt/op13-v8.2-runtime-20260917",
++  "files": {
++    "NOTES.md": {
++      "bytes": 2632,
++      "sha256": "74be51fdc0ef43d869c6f6b4b5bc862595a2e3574da04e30a47eb99f5973757f"
++    },
++    "after-pno-dmesg.json": {
++      "bytes": 50,
++      "sha256": "e86b81bd67494e4e2362800460a29e07c719d0763e513d9b76269f4dcfbc2360"
++    },
++    "after-pno-dmesg.sh": {
++      "bytes": 6,
++      "sha256": "ecdd46797ccbbd216430279b15b436d2ed9f0afa18d3115f7cb21d88d7c7f227"
++    },
++    "after-pno-dmesg.txt": {
++      "bytes": 2112517,
++      "sha256": "5a7f38767ce2571dbdc51080882885bde355fde000c0226646b1b4567daea29e"
++    },
++    "baseline.json": {
++      "bytes": 50,
++      "sha256": "45edccea42bb4ec3d5276e791cca986abc7d7bdbcc4214771bd0e3817254ec45"
++    },
++    "baseline.sh": {
++      "bytes": 913,
++      "sha256": "ea24ef0d0eadb3749c1b2b153a543eb7a4c72a69f6ac687055197322f1e7284c"
++    },
++    "baseline.txt": {
++      "bytes": 6550,
++      "sha256": "c2d02ae991131608677307408943868292c3423295ee0505dc57e5dd54f7d8fe"
++    },
++    "device.py": {
++      "bytes": 1577,
++      "sha256": "6e4ab9677290d6a946d2b43d5c622481f9c1331e3c0a06d4069369b2ea34e6dc"
++    },
++    "dmesg-before.json": {
++      "bytes": 50,
++      "sha256": "3c507b5a7d352994ee606af3f755590194c61e8ed2955f1c0291863d0ab3114a"
++    },
++    "dmesg-before.sh": {
++      "bytes": 6,
++      "sha256": "ecdd46797ccbbd216430279b15b436d2ed9f0afa18d3115f7cb21d88d7c7f227"
++    },
++    "dmesg-before.txt": {
++      "bytes": 2113800,
++      "sha256": "1cb015ff30f9ef5d8ef3772b55764b5a731dca6285ff3410d99dd31c06af3357"
++    },
++    "exit-and-wifi.json": {
++      "bytes": 51,
++      "sha256": "ba419b22b274565ff22a0c10c24a34778ac5ed91d377eda3a8fd49d1e1a8e891"
++    },
++    "exit-and-wifi.sh": {
++      "bytes": 464,
++      "sha256": "5f15de24efc08844189101acf536f9aacdd82716f4becbd9769f4f75e49f60f9"
++    },
++    "exit-and-wifi.txt": {
++      "bytes": 5684,
++      "sha256": "addb72f14752d482ab68be93ca663a80348c35f78ee24f7f2a67202de49f948c"
++    },
++    "final-dmesg.json": {
++      "bytes": 50,
++      "sha256": "e86b81bd67494e4e2362800460a29e07c719d0763e513d9b76269f4dcfbc2360"
++    },
++    "final-dmesg.sh": {
++      "bytes": 6,
++      "sha256": "ecdd46797ccbbd216430279b15b436d2ed9f0afa18d3115f7cb21d88d7c7f227"
++    },
++    "final-dmesg.txt": {
++      "bytes": 2083587,
++      "sha256": "b57ebc0af2f91982d1de2e84cd575c87f3e56a0978b771cf92f11fce67e95488"
++    },
++    "final-log-check.json": {
++      "bytes": 92,
++      "sha256": "d50afe97871bd8c92e819537b3edb2e417826e89ea5f2cdf79ed707c6e4cde9f"
++    },
++    "final-restore.json": {
++      "bytes": 50,
++      "sha256": "83d0365bf9d44ee10a1c8269e2ba173c845abe77aa2f9e4733ff7de6dbe5894c"
++    },
++    "final-restore.sh": {
++      "bytes": 1667,
++      "sha256": "9a7bf764cbc66d609be908827b9aec029ced486990a5a72e9663cbcb5b6f33e5"
++    },
++    "final-restore.txt": {
++      "bytes": 1315,
++      "sha256": "4c030797be59885d1902c21c22ec597ba19dea351d4c505d794992f71d10d197"
++    },
++    "final-wmi-control.json": {
++      "bytes": 5892,
++      "sha256": "d97dff669cad78bdb6c074dbe542cfc89eb85e3abaa68224a27c0ae3e2ba1b45"
++    },
++    "identity-check.json": {
++      "bytes": 704,
++      "sha256": "4e6b4d7fb2ce86bbdd7e1a05ac9ebf49f57fcc6f44ded4102b29cf34420d3aea"
++    },
++    "initial-probe.json": {
++      "bytes": 50,
++      "sha256": "c11391f6584fcf4c58ca21581b1b8b0254be442fb0349e519d5f0a8448c0e443"
++    },
++    "initial-probe.sh": {
++      "bytes": 2643,
++      "sha256": "d2bb013396dd68ae857996ff725f1e7f0b24c1704bb6a8fa51bac6ad17ca28cf"
++    },
++    "initial-probe.txt": {
++      "bytes": 807,
++      "sha256": "bfdda40e5967544afffa50f9cb555cffc55ac090bdfd2e83c2eece30513a10f1"
++    },
++    "installed-monstart": {
++      "bytes": 97,
++      "sha256": "a3f99a8a4659e73b6f6105973fcc46ffdbe07486158f46a6dbc430b9d75da060"
++    },
++    "installed-monstop": {
++      "bytes": 98,
++      "sha256": "35baaab90b1bf5590c01052dd53713fbde5b09d684841ec844ecfadb27e2eea6"
++    },
++    "installed-scanap": {
++      "bytes": 1764,
++      "sha256": "1dc3b5fb3a46f66418cd8822c0c7fd59defc48ea79c6ffb9207fe1e319459c8a"
++    },
++    "last-wmi-history.json": {
++      "bytes": 176399,
++      "sha256": "930bf8a58480edce828c610aea21acc3ef6b4792036b2527146348ccc1525da0"
++    },
++    "mid-stress-wmi-control.json": {
++      "bytes": 2372,
++      "sha256": "7da786450e86caa8d2c212e3fb921933e48f1e5b5d2894e146e065c33b3dc900"
++    },
++    "mid-stress-wmi.json": {
++      "bytes": 50,
++      "sha256": "5ac667b4790f5776ddf483d6e0fabfba769b4a6e0c5e61b04f11c7d8c27bae90"
++    },
++    "mid-stress-wmi.sh": {
++      "bytes": 1082,
++      "sha256": "49569454ec8d9427220eaae30108f84614a2b76f1ca89a105e6fd63d67dd22a4"
++    },
++    "mid-stress-wmi.txt": {
++      "bytes": 6748,
++      "sha256": "0b73938bdfbfa3a8661a9f7533ff27e388ddfc0c777140bad0b92362fe08d791"
++    },
++    "mixed-15min-result.json": {
++      "bytes": 4292,
++      "sha256": "ef14818d86a2e84a833737d97501a339768e8b340beb55c173210c605b379bba"
++    },
++    "mixed-15min.json": {
++      "bytes": 51,
++      "sha256": "87f6b2f0d005e2b3d6473e02f210f7f04f7b1ec72e890cb22e8e291fb6660393"
++    },
++    "mixed-15min.sh": {
++      "bytes": 7048,
++      "sha256": "e366cd7e319d7fd03b4155a955df6ea398465fc07a78f73c0765d0331023f775"
++    },
++    "mixed-15min.txt": {
++      "bytes": 1989459,
++      "sha256": "528a38020ccf6e7c36d8563b4f4ec7741faab305bcf313035d1591d901a0a584"
++    },
++    "mounted.py": {
++      "bytes": 1219,
++      "sha256": "8e0a2a40c56be5c1b074e2f9dd2c1c9be0391e684eac6bc3b7df533252317d15"
++    },
++    "p2p-inspect.json": {
++      "bytes": 50,
++      "sha256": "3c507b5a7d352994ee606af3f755590194c61e8ed2955f1c0291863d0ab3114a"
++    },
++    "p2p-inspect.sh": {
++      "bytes": 244,
++      "sha256": "ec381b8765593727c5ea1e3e0be44a0eaf3496ed9348fed77f20c031856f2741"
++    },
++    "p2p-inspect.txt": {
++      "bytes": 22727,
++      "sha256": "a2a205de8d0ccf7490eab28456fb74272f059d749207f0d5e3a4bdf6c83e47bb"
++    },
++    "pno-log-check.json": {
++      "bytes": 77,
++      "sha256": "091333939cfbba6643b5adfd12d0e707898586ba3fb3b7546e3f431e8fa35785"
++    },
++    "pno-retest.json": {
++      "bytes": 50,
++      "sha256": "01c666e4d8954f69a88581eb19f165ceeb47aa7060bfa70655931a17cdb1e018"
++    },
++    "pno-retest.sh": {
++      "bytes": 2422,
++      "sha256": "43221a910d4c6abda61a0bcdd3d23fcd9f878efee0eeb341c90b03330837d540"
++    },
++    "pno-retest.txt": {
++      "bytes": 2142,
++      "sha256": "495c4604e3aa439ec1528acd89b749198ec69faba5636f1f87e11e89bf51cdbc"
++    },
++    "pno-setup-and-test.json": {
++      "bytes": 50,
++      "sha256": "c5c0f682ffc337e7f2a13c28f98abf20e300aa0c33a8e7d95e0f3855854dec36"
++    },
++    "pno-setup-and-test.sh": {
++      "bytes": 2422,
++      "sha256": "43221a910d4c6abda61a0bcdd3d23fcd9f878efee0eeb341c90b03330837d540"
++    },
++    "pno-setup-and-test.txt": {
++      "bytes": 1774,
++      "sha256": "1466a6e0fdfd0096eb97befc1b2b566f727070ad4f02d5d708670305f3105ce3"
++    },
++    "post-stress-probe.json": {
++      "bytes": 50,
++      "sha256": "41d73437b8771d7eea75bb7b78f9adda3011b36001d7b1574543f26c4dda9a7e"
++    },
++    "post-stress-probe.sh": {
++      "bytes": 2716,
++      "sha256": "cfbacdb7a5e284dab4dc1568b457c317b83c4a7aadb21a8194439a21ac672882"
++    },
++    "post-stress-probe.txt": {
++      "bytes": 847,
++      "sha256": "b3245777c4c51b7ce1ca9d3f045c648565b856eafb91d1aab4acc32fc1170a15"
++    },
++    "probe-after-pno.json": {
++      "bytes": 50,
++      "sha256": "cca5c5a1df8330518324a24a35a0b188e35c514eca0a02e77956ff97094bda88"
++    },
++    "probe-after-pno.sh": {
++      "bytes": 2716,
++      "sha256": "cfbacdb7a5e284dab4dc1568b457c317b83c4a7aadb21a8194439a21ac672882"
++    },
++    "probe-after-pno.txt": {
++      "bytes": 782,
++      "sha256": "cbf9b29d3c51611a3ab95dd634903aad37ee12e3b8a59cf66cdd14a1a969dd74"
++    },
++    "probe.py": {
++      "bytes": 1346,
++      "sha256": "16a1e4fb84300cc444650027a332893a156743aa6dc063b76efa3c32a92c2c10"
++    },
++    "progress.py": {
++      "bytes": 750,
++      "sha256": "cc6d4c4b8df610da673676fe3cf48680f8e4edc4085e62dd344718f1bddb3c0d"
++    },
++    "retune_matrix.py": {
++      "bytes": 4719,
++      "sha256": "adea67d7662b0638179b74329efdf5900a2ea93e28a6224b5561a9da369af9e4"
++    },
++    "run_python_long.py": {
++      "bytes": 573,
++      "sha256": "51b1eb75651adf2fcf3744e37c38e3690847fd7fad847d064fbc5c1611c3abb0"
++    },
++    "sharing-status.json": {
++      "bytes": 50,
++      "sha256": "94c5fb31dad8a23bc7d29955b62711014d7618b4fa4bb04ef8af57b13aa3645e"
++    },
++    "sharing-status.sh": {
++      "bytes": 97,
++      "sha256": "137da22e52733a6ebeaeecea14745b0ef19308780cd847ce107ad58ee9f171b0"
++    },
++    "sharing-status.txt": {
++      "bytes": 146,
++      "sha256": "5007aa988f2fb741dc204af1ce4760592c77fadeb0c058a508d99b2bab6ce164"
++    },
++    "stop-dmesg-watch": {
++      "bytes": 0,
++      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
++    },
++    "stress-dmesg-stream.txt": {
++      "bytes": 19125372,
++      "sha256": "16ac1ff8408222e898f5d637ca2328ab7506d52d8b3a3d7f585d2d7c60dd3d50"
++    },
++    "stress-dmesg-watch.json": {
++      "bytes": 108,
++      "sha256": "d3ec0a05416bcc9093949a7ca76358bca1083b6083839216349a7f644ec6c262"
++    },
++    "stress-summary.json": {
++      "bytes": 654,
++      "sha256": "a7bd66169b3a3cbfa2393f1e3cb5bfc25c39480dfb1f1ca740c5fa7ec0645aeb"
++    },
++    "watch_dmesg.py": {
++      "bytes": 1034,
++      "sha256": "9127c5db98dd634bd9d73bf57299e287a63df5781b590db943737ee163e05567"
++    },
++    "wide40-prepare.json": {
++      "bytes": 50,
++      "sha256": "e043a2b3cfab60ed00c4a0992a1e59bf3f4fb2d6b76b52d675c14c932518f727"
++    },
++    "wide40-prepare.sh": {
++      "bytes": 1068,
++      "sha256": "02cf1c5722faedd6909123b6311096b3a6e3af4623464a8d1369a53acda5b305"
++    },
++    "wide40-prepare.txt": {
++      "bytes": 395,
++      "sha256": "d7429e49da21468c9dce21f18b5cc3305ecfd6f38fc40b2be0430a563fcc6530"
++    },
++    "wide40-queue.json": {
++      "bytes": 50,
++      "sha256": "76bb0bcecc5b308bdeaa75396e14310f147bdaaa48731aa4fddda73cc94093c1"
++    },
++    "wide40-queue.sh": {
++      "bytes": 3596,
++      "sha256": "e2d0f67ca97a5db92019de05cacac3d0e54b311d11d25f66c191aac04397ba56"
++    },
++    "wide40-queue.txt": {
++      "bytes": 1667,
++      "sha256": "022d1641876177fab4f247db2ef5cd31c63a2c80136b70fe5c0973c45f829962"
++    },
++    "wide80-prepare.json": {
++      "bytes": 50,
++      "sha256": "3d3b4483e2cd71d7357c6138d896681b04a144481f27b9e16a3771272fc9f9df"
++    },
++    "wide80-prepare.sh": {
++      "bytes": 1070,
++      "sha256": "35bdd99afdd7db9250eda1bbf6b1d676b0e883dea5dc19ae17e5917057cd761f"
++    },
++    "wide80-prepare.txt": {
++      "bytes": 397,
++      "sha256": "6e7387e128d05db9fcbfc7232d926279fa9055369337bd335fab55d89955b862"
++    },
++    "wide80-queue.json": {
++      "bytes": 50,
++      "sha256": "284aef4dcca0ae8c1f15de4b48b42928c066d7a8a8c8e63f7bc7ea1c39c57153"
++    },
++    "wide80-queue.sh": {
++      "bytes": 3596,
++      "sha256": "e2d0f67ca97a5db92019de05cacac3d0e54b311d11d25f66c191aac04397ba56"
++    },
++    "wide80-queue.txt": {
++      "bytes": 1663,
++      "sha256": "e258895adf97fedfca2af5e72005d9ee6dcdd6e8c37d28590b4ae7c4dad1b0ee"
++    },
++    "wide_queue.py": {
++      "bytes": 1986,
++      "sha256": "24e90b950b5d3a80a7e82f0417cd55b90b9ee34123105e7902399dcadb9331b1"
++    }
++  }
++}
+-- 
+2.53.0
+

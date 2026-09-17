@@ -1,0 +1,9 @@
+0001-monitor-control-guards.patch
+0002-record-control-guard-export.patch
+0003-record-v8.1-package.patch
+0004-fix-mksh-lock-and-wifi-state.patch
+0005-record-script-runtime-export.patch
+0006-record-helper-pno-source-fixes.patch
+0007-record-v8.2-package.patch
+0008-record-v8.2-runtime-validation.patch
+0009-fix-sharing-framework-and-vendor-labels.patch

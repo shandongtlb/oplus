@@ -1,0 +1,76 @@
+{
+  "base_commit": "af83a9622345530317a8c4b3cde61131477a292d",
+  "target_commit": "1df6bcae8d4e5827a56bcde78512f37bb022d8b6",
+  "target_tree": "ebd7174b74e7acbd5d5956e870d9de463877dbb2",
+  "mail_replay": [
+    {
+      "patch": "0001-monitor-control-guards.patch",
+      "original_commit": "3bfce6641c35b490adfddc0cba47bb19007c4639",
+      "tree": "d11cce5f9ded3789719670b24388a5d68bc86de6",
+      "clean": true,
+      "sha256": "bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790"
+    },
+    {
+      "patch": "0002-record-control-guard-export.patch",
+      "original_commit": "2889fd3e2dd8b4f52c35188b50e65f540bfd5a94",
+      "tree": "338956349e6ffc3dad397a0dc7b09c6710c6e2e8",
+      "clean": true,
+      "sha256": "46f601d67bae3e7613cc4b663698507a2ed4a7e9eb58422243a4b7935a200015"
+    },
+    {
+      "patch": "0003-record-v8.1-package.patch",
+      "original_commit": "0b9e13ade8cb5a1c4857c8c9e0de9e527dfe7701",
+      "tree": "63ef124ce5c1ec48b3eebd7ec0ea045ea947ee18",
+      "clean": true,
+      "sha256": "30986c1c0e6975d4bdb4dec1fd25c8823a6f892444bddefe40edd82fff9223e0"
+    },
+    {
+      "patch": "0004-fix-mksh-lock-and-wifi-state.patch",
+      "original_commit": "079372701e03382d9e968f8751b0d02333e431a8",
+      "tree": "a4aa77c02f267330645a6c06fc6b681ffc63543b",
+      "clean": true,
+      "sha256": "f7bd083c2a862d74152931bf64323ac06d15977109ff90e4a4e2ccf995862005"
+    },
+    {
+      "patch": "0005-record-script-runtime-export.patch",
+      "original_commit": "b8205b08eba123a2fe22ac88167a043d4dd2956f",
+      "tree": "fb1e56188d146fc418659d4bc60c4371f113bfc4",
+      "clean": true,
+      "sha256": "59d79a3f0c3490ac9df2097f497bb0c54e9e6ef45dd788567008593a40dae9b1"
+    },
+    {
+      "patch": "0006-record-helper-pno-source-fixes.patch",
+      "original_commit": "87a4325bf0195f23b58ba86d020225106728b35b",
+      "tree": "1ff33b518ceec78609262970871b6026e8be7938",
+      "clean": true,
+      "sha256": "9d5cfd887283b838410684ea7a5c2d542e094c2caa00152d89f72b6672514567"
+    },
+    {
+      "patch": "0007-record-v8.2-package.patch",
+      "original_commit": "d8ea7d4bdea978bb22feb1efcb5a3f3990f9c663",
+      "tree": "dc03ec8882a04742167836bb21a11c061c110fb6",
+      "clean": true,
+      "sha256": "83278af3987ec64f6815f0c12d6866ed222664cade071888ccada23edae5f25d"
+    },
+    {
+      "patch": "0008-record-v8.2-runtime-validation.patch",
+      "original_commit": "d4f61418db866ca2bbd9fa1e97ee69b6495bb78f",
+      "tree": "02fe0f00dbebe8392d505797e5605823f54c2afa",
+      "clean": true,
+      "sha256": "7c4679ba04f3c902ddff9ab00df795bf8141b1ca426855dd9326136183b1205a"
+    },
+    {
+      "patch": "0009-fix-sharing-framework-and-vendor-labels.patch",
+      "original_commit": "1df6bcae8d4e5827a56bcde78512f37bb022d8b6",
+      "tree": "ebd7174b74e7acbd5d5956e870d9de463877dbb2",
+      "clean": true,
+      "sha256": "7e7cf94ab587b266e6d996a9a55c7d311d7536b8641b4bc4f8620badf5c49a1f"
+    }
+  ],
+  "combined_replay": {
+    "tree": "ebd7174b74e7acbd5d5956e870d9de463877dbb2",
+    "sha256": "336dc68eca360b1ea53c8401009e81a5ac05ef316a9be98efd74bcb2950ff957",
+    "matches_target": true
+  },
+  "scope": "Complete oplus implementation tree. Export records created after the target commit are intentionally excluded to avoid recursive self-inclusion."
+}

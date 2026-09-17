@@ -1,28 +1,38 @@
-# KSU 脚本补丁与真机修复
+# KSU 脚本补丁与共享恢复修复
 
-此目录应用到 `oplus` 仓库，不能应用到内核仓库。内核仍为3b8463c2，
-三个运行模块仍来自v8统一构建。现存v8.1 ZIP不含本轮mksh/ColorOS脚本修复。
+此目录应用到 `oplus` 仓库，不能应用到内核仓库。本次修复 Android Wi-Fi/扫描交接及
+vendor loader 读取绑定模块所需的文件标签。手机已热修；真实 OPPO Pad Mini 共享
+完整复测通过，退出后观察超过 8 分钟、ping 18/18。报告见
+[共享恢复记录](../../说明/op13_sharing_recovery_20260917.md)。
+
+内核仍为 `7387a666`，源码补丁至 0015，三个运行模块来自 v8.2 统一构建。
+**现存 v8.2 ZIP 未重打，不含本次共享修复。**
 
 基线：`af83a9622345530317a8c4b3cde61131477a292d`
-目标提交：`079372701e03382d9e968f8751b0d02333e431a8`
-目标完整tree：`a4aa77c02f267330645a6c06fc6b681ffc63543b`
+目标实现/实测提交：`1df6bcae8d4e5827a56bcde78512f37bb022d8b6`
+目标完整 tree：`ebd7174b74e7acbd5d5956e870d9de463877dbb2`
 
-从基线依次应用四封补丁（两个中间提交保存此前导出记录和v8.1包元数据）：
+从干净基线按 `series` 依次应用 0001–0009：
 
 ```sh
-git am /path/to/0001-monitor-control-guards.patch \
-       /path/to/0002-record-control-guard-export.patch \
-       /path/to/0003-record-v8.1-package.patch \
-       /path/to/0004-fix-mksh-lock-and-wifi-state.patch
+git am /path/to/ksu_scripts/000[1-9]-*.patch
 ```
 
-已有v8.1打包提交 `0b9e13ade8cb5a1c4857c8c9e0de9e527dfe7701` 时只应用0004。
-也可从同一基线应用 `combined-monitor-control.patch`；不要与四封序列叠加。
+已有此前脚本目标 `0793727` 时只应用 0005–0009；已有本轮开始前
+`d4f61418db866ca2bbd9fa1e97ee69b6495bb78f` 时只应用
+`0009-fix-sharing-framework-and-vendor-labels.patch`。
 
-四封逐个实际git am，每个完整tree与原提交相等，重放工作区干净；合并补丁
-另从基线应用到临时索引，最终完整tree相等。证据 `verification-runtime-fixes.json`。
-当前导出文件及此README属于后续导出记录，避免补丁递归包含自身，目标tree明确
-止于上述实现/实测提交。原 `verification.json` 仅是0001的历史验证。
+另一种方式是在同一干净基线应用 `combined-monitor-control.patch`；不要与邮件序列
+叠加。两种方式均覆盖完整 `oplus` tree，包含中间导出记录、源码补丁及包元数据，
+不只是生产脚本。内核源码需另按 `../native_global/README.md` 的步骤应用。
 
-报告 `../../说明/op13_v8_1_runtime_20260917.md`：两处脚本修复已部署并验证；
-压力换频固件assert与scheduled-scan警告仍待查，不能称为全功能无故障。
+九封邮件已逐个实际 git am，每个完整 tree 与原提交相等，重放工作区干净；合并
+补丁另从基线应用到独立临时 index，完整 tree 同样相等。证据在
+[重放校验](verification-sharing-recovery.json)。合并 diff 内含历史邮件补丁的上下文
+空行，git apply 会报告这些嵌套补丁的空白提示；没有使用 --whitespace=fix，以保留
+原目标字节。完整 tree 一致性由 Git 对象哈希验证。
+
+本 README、本轮新导出文件和重放记录属于后续导出提交；为避免补丁递归包含自身，
+目标 tree 明确止于上述实现/实测提交。它们不改变目标脚本、内核或模块。
+`verification.json`、`verification-runtime-fixes.json` 保留为早期目标的历史记录，
+当前目标以 `verification-sharing-recovery.json` 为准。

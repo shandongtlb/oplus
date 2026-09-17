@@ -1,0 +1,2648 @@
+From 87a4325bf0195f23b58ba86d020225106728b35b Mon Sep 17 00:00:00 2001
+From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 05:54:47 +0000
+Subject: [PATCH] Record retuning fault evidence and export helper/PNO source
+ fixes
+
+Document concurrent retune coverage, repeated firmware assertion, WMI self-peer ownership evidence and deterministic scheduled-scan teardown warning. Export source commit 7387a666 as patch 0015 and refresh the combined patch. Both full clean replay routes match the complete source tree; seven relevant host regressions pass. Source fixes have not been built or deployed. The phone is restored to managed Wi-Fi with the original v8 modules.
+---
+ ...0001-peach-v2-native-global-monitor.patch" | 421 +++++++-
+ .../native_global/README.md"                  |  27 +-
+ ...15-helper-self-peer-and-pno-cleanup.patch" | 441 +++++++++
+ .../native_global/exported/series"            |   1 +
+ .../native_global/verify_replay.py"           |   7 +-
+ .../op13_retune_debug_20260917.md"            | 105 ++
+ .../op13_sam_global_helper_handoff.md"        |  16 +
+ .../op13-retune-debug-20260917.json"          | 936 ++++++++++++++++++
+ .../op13-retune-patch-replay-20260917.json"   | 369 +++++++
+ 9 files changed, 2284 insertions(+), 39 deletions(-)
+ create mode 100644 "\350\241\245\344\270\201/native_global/exported/0015-helper-self-peer-and-pno-cleanup.patch"
+ create mode 100644 "\350\257\264\346\230\216/op13_retune_debug_20260917.md"
+ create mode 100644 "\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-debug-20260917.json"
+ create mode 100644 "\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-patch-replay-20260917.json"
+
+diff --git "a/\350\241\245\344\270\201/native_global/0001-peach-v2-native-global-monitor.patch" "b/\350\241\245\344\270\201/native_global/0001-peach-v2-native-global-monitor.patch"
+index 7c9d16b734d9d729c8dfc3dd6f5bcbeac916e256..d6400e74314022a59b9e5c7b71c8e30ee5abf4dc 100644
+--- "a/\350\241\245\344\270\201/native_global/0001-peach-v2-native-global-monitor.patch"
++++ "b/\350\241\245\344\270\201/native_global/0001-peach-v2-native-global-monitor.patch"
+@@ -585,7 +585,7 @@ index fd8bafcd3f34d643cb331931f5772b9b955a0298..185e423d9aaf9e8ad369cf15d9f1dcfd
+  	sched_ctx = scheduler_get_context();
+  	if (sched_ctx) {
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+-index adcc3c507002ad9b8a35c32b8ad78df574afa296..8561bcb9ff6049fda587243cb0bc78eefd4391fc 100755
++index adcc3c507002ad9b8a35c32b8ad78df574afa296..6839cc9c0a9e4991946dd9904625ffd2bc0f152f 100755
+ --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+ +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+ @@ -1101,12 +1101,14 @@ struct freq_change_info {
+@@ -640,7 +640,16 @@ index adcc3c507002ad9b8a35c32b8ad78df574afa296..8561bcb9ff6049fda587243cb0bc78ee
+  #endif
+  
+  	struct rcpi_info rcpi;
+-@@ -1555,7 +1563,7 @@ struct hdd_adapter {
++@@ -1517,6 +1525,8 @@ struct hdd_adapter {
++ 	enum hdd_work_status netdev_features_update_work_status;
++ 	qdf_atomic_t net_dev_hold_ref_count[NET_DEV_HOLD_ID_MAX];
++ 	bool delete_in_progress;
+++	/* Final netdev cleanup: firmware/vdev teardown has already run. */
+++	bool netdev_unregistering;
++ 	bool is_virtual_iface;
++ #ifdef WLAN_FEATURE_PKT_CAPTURE
++ 	struct hdd_adapter *mon_adapter;
++@@ -1555,7 +1565,7 @@ struct hdd_adapter {
+  
+  #define WLAN_HDD_GET_STATION_CTX_PTR(link_info) (&(link_info)->session.station)
+  #define WLAN_HDD_GET_AP_CTX_PTR(link_info) (&(link_info)->session.ap)
+@@ -1288,7 +1297,7 @@ index ad23ecbdbeefc0dfdcc068552ab0d0f294cf7e76..9bfd598ad7b01a3955c8b6c2a298849a
+  	}
+  
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+-index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f20ddfd2f 100755
++index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5a413aa7683ded8efef6f5a7c329845434323b33 100755
+ --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+ +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+ @@ -73,7 +73,9 @@
+@@ -1604,7 +1613,20 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  	.ndo_get_stats = hdd_get_stats,
+  };
+  
+-@@ -10495,22 +10753,31 @@ wlan_hdd_delete_mon_link(struct hdd_adapter *adapter,
++@@ -8807,6 +9065,12 @@ static void hdd_cleanup_adapter(struct hdd_context *hdd_ctx,
++ 		return;
++ 	}
++ 
+++	/* cfg80211 may stop its cached scheduled-scan request from the
+++	 * unregister notifications after vdev sync has been removed. Mark
+++	 * only final cleanup, so that callback can release its request without
+++	 * submitting firmware work or treating a live sync error as success.
+++	 */
+++	WRITE_ONCE(adapter->netdev_unregistering, true);
++ 	hdd_apf_context_destroy(adapter);
++ 	qdf_spinlock_destroy(&adapter->mc_list_lock);
++ 	hdd_adapter_destroy_vdev_info(adapter);
++@@ -10495,22 +10759,31 @@ wlan_hdd_delete_mon_link(struct hdd_adapter *adapter,
+  
+  	wlan_hdd_scan_abort(link_info);
+  
+@@ -1645,7 +1667,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  			   adapter->deflink->vdev_id, status);
+  
+  	if (vdev)
+-@@ -10528,6 +10795,11 @@ static int hdd_stop_mon_adapter(struct hdd_adapter *adapter)
++@@ -10528,6 +10801,11 @@ static int hdd_stop_mon_adapter(struct hdd_adapter *adapter)
+  	struct wlan_hdd_link_info *link_info;
+  	int status;
+  
+@@ -1657,7 +1679,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  	hdd_adapter_for_each_active_link_info(adapter, link_info) {
+  		status = wlan_hdd_delete_mon_link(adapter, link_info);
+  		if (status)
+-@@ -10979,6 +11251,8 @@ QDF_STATUS hdd_reset_all_adapters(struct hdd_context *hdd_ctx)
++@@ -10979,6 +11257,8 @@ QDF_STATUS hdd_reset_all_adapters(struct hdd_context *hdd_ctx)
+  
+  	hdd_enter();
+  
+@@ -1666,7 +1688,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  	ucfg_mlme_get_sap_internal_restart(hdd_ctx->psoc, &value);
+  
+  
+-@@ -11292,6 +11566,8 @@ int wlan_hdd_validate_mon_params(struct hdd_adapter *adapter,
++@@ -11292,6 +11572,8 @@ int wlan_hdd_validate_mon_params(struct hdd_adapter *adapter,
+  		mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(link_info);
+  		mon_ctx->freq = mon_params[index].freq;
+  		mon_ctx->bandwidth = mon_params[index].bandwidth;
+@@ -1675,7 +1697,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  		index++;
+  	}
+  
+-@@ -11307,6 +11583,7 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
++@@ -11307,6 +11589,7 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
+  	struct channel_change_req *req;
+  	struct wlan_channel *des_chan;
+  	struct ch_params ch_params;
+@@ -1683,7 +1705,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  	int ret;
+  
+  	if (adapter->monitor_mode_vdev_up_in_progress) {
+-@@ -11318,8 +11595,9 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
++@@ -11318,8 +11601,9 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
+  		mon_ctx = WLAN_HDD_GET_MONITOR_CTX_PTR(link_info);
+  
+  		if (!mon_ctx->freq) {
+@@ -1695,7 +1717,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  				hdd_debug("Del vdev %d", link_info->vdev_id);
+  				wlan_hdd_delete_mon_link(adapter, link_info);
+  			}
+-@@ -11331,15 +11609,26 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
++@@ -11331,15 +11615,26 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
+  				return ret;
+  			}
+  
+@@ -1726,7 +1748,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  				continue;
+  			}
+  		}
+-@@ -11384,8 +11673,22 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
++@@ -11384,8 +11679,22 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
+  		req->ch_width = mon_ctx->bandwidth;
+  
+  		ch_params.ch_width = mon_ctx->bandwidth;
+@@ -1751,7 +1773,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  
+  		req->sec_ch_offset = ch_params.sec_ch_offset;
+  		req->center_freq_seg0 = ch_params.center_freq_seg0;
+-@@ -11421,9 +11724,10 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
++@@ -11421,9 +11730,10 @@ int wlan_hdd_set_mon_chan(struct hdd_adapter *adapter)
+  					   status);
+  
+  			adapter->monitor_mode_vdev_up_in_progress = false;
+@@ -1763,7 +1785,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  }
+  #endif
+  
+-@@ -11474,6 +11778,77 @@ static void hdd_delete_sta(struct hdd_adapter *adapter)
++@@ -11474,6 +11784,77 @@ static void hdd_delete_sta(struct hdd_adapter *adapter)
+  }
+  #endif
+  
+@@ -1841,7 +1863,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  QDF_STATUS hdd_start_all_adapters(struct hdd_context *hdd_ctx, bool rtnl_held)
+  {
+  	struct hdd_adapter *adapter, *next_adapter = NULL, *sta_adapter = NULL;
+-@@ -11579,15 +11954,12 @@ QDF_STATUS hdd_start_all_adapters(struct hdd_context *hdd_ctx, bool rtnl_held)
++@@ -11579,15 +11960,12 @@ QDF_STATUS hdd_start_all_adapters(struct hdd_context *hdd_ctx, bool rtnl_held)
+  				hdd_map_monitor_interface_vdev(sta_adapter);
+  				break;
+  			}
+@@ -1860,7 +1882,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  			break;
+  		case QDF_NDI_MODE:
+  			hdd_ndi_start(adapter->dev->name, 0);
+-@@ -15417,6 +15789,7 @@ static int __hdd_psoc_idle_restart(struct hdd_context *hdd_ctx)
++@@ -15417,6 +15795,7 @@ static int __hdd_psoc_idle_restart(struct hdd_context *hdd_ctx)
+  	if (ret)
+  		return ret;
+  
+@@ -1868,7 +1890,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  	ret = hdd_wlan_start_modules(hdd_ctx, false);
+  
+  	if (!qdf_is_fw_down())
+-@@ -16406,7 +16779,11 @@ int hdd_start_station_adapter(struct hdd_adapter *adapter)
++@@ -16406,7 +16785,11 @@ int hdd_start_station_adapter(struct hdd_adapter *adapter)
+  
+  	hdd_adapter_reset_station_ctx(adapter);
+  
+@@ -1881,7 +1903,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  	hdd_set_netdev_flags(adapter);
+  
+  	hdd_register_tx_flow_control(adapter,
+-@@ -21647,21 +22024,58 @@ static void hdd_pre_mode_change(enum QDF_GLOBAL_MODE mode)
++@@ -21647,21 +22030,58 @@ static void hdd_pre_mode_change(enum QDF_GLOBAL_MODE mode)
+  	osif_psoc_sync_op_stop(psoc_sync);
+  }
+  
+@@ -1945,7 +1967,7 @@ index dcdaf2f6474a436db7d5c929c729eea0275d73d8..5525eaa4527e6f474a43a1619dea3e9f
+  		goto exit;
+  	}
+  
+-@@ -23318,10 +23732,10 @@ void hdd_sme_monitor_mode_callback(uint8_t vdev_id, bool is_up)
++@@ -23318,10 +23738,10 @@ void hdd_sme_monitor_mode_callback(uint8_t vdev_id, bool is_up)
+  		return;
+  	}
+  	if (is_up) {
+@@ -1990,6 +2012,36 @@ index 58ef1333f862db29fd6b454004d67183bd9e5ac0..4b45c746eef149deee6475c1acd3c57f
+ +	wma_inject_destroy_tx_vdev();
+  	return cdp_reset_monitor_mode(soc, OL_TXRX_PDEV_ID, false);
+  }
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c
++index 583449afd501e17281504e5d5159a47b85cd7cc5..c0a7fe07b09b9644c71d42111bd35d65b714f528 100644
++--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c
++@@ -1549,6 +1549,13 @@ int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
++ {
++ 	int errno;
++ 	struct osif_vdev_sync *vdev_sync;
+++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+++
+++	/* Final netdev cleanup runs after vdev sync/firmware teardown.
+++	 * cfg80211 must still be allowed to free its cached scan request.
+++	 */
+++	if (READ_ONCE(adapter->netdev_unregistering))
+++		return 0;
++ 
++ 	errno = osif_vdev_sync_op_start(dev, &vdev_sync);
++ 	if (errno)
++@@ -1576,6 +1583,11 @@ int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
++ {
++ 	int errno;
++ 	struct osif_vdev_sync *vdev_sync;
+++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+++
+++	/* See the pre-4.12 callback: this acknowledges host cleanup only. */
+++	if (READ_ONCE(adapter->netdev_unregistering))
+++		return 0;
++ 
++ 	errno = osif_vdev_sync_op_start(dev, &vdev_sync);
++ 	if (errno)
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
+ index a59b881be4f0325b0f49063044b26997c61bf95f..3efa3417dc00a34ffe3933915c4b8def3bb16d21 100644
+ --- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h
+@@ -2199,10 +2251,10 @@ index 5b76562619cd79ea453ef12f7e75694872cb1c34..6e14ca1f2d23bd48018bf9e17f2af4e0
+  	wlan_roam_debug_log(event->vdev_id, DEBUG_PEER_DELETE_RESP,
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
+ new file mode 100644
+-index 0000000000000000000000000000000000000000..d3f04303cdae92d069910773382b26675951aae2
++index 0000000000000000000000000000000000000000..27478cfa014c530755b48019f6102e343da4fd62
+ --- /dev/null
+ +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
+-@@ -0,0 +1,1147 @@
++@@ -0,0 +1,1166 @@
+ +// SPDX-License-Identifier: GPL-2.0-only
+ +/* Raw monitor TX: one scheduler, native ownership, completion-owned DMA. */
+ +#include "wma.h"
+@@ -2275,6 +2327,7 @@ index 0000000000000000000000000000000000000000..d3f04303cdae92d069910773382b2667
+ +	bool queue_stopped;
+ +	/* Spans helper teardown/recreation; owned by HDD's channel operation. */
+ +	bool host_blocked;
+++	/* self_peer means created by us, not a firmware-owned existing peer. */
+ +	bool reserved, started, self_peer, unicast_peer;
+ +	uint8_t helper_id, monitor_id;
+ +	uint8_t mac[QDF_MAC_ADDR_SIZE], target[QDF_MAC_ADDR_SIZE];
+@@ -2671,6 +2724,25 @@ index 0000000000000000000000000000000000000000..d3f04303cdae92d069910773382b2667
+ +	return inj_wait(wma, status, kind);
+ +}
+ +
+++static QDF_STATUS inj_create_self_peer(tp_wma_handle wma)
+++{
+++	QDF_STATUS status = inj_peer_command(wma, inj.mac, true, true);
+++
+++	if (QDF_IS_STATUS_ERROR(status))
+++		return status;
+++
+++	/* A STA vdev may already have a firmware-owned self-peer. EXISTS
+++	 * permits TX setup, but does not transfer ownership to the host.
+++	 * Leave that peer to firmware vdev teardown, as the native STA path
+++	 * does; only delete a self-peer whose creation we actually confirmed.
+++	 * The lifecycle mutex excludes another control command here.
+++	 */
+++	spin_lock_bh(&inj_lock);
+++	inj.self_peer = inj.response_status == 0;
+++	spin_unlock_bh(&inj_lock);
+++	return QDF_STATUS_SUCCESS;
+++}
+++
+ +static QDF_STATUS inj_start(tp_wma_handle wma, uint32_t freq, bool restart)
+ +{
+ +	struct vdev_start_params p = {0};
+@@ -3287,10 +3359,9 @@ index 0000000000000000000000000000000000000000..d3f04303cdae92d069910773382b2667
+ +	if (QDF_IS_STATUS_ERROR(status))
+ +		goto fail;
+ +	inj.started = true;
+-+	status = inj_peer_command(wma, inj.mac, true, true);
+++	status = inj_create_self_peer(wma);
+ +	if (QDF_IS_STATUS_ERROR(status))
+ +		goto fail;
+-+	inj.self_peer = true;
+ +	spin_lock_bh(&inj_lock);
+ +	inj.state = INJ_RUNNING;
+ +	inj_flow_update();
+@@ -3425,10 +3496,10 @@ index 2cd2f6608b25a1efb2e3d83aab47c266988ea1e2..1549481c026b8c52f9dbc89c3241a78c
+  			struct mgmt_offload_event_params params = {0};
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+ new file mode 100644
+-index 0000000000000000000000000000000000000000..0f66676320665119a49c4bdbe762f782a5c30725
++index 0000000000000000000000000000000000000000..d6ef4281c9a2adda214a98322ffbae1efc659dbe
+ --- /dev/null
+ +++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+-@@ -0,0 +1,284 @@
++@@ -0,0 +1,330 @@
+ +# peach_v2 global monitor RX with internal STA TX (experimental)
+ +
+ +The public interface remains native `wlan0` in `con_mode=4`. The monitor vdev
+@@ -3713,6 +3784,52 @@ index 0000000000000000000000000000000000000000..0f66676320665119a49c4bdbe762f782
+ +or screen-off/resume behavior remain outside this validation. This update
+ +does not start another build or device test. Full records are in the workspace
+ +`oplus/说明/op13_v8_runtime_20260917.md` and `op13-v8-runtime-20260917/`.
+++
+++## Retuning endurance and scheduled-scan cleanup (2026-09-17)
+++
+++Later testing of the unchanged v8 modules extends and limits the earlier
+++validation. On the same boot, 80/160 MHz RX-only SSR restored the saved channel
+++and kept TX empty; 160 MHz actual RF receive still lacks a known signal source.
+++Concurrent channel control completed 450 requests: 341 succeeded, 39 returned
+++busy, and 70 WEXT requests were correctly unsupported. WEXT only confirms the
+++current 20 MHz channel; nl80211 performs retuning. Separate 240 cross-band and
+++480 mixed 20/40/80 MHz retunes with Probe traffic drained successfully. A
+++240 same-band run also drained, but its original harness checked too early
+++and returned failure; a later empty-queue observation is recorded separately.
+++
+++Longer mixed retuning with traffic reproduced a firmware assert after 536
+++successful steps (about 203 seconds), on 2412/20 -> 2437/20. The failed request
+++returned EAGAIN and was not ignored. The firmware signature matches the prior
+++110-second failure: 0x1f07818:0x1f0134c, line 1444. Automatic SSR recovered RX
+++and TX; this is a failed endurance test, not a stability pass.
+++
+++The WMI ring captured self-peer CREATE_CONF status WMI_PEER_EXISTS (1), then
+++host PEER_DELETE, its response, and VDEV_STOP without a STOP response before
+++the hang. The observed helper MAC was unique. The sam-derived code accepted
+++EXISTS but unconditionally treated the peer as host-created and deleted it.
+++Native STA self-peer handling only removes the host object in this case.
+++Track host ownership only for a successful status-zero creation; leave an
+++existing firmware self-peer to vdev teardown. Unicast peer ownership and all
+++TX drain/confirmation fences remain unchanged. This repairs an ownership
+++assumption, but the opaque firmware assertion has not been mapped to source
+++and its complete cause is not yet established.
+++
+++A separate passive scheduled-scan reproduction compared a successful direct
+++stop against final netdev cleanup while entering monitor. Both cfg80211
+++cleanup callbacks returned -EAGAIN after vdev sync removal, retaining the
+++request and producing net/wireless/core.c:1535 WARNING. Mark final adapter
+++cleanup explicitly and acknowledge that callback without firmware access.
+++Only this final cleanup bypasses vdev sync; live EAGAIN/EBUSY/ESHUTDOWN errors
+++remain visible. Both pre-4.12 and newer callback signatures are covered.
+++
+++Seven extracted-production-code ASan/UBSan tests pass, including new self-peer
+++confirmation/ownership/teardown and actual adapter-cleanup/PNO callback tests,
+++plus scheduler, SSR restoration, mode handoff, SSR rebuild and channel
+++serialization regressions. Firmware and kernel calls are stubbed. These
+++source changes have not been fully built, packaged or tested on the phone.
+++The phone still runs v8, and was restored to managed Wi-Fi with all queues
+++empty and pool allocations/frees both 5. Evidence and next steps are in
+++`oplus/说明/op13_retune_debug_20260917.md` and `op13-retune-debug-20260917/`.
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py
+ new file mode 100644
+ index 0000000000000000000000000000000000000000..f90f3f17d66f31de1473d4fd2d1a7e6d04a4e035
+@@ -3902,6 +4019,146 @@ index 0000000000000000000000000000000000000000..f90f3f17d66f31de1473d4fd2d1a7e6d
+ +    c.write_text(limits + pre + function(hdd, 'static void hdd_restore_monitor_injection(') + '\n' + function(wma, 'void wma_inject_deinit(') + post)
+ +    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', str(c), '-o', str(exe)], check=True)
+ +    subprocess.run([str(exe)], check=True)
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py
++new file mode 100644
++index 0000000000000000000000000000000000000000..fe9e900399ba6a2a1b7f5316f1bbc157a68f2b67
++--- /dev/null
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py
++@@ -0,0 +1,134 @@
+++#!/usr/bin/env python3
+++"""Exercise production peer confirmation, ownership and teardown with WMI stubs."""
+++from pathlib import Path
+++import subprocess
+++import tempfile
+++
+++ROOT = Path(__file__).resolve().parents[1]
+++source = (ROOT / 'core/wma/src/wma_inject.c').read_text()
+++
+++def function(signature):
+++    start = source.index(signature)
+++    end = source.index('{', start) + 1
+++    depth = 1
+++    while depth:
+++        depth += (source[end] == '{') - (source[end] == '}')
+++        end += 1
+++    return source[start:end]
+++
+++ensure = function('static QDF_STATUS inj_ensure_locked(')
+++assert 'inj_create_self_peer(wma)' in ensure
+++assert 'inj.self_peer = true' not in ensure
+++
+++pre = r'''
+++#include <assert.h>
+++#include <stdbool.h>
+++#include <stdint.h>
+++#include <stdio.h>
+++#include <string.h>
+++typedef int QDF_STATUS;
+++struct wma { void *wmi_handle; } context;
+++typedef struct wma *tp_wma_handle;
+++enum inj_response { INJ_RSP_NONE, INJ_RSP_SELF, INJ_RSP_PEER, INJ_RSP_PEER_DELETE };
+++enum { INJ_RUNNING, INJ_STOPPED, INJ_RESET_REQUIRED };
+++enum { QDF_STATUS_SUCCESS, QDF_STATUS_E_FAILURE, QDF_STATUS_E_AGAIN };
+++#define QDF_IS_STATUS_ERROR(x) ((x) != 0)
+++#define QDF_IS_STATUS_SUCCESS(x) ((x) == 0)
+++#define WMI_PEER_EXISTS 1
+++#define WMI_PEER_TYPE_DEFAULT 0
+++#define INJ_CONFIRM_MS 2000
+++#define QDF_MODULE_ID_WMA 1
+++#define msecs_to_jiffies(x) (x)
+++#define wma_err(...) ((void)0)
+++static int inj_lock, inj_response_done, locked;
+++static struct {
+++ bool reserved, started, self_peer, unicast_peer;
+++ int state, helper_id;
+++ enum inj_response response, response_received;
+++ uint32_t response_status;
+++ uint8_t mac[6], target[6], response_addr[6];
+++ unsigned timeouts;
+++} inj;
+++struct peer_create_params { int vdev_id, peer_type; uint8_t *peer_addr; };
+++struct peer_delete_cmd_params { int vdev_id; };
+++static uint32_t create_status;
+++static int send_error, deletes, stops, vdev_deletes, faults, releases;
+++static bool ready, complete, right_kind, tx_drained;
+++static void spin_lock_bh(int *p) { assert(p==&inj_lock && !locked); locked=1; }
+++static void spin_unlock_bh(int *p) { assert(p==&inj_lock && locked); locked=0; }
+++static void reinit_completion(int *p) { assert(p==&inj_response_done); }
+++static void ether_addr_copy(uint8_t *d, const uint8_t *s) { memcpy(d,s,6); }
+++static bool inj_fw_ready(tp_wma_handle w) { assert(w==&context); return ready; }
+++static unsigned long wait_for_completion_timeout(int *p, unsigned long ms) {
+++ assert(p==&inj_response_done && ms==INJ_CONFIRM_MS && !locked);
+++ if (!complete) return 0;
+++ inj.response_received=right_kind ? inj.response : INJ_RSP_NONE;
+++ inj.response_status=inj.response==INJ_RSP_PEER_DELETE ? 0 : create_status;
+++ return 1;
+++}
+++static int wmi_unified_peer_create_send(void *w, struct peer_create_params *p) {
+++ assert(w==context.wmi_handle && p->vdev_id==4 && p->peer_type==0);
+++ assert(!memcmp(p->peer_addr,inj.mac,6)); return send_error;
+++}
+++static int wmi_unified_peer_delete_send(void *w, uint8_t *mac, struct peer_delete_cmd_params *p) {
+++ assert(w==context.wmi_handle && p->vdev_id==4 && !stops);
+++ assert(mac==inj.mac || mac==inj.target); deletes++; return send_error;
+++}
+++static tp_wma_handle cds_get_context(int id) { assert(id==1); return &context; }
+++static void inj_quiesce(void) {}
+++static bool inj_wait_tx(void) { return tx_drained; }
+++static QDF_STATUS inj_stop(tp_wma_handle w) { assert(w==&context); stops++; return 0; }
+++static QDF_STATUS inj_delete(tp_wma_handle w) { assert(w==&context && stops==1); vdev_deletes++; return 0; }
+++static void inj_release_owner(void) { releases++; }
+++static void inj_fault(const char *why) { assert(why); faults++; }
+++static void reset(void) {
+++ memset(&inj,0,sizeof(inj)); inj.helper_id=4; inj.reserved=inj.started=true;
+++ inj.mac[0]=2; inj.mac[5]=7; context.wmi_handle=&context;
+++ ready=complete=right_kind=tx_drained=true;
+++ create_status=send_error=deletes=stops=vdev_deletes=faults=releases=0;
+++}
+++'''
+++post = r'''
+++int main(void) {
+++ reset(); assert(!inj_create_self_peer(&context) && inj.self_peer);
+++ inj_destroy_locked(); assert(deletes==1 && stops==1 && vdev_deletes==1);
+++ assert(!inj.self_peer && !inj.reserved && inj.state==INJ_STOPPED && !faults);
+++ reset(); create_status=WMI_PEER_EXISTS;
+++ assert(!inj_create_self_peer(&context) && !inj.self_peer);
+++ inj_destroy_locked(); assert(!deletes && stops==1 && vdev_deletes==1 && !faults);
+++ /* A unicast peer is still explicitly deleted with a firmware-owned self. */
+++ reset(); create_status=WMI_PEER_EXISTS; inj.unicast_peer=true;
+++ assert(!inj_create_self_peer(&context)); inj_destroy_locked();
+++ assert(deletes==1 && !inj.unicast_peer && stops==1 && vdev_deletes==1);
+++ /* EXISTS is allowed only for the self-peer, never for a target peer. */
+++ reset(); create_status=WMI_PEER_EXISTS;
+++ assert(inj_peer_command(&context,inj.mac,true,false)==QDF_STATUS_E_FAILURE);
+++ assert(inj.state==INJ_RESET_REQUIRED && !inj.self_peer);
+++ reset(); create_status=2;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_FAILURE && !inj.self_peer);
+++ inj_destroy_locked(); assert(!deletes && !stops && !vdev_deletes && faults==1);
+++ reset(); complete=false;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_FAILURE && !inj.self_peer);
+++ reset(); right_kind=false;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_FAILURE && !inj.self_peer);
+++ reset(); send_error=QDF_STATUS_E_AGAIN;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_AGAIN && !inj.self_peer);
+++ reset(); ready=false;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_AGAIN && !inj.self_peer);
+++ reset(); assert(!inj_create_self_peer(&context)); tx_drained=false;
+++ inj_destroy_locked(); assert(!deletes && !stops && inj.timeouts==1 && faults==1);
+++ /* Loss of a delete confirmation must not advance to STOP or vdev delete. */
+++ reset(); assert(!inj_create_self_peer(&context)); complete=false;
+++ inj_destroy_locked(); assert(deletes==1 && !stops && !vdev_deletes && faults==1);
+++ puts("Production self-peer ownership, failed confirmation and teardown cases passed");
+++}
+++'''
+++names = ['static void inj_expect(', 'static QDF_STATUS inj_wait(',
+++         'static QDF_STATUS inj_peer_command(', 'static QDF_STATUS inj_create_self_peer(',
+++         'static void inj_destroy_locked(']
+++with tempfile.TemporaryDirectory() as tmp:
+++    c, exe = Path(tmp)/'test.c', Path(tmp)/'test'
+++    c.write_text(pre + '\n'.join(function(n) for n in names) + post)
+++    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+++                    '-fsanitize=address,undefined', str(c), '-o', str(exe)], check=True)
+++    subprocess.run([str(exe)], check=True)
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_tx_status.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_tx_status.py
+ new file mode 100644
+ index 0000000000000000000000000000000000000000..62dbe10eee60f0a442bb9a1b41cf71019ec6aee3
+@@ -5609,6 +5866,122 @@ index 0000000000000000000000000000000000000000..1d511fb0bee76026d6f560d696d97a62
+ + subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
+ + '-fsanitize=address,undefined','-I',str(ROOT/'core/wma/inc'),str(c),'-o',str(exe)],check=True)
+ + subprocess.run([str(exe)],check=True)
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py
++new file mode 100644
++index 0000000000000000000000000000000000000000..96fd127351872133f17d94f088236647733e7fe2
++--- /dev/null
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py
++@@ -0,0 +1,110 @@
+++#!/usr/bin/env python3
+++"""Run actual final adapter cleanup and both cfg80211 PNO stop callback variants."""
+++from pathlib import Path
+++import subprocess
+++import tempfile
+++
+++ROOT = Path(__file__).resolve().parents[1]
+++main = (ROOT/'core/hdd/src/wlan_hdd_main.c').read_text()
+++scan = (ROOT/'core/hdd/src/wlan_hdd_scan.c').read_text()
+++
+++def function(source, signature, start_at=0):
+++    start = source.index(signature, start_at)
+++    end = source.index('{', start) + 1
+++    depth = 1
+++    while depth:
+++        depth += (source[end] == '{') - (source[end] == '}')
+++        end += 1
+++    return source[start:end], end
+++
+++old, end = function(scan, 'int wlan_hdd_cfg80211_sched_scan_stop(')
+++new, _ = function(scan, 'int wlan_hdd_cfg80211_sched_scan_stop(', end)
+++cleanup, _ = function(main, 'static void hdd_cleanup_adapter(')
+++pre = r'''
+++#include <assert.h>
+++#include <errno.h>
+++#include <stdbool.h>
+++#include <stdint.h>
+++#include <stdio.h>
+++#include <string.h>
+++#define READ_ONCE(x) (x)
+++#define WRITE_ONCE(x,y) ((x)=(y))
+++#define WLAN_HDD_GET_PRIV_PTR(d) ((d)->priv)
+++#define hdd_err(...) ((void)0)
+++#define hdd_debug(...) ((void)0)
+++enum { DEVICE_IFACE_OPENED, NET_DEVICE_REGISTERED };
+++struct wiphy { int unused; } phy;
+++struct hdd_context { int unused; } ctx;
+++struct osif_vdev_sync { int unused; } sync_ctx;
+++struct hdd_adapter;
+++struct net_device { struct hdd_adapter *priv; } dev;
+++struct hdd_adapter {
+++ struct net_device *dev;
+++ bool netdev_unregistering;
+++ unsigned long event_flags;
+++ int mc_list_lock, sta_info_list, cache_sta_info_list;
+++} adapter;
+++static int sync_error, firmware_error, starts, stops, fw_calls, unregisters;
+++static int osif_vdev_sync_op_start(struct net_device *d, struct osif_vdev_sync **out) {
+++ assert(d==&dev && !adapter.netdev_unregistering); starts++;
+++ *out=&sync_ctx; return sync_error;
+++}
+++static void osif_vdev_sync_op_stop(struct osif_vdev_sync *s) { assert(s==&sync_ctx); stops++; }
+++static int __wlan_hdd_cfg80211_sched_scan_stop(struct net_device *d) {
+++ assert(d==&dev && !adapter.netdev_unregistering); fw_calls++; return firmware_error;
+++}
+++static void hdd_apf_context_destroy(struct hdd_adapter *a) { assert(a==&adapter && a->netdev_unregistering); }
+++static void qdf_spinlock_destroy(int *p) { assert(p==&adapter.mc_list_lock); }
+++static void hdd_adapter_destroy_vdev_info(struct hdd_adapter *a) { assert(a==&adapter); }
+++static void hdd_sta_info_deinit(int *p) { assert(p); }
+++static void wlan_hdd_debugfs_csr_deinit(struct hdd_adapter *a) { assert(a==&adapter); }
+++static void hdd_debugfs_exit(struct hdd_adapter *a) { assert(a==&adapter); }
+++static void clear_bit(unsigned b, unsigned long *v) { *v &= ~(1UL << b); }
+++static bool test_bit(unsigned b, unsigned long *v) { return *v & (1UL << b); }
+++static void unregister_netdev(struct net_device *d);
+++static void hdd_unregister_netdevice(struct hdd_adapter *a, struct net_device *d);
+++static void reset(void) {
+++ memset(&adapter,0,sizeof(adapter)); adapter.dev=&dev; dev.priv=&adapter;
+++ adapter.event_flags=(1UL<<DEVICE_IFACE_OPENED)|(1UL<<NET_DEVICE_REGISTERED);
+++ sync_error=firmware_error=starts=stops=fw_calls=unregisters=0;
+++}
+++'''
+++post = r'''
+++static void unregister_netdev(struct net_device *d) {
+++ assert(d==&dev && adapter.netdev_unregistering);
+++ assert(!test_bit(DEVICE_IFACE_OPENED,&adapter.event_flags)); unregisters++;
+++ /* Model cfg80211 GOING_DOWN and DOWN notifications after sync removal. */
+++ assert(!CALL_STOP && !CALL_STOP && !starts && !fw_calls && !stops);
+++}
+++static void hdd_unregister_netdevice(struct hdd_adapter *a, struct net_device *d) {
+++ assert(a==&adapter); unregister_netdev(d);
+++}
+++int main(void) {
+++ reset(); assert(!CALL_STOP && starts==1 && fw_calls==1 && stops==1);
+++ /* Preserve the original normal callback's intentional firmware-error ack. */
+++ reset(); firmware_error=-EIO; assert(!CALL_STOP && fw_calls==1 && stops==1);
+++ const int errors[]={-EAGAIN,-EBUSY,-ESHUTDOWN};
+++ for (unsigned i=0;i<sizeof(errors)/sizeof(errors[0]);i++) {
+++  reset(); sync_error=errors[i]; assert(CALL_STOP==errors[i]);
+++  assert(starts==1 && !fw_calls && !stops && !adapter.netdev_unregistering);
+++ }
+++ for (unsigned rtnl=0;rtnl<2;rtnl++) {
+++  reset(); sync_error=-EAGAIN; hdd_cleanup_adapter(&ctx,&adapter,rtnl);
+++  assert(unregisters==1 && adapter.netdev_unregistering && !starts && !fw_calls);
+++ }
+++ reset(); adapter.event_flags=0; hdd_cleanup_adapter(&ctx,&adapter,false);
+++ assert(!unregisters && !starts);
+++ reset(); hdd_cleanup_adapter(&ctx,NULL,false);
+++ assert(!unregisters && !adapter.netdev_unregistering);
+++ puts("Production scheduled-scan cleanup and live sync error cases passed");
+++}
+++'''
+++with tempfile.TemporaryDirectory() as tmp:
+++    for version, callback in [('old', old), ('new', new)]:
+++        c, exe = Path(tmp)/(version+'.c'), Path(tmp)/version
+++        call = 'wlan_hdd_cfg80211_sched_scan_stop(&phy,&dev' + (',42)' if version=='new' else ')')
+++        c.write_text(pre + callback + '\n' + cleanup + post.replace('CALL_STOP', call))
+++        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+++                        '-Wno-unused-parameter', '-fsanitize=address,undefined',
+++                        str(c), '-o', str(exe)], check=True)
+++        subprocess.run([str(exe)], check=True)
+ diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/wlan_qcacld3_modules.bzl b/vendor/qcom/opensource/wlan/qcacld-3.0/wlan_qcacld3_modules.bzl
+ index c8378812aabd84b0f8501c85267b632ff4c0c0b3..eeee6a460ded636796880a57026d5d0151cbf57c 100755
+ --- a/vendor/qcom/opensource/wlan/qcacld-3.0/wlan_qcacld3_modules.bzl
+diff --git "a/\350\241\245\344\270\201/native_global/README.md" "b/\350\241\245\344\270\201/native_global/README.md"
+index 7b3efe426f7b66b5faa26223eb6a555764e79adc..cefc832c8cd612606a13b8ae43c452384c1618c8 100644
+--- "a/\350\241\245\344\270\201/native_global/README.md"
++++ "b/\350\241\245\344\270\201/native_global/README.md"
+@@ -16,6 +16,10 @@ v8已完成四种SSR场景及用户down/up补测，详见[v8真机记录](../../
+ 构建和包身份见[v8校验记录](../../说明/验证/op13-v8-build-20260916.json)，
+ 主机检查和补丁重放见[源码校验](../../说明/验证/op13-ssr-fix-20260916.json)。
+ 
++最新源码已追加0015：修正helper self-peer所有权和最终注销时的PNO请求清理。
++真机持续发包换频道仍复现固件assert；本次修正仅通过主机回归，尚未构建或上机验证。
++并发换频道450请求已测，详见[本次调试记录](../../说明/op13_retune_debug_20260917.md)。
++
+ ## 应用与统一编译
+ 
+ 源码基线为 `4d69a3ed9a176152e85580352723c308f29cbfcb`。在内核仓库根目录：
+@@ -29,7 +33,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+ 第一项只接入 `prepare_vendor.sh` 的 WLAN 统一构建，必需保留。第二项是当前
+ 原生全局实现的合并 diff。不要叠加旧 `qca_inject/0002-0017`。
+ 
+-也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十四个邮件补丁。
++也可以从同一基线按 `exported/series` 顺序使用 `git am` 应用十五个邮件补丁。
+ 这与上面的两项应用方式二选一。对应源码提交：
+ 
+ - `d20c69af`：WLAN 统一构建接入。
+@@ -46,19 +50,20 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+ - `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
+ - `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；v8构建和四种SSR场景验证通过。
+ - `3b8463c2`：同步v8构建、四种SSR真机验证、用户补测及160 MHz缺测试条件的结论；仅文档。
++- `7387a666`：区分host创建与固件已有self-peer，修正最终接口注销PNO清理；两项新测试及五项回归通过，尚未构建/真机验收。
+ 
+ v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
+ 不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
+ v7的十二封邮件补丁曾重放到`422e8a00abf0521a986311b445c014a946a822ef`。
+ 0013结束时tree为`a3215426a531edd58dd9636b262da0296bac76e4`，对应实际v8构建源码
+-`30426bf8`。0014只同步验证文档，当前目标提交为
+-`3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb`，完整tree为
+-`ecae96f26a9713a501edc9950f90731be0375c9d`。除文档外与v8构建逐文件一致。
+-收尾在两个独立完整checkout中，从干净基线实际执行十四封`git am`和两项
+-`git apply --index`，比较每封提交tree及最终完整tree，见
+-[v8补丁重放校验](../../说明/验证/op13-v8-closeout-20260917.json)。
+-若已应用旧v6至0010，追加0011–0014；已应用v7至0012，追加0013–0014；
+-已应用v8至0013，只追加0014。
++`30426bf8`。0014仅同步文档，旧重放tree为`ecae96f26a9713a501edc9950f90731be0375c9d`，
++见[v8旧补丁校验](../../说明/验证/op13-v8-closeout-20260917.json)。
++当前目标为`7387a666ebca7d4a22676c350e4c598ffd831d1f`，完整tree为
++`38a1790c9c4b24073c8773c7d7703d424519033f`，运行时代码已经不同于v8构建。
++十五封邮件与“构建接入+合并补丁”分别从完整干净checkout重放，见
++[本次完整重放校验](../../说明/验证/op13-retune-patch-replay-20260917.json)。
++若已应用v6至0010，追加0011–0015；v7至0012，追加0013–0015；v8至0013，追加0014–0015；
++已至0014则只追加0015。
+ 不要在旧补丁上重复叠加合并补丁。
+ 
+ 可在主机重新运行校验，输出目录需使用一个新目录；不会编译或操作手机：
+@@ -66,7 +71,7 @@ v7的十二封邮件补丁曾重放到`422e8a00abf0521a986311b445c014a946a822ef`
+ ```sh
+ python3 /root/pt/oplus/补丁/native_global/verify_replay.py \
+   --source /root/pt/oneplus13-kernel-b \
+-  --target 3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb \
++  --target 7387a666ebca7d4a22676c350e4c598ffd831d1f \
+   --output /tmp/op13-patch-replay
+ ```
+ 
+@@ -147,5 +152,5 @@ qcacld Build ID：`ff0f34e4ea4eba64f788c495b3a9eabb401d3157`。
+ 全部装载段、模块元数据、导入CRC和Build ID保留，ZIP内容/权限校验通过。
+ 打包时未部署或测试手机。次日用户热切后完成SSR专项和用户补测，未执行新构建。
+ 空闲及带流量SSR后RX/TX恢复，40 MHz RX-only队列和管理员暂停状态保持；普通
+-Wi-Fi恢复及退出重进通过，用户down/up补测Probe23/30。最新监听仍活动，无在途/
++Wi-Fi恢复及退出重进通过，用户down/up补测Probe23/30。该次记录末尾监听仍活动，无在途/
+ 队列/DMA残留；未执行最终monstop。验证范围及证据见上方v8报告。
+diff --git "a/\350\241\245\344\270\201/native_global/exported/0015-helper-self-peer-and-pno-cleanup.patch" "b/\350\241\245\344\270\201/native_global/exported/0015-helper-self-peer-and-pno-cleanup.patch"
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9382b9d2732d2796da3f7ac1572f0b70eccc458
+--- /dev/null
++++ "b/\350\241\245\344\270\201/native_global/exported/0015-helper-self-peer-and-pno-cleanup.patch"
+@@ -0,0 +1,441 @@
++From 7387a666ebca7d4a22676c350e4c598ffd831d1f Mon Sep 17 00:00:00 2001
++From: shandongtlb <40312509+shandongtlb@users.noreply.github.com>
++Date: Thu, 17 Sep 2026 05:50:06 +0000
++Subject: [PATCH] wlan: respect helper self-peer ownership and final PNO
++ cleanup
++
++Retuning with Probe traffic reproduced a firmware assert after helper self-peer CREATE_CONF reported EXISTS and the host deleted that peer before STOP. Claim ownership only for a status-zero creation; retain all TX drain and response fences. This fixes the ownership assumption, with firmware root cause and device validation still pending.
++
++Final adapter cleanup has already removed vdev sync when cfg80211 stops its cached scheduled scan. Mark that terminal phase explicitly and acknowledge only its host cleanup, preserving live sync errors. Add extracted-production-code regression tests and record observed device failures. Seven relevant ASan/UBSan tests pass; no full build or new device deployment.
++---
++ .../qcacld-3.0/core/hdd/inc/wlan_hdd_main.h   |   2 +
++ .../qcacld-3.0/core/hdd/src/wlan_hdd_main.c   |   6 +
++ .../qcacld-3.0/core/hdd/src/wlan_hdd_scan.c   |  12 ++
++ .../wlan/qcacld-3.0/core/wma/src/wma_inject.c |  23 ++-
++ .../qcacld-3.0/docs/peach-native-injection.md |  46 ++++++
++ .../qcacld-3.0/tests/test_inject_self_peer.py | 134 ++++++++++++++++++
++ .../tests/test_sched_scan_teardown.py         | 110 ++++++++++++++
++ 7 files changed, 331 insertions(+), 2 deletions(-)
++ create mode 100644 vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py
++ create mode 100644 vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py
++
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
++index 8561bcb9..6839cc9c 100755
++--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h
++@@ -1525,6 +1525,8 @@ struct hdd_adapter {
++ 	enum hdd_work_status netdev_features_update_work_status;
++ 	qdf_atomic_t net_dev_hold_ref_count[NET_DEV_HOLD_ID_MAX];
++ 	bool delete_in_progress;
+++	/* Final netdev cleanup: firmware/vdev teardown has already run. */
+++	bool netdev_unregistering;
++ 	bool is_virtual_iface;
++ #ifdef WLAN_FEATURE_PKT_CAPTURE
++ 	struct hdd_adapter *mon_adapter;
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++index 5525eaa4..5a413aa7 100755
++--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++@@ -9065,6 +9065,12 @@ static void hdd_cleanup_adapter(struct hdd_context *hdd_ctx,
++ 		return;
++ 	}
++ 
+++	/* cfg80211 may stop its cached scheduled-scan request from the
+++	 * unregister notifications after vdev sync has been removed. Mark
+++	 * only final cleanup, so that callback can release its request without
+++	 * submitting firmware work or treating a live sync error as success.
+++	 */
+++	WRITE_ONCE(adapter->netdev_unregistering, true);
++ 	hdd_apf_context_destroy(adapter);
++ 	qdf_spinlock_destroy(&adapter->mc_list_lock);
++ 	hdd_adapter_destroy_vdev_info(adapter);
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c
++index 583449af..c0a7fe07 100644
++--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c
++@@ -1549,6 +1549,13 @@ int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
++ {
++ 	int errno;
++ 	struct osif_vdev_sync *vdev_sync;
+++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+++
+++	/* Final netdev cleanup runs after vdev sync/firmware teardown.
+++	 * cfg80211 must still be allowed to free its cached scan request.
+++	 */
+++	if (READ_ONCE(adapter->netdev_unregistering))
+++		return 0;
++ 
++ 	errno = osif_vdev_sync_op_start(dev, &vdev_sync);
++ 	if (errno)
++@@ -1576,6 +1583,11 @@ int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
++ {
++ 	int errno;
++ 	struct osif_vdev_sync *vdev_sync;
+++	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+++
+++	/* See the pre-4.12 callback: this acknowledges host cleanup only. */
+++	if (READ_ONCE(adapter->netdev_unregistering))
+++		return 0;
++ 
++ 	errno = osif_vdev_sync_op_start(dev, &vdev_sync);
++ 	if (errno)
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
++index d3f04303..27478cfa 100644
++--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c
++@@ -70,6 +70,7 @@ static struct {
++ 	bool queue_stopped;
++ 	/* Spans helper teardown/recreation; owned by HDD's channel operation. */
++ 	bool host_blocked;
+++	/* self_peer means created by us, not a firmware-owned existing peer. */
++ 	bool reserved, started, self_peer, unicast_peer;
++ 	uint8_t helper_id, monitor_id;
++ 	uint8_t mac[QDF_MAC_ADDR_SIZE], target[QDF_MAC_ADDR_SIZE];
++@@ -466,6 +467,25 @@ static QDF_STATUS inj_peer_command(tp_wma_handle wma, const uint8_t *addr,
++ 	return inj_wait(wma, status, kind);
++ }
++ 
+++static QDF_STATUS inj_create_self_peer(tp_wma_handle wma)
+++{
+++	QDF_STATUS status = inj_peer_command(wma, inj.mac, true, true);
+++
+++	if (QDF_IS_STATUS_ERROR(status))
+++		return status;
+++
+++	/* A STA vdev may already have a firmware-owned self-peer. EXISTS
+++	 * permits TX setup, but does not transfer ownership to the host.
+++	 * Leave that peer to firmware vdev teardown, as the native STA path
+++	 * does; only delete a self-peer whose creation we actually confirmed.
+++	 * The lifecycle mutex excludes another control command here.
+++	 */
+++	spin_lock_bh(&inj_lock);
+++	inj.self_peer = inj.response_status == 0;
+++	spin_unlock_bh(&inj_lock);
+++	return QDF_STATUS_SUCCESS;
+++}
+++
++ static QDF_STATUS inj_start(tp_wma_handle wma, uint32_t freq, bool restart)
++ {
++ 	struct vdev_start_params p = {0};
++@@ -1082,10 +1102,9 @@ static QDF_STATUS inj_ensure_locked(uint8_t id, uint32_t freq)
++ 	if (QDF_IS_STATUS_ERROR(status))
++ 		goto fail;
++ 	inj.started = true;
++-	status = inj_peer_command(wma, inj.mac, true, true);
+++	status = inj_create_self_peer(wma);
++ 	if (QDF_IS_STATUS_ERROR(status))
++ 		goto fail;
++-	inj.self_peer = true;
++ 	spin_lock_bh(&inj_lock);
++ 	inj.state = INJ_RUNNING;
++ 	inj_flow_update();
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++index 0f666763..d6ef4281 100644
++--- a/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md
++@@ -282,3 +282,49 @@ The user reports no known 160 MHz signal source in the current environment;
++ or screen-off/resume behavior remain outside this validation. This update
++ does not start another build or device test. Full records are in the workspace
++ `oplus/说明/op13_v8_runtime_20260917.md` and `op13-v8-runtime-20260917/`.
+++
+++## Retuning endurance and scheduled-scan cleanup (2026-09-17)
+++
+++Later testing of the unchanged v8 modules extends and limits the earlier
+++validation. On the same boot, 80/160 MHz RX-only SSR restored the saved channel
+++and kept TX empty; 160 MHz actual RF receive still lacks a known signal source.
+++Concurrent channel control completed 450 requests: 341 succeeded, 39 returned
+++busy, and 70 WEXT requests were correctly unsupported. WEXT only confirms the
+++current 20 MHz channel; nl80211 performs retuning. Separate 240 cross-band and
+++480 mixed 20/40/80 MHz retunes with Probe traffic drained successfully. A
+++240 same-band run also drained, but its original harness checked too early
+++and returned failure; a later empty-queue observation is recorded separately.
+++
+++Longer mixed retuning with traffic reproduced a firmware assert after 536
+++successful steps (about 203 seconds), on 2412/20 -> 2437/20. The failed request
+++returned EAGAIN and was not ignored. The firmware signature matches the prior
+++110-second failure: 0x1f07818:0x1f0134c, line 1444. Automatic SSR recovered RX
+++and TX; this is a failed endurance test, not a stability pass.
+++
+++The WMI ring captured self-peer CREATE_CONF status WMI_PEER_EXISTS (1), then
+++host PEER_DELETE, its response, and VDEV_STOP without a STOP response before
+++the hang. The observed helper MAC was unique. The sam-derived code accepted
+++EXISTS but unconditionally treated the peer as host-created and deleted it.
+++Native STA self-peer handling only removes the host object in this case.
+++Track host ownership only for a successful status-zero creation; leave an
+++existing firmware self-peer to vdev teardown. Unicast peer ownership and all
+++TX drain/confirmation fences remain unchanged. This repairs an ownership
+++assumption, but the opaque firmware assertion has not been mapped to source
+++and its complete cause is not yet established.
+++
+++A separate passive scheduled-scan reproduction compared a successful direct
+++stop against final netdev cleanup while entering monitor. Both cfg80211
+++cleanup callbacks returned -EAGAIN after vdev sync removal, retaining the
+++request and producing net/wireless/core.c:1535 WARNING. Mark final adapter
+++cleanup explicitly and acknowledge that callback without firmware access.
+++Only this final cleanup bypasses vdev sync; live EAGAIN/EBUSY/ESHUTDOWN errors
+++remain visible. Both pre-4.12 and newer callback signatures are covered.
+++
+++Seven extracted-production-code ASan/UBSan tests pass, including new self-peer
+++confirmation/ownership/teardown and actual adapter-cleanup/PNO callback tests,
+++plus scheduler, SSR restoration, mode handoff, SSR rebuild and channel
+++serialization regressions. Firmware and kernel calls are stubbed. These
+++source changes have not been fully built, packaged or tested on the phone.
+++The phone still runs v8, and was restored to managed Wi-Fi with all queues
+++empty and pool allocations/frees both 5. Evidence and next steps are in
+++`oplus/说明/op13_retune_debug_20260917.md` and `op13-retune-debug-20260917/`.
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py
++new file mode 100644
++index 00000000..fe9e9003
++--- /dev/null
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py
++@@ -0,0 +1,134 @@
+++#!/usr/bin/env python3
+++"""Exercise production peer confirmation, ownership and teardown with WMI stubs."""
+++from pathlib import Path
+++import subprocess
+++import tempfile
+++
+++ROOT = Path(__file__).resolve().parents[1]
+++source = (ROOT / 'core/wma/src/wma_inject.c').read_text()
+++
+++def function(signature):
+++    start = source.index(signature)
+++    end = source.index('{', start) + 1
+++    depth = 1
+++    while depth:
+++        depth += (source[end] == '{') - (source[end] == '}')
+++        end += 1
+++    return source[start:end]
+++
+++ensure = function('static QDF_STATUS inj_ensure_locked(')
+++assert 'inj_create_self_peer(wma)' in ensure
+++assert 'inj.self_peer = true' not in ensure
+++
+++pre = r'''
+++#include <assert.h>
+++#include <stdbool.h>
+++#include <stdint.h>
+++#include <stdio.h>
+++#include <string.h>
+++typedef int QDF_STATUS;
+++struct wma { void *wmi_handle; } context;
+++typedef struct wma *tp_wma_handle;
+++enum inj_response { INJ_RSP_NONE, INJ_RSP_SELF, INJ_RSP_PEER, INJ_RSP_PEER_DELETE };
+++enum { INJ_RUNNING, INJ_STOPPED, INJ_RESET_REQUIRED };
+++enum { QDF_STATUS_SUCCESS, QDF_STATUS_E_FAILURE, QDF_STATUS_E_AGAIN };
+++#define QDF_IS_STATUS_ERROR(x) ((x) != 0)
+++#define QDF_IS_STATUS_SUCCESS(x) ((x) == 0)
+++#define WMI_PEER_EXISTS 1
+++#define WMI_PEER_TYPE_DEFAULT 0
+++#define INJ_CONFIRM_MS 2000
+++#define QDF_MODULE_ID_WMA 1
+++#define msecs_to_jiffies(x) (x)
+++#define wma_err(...) ((void)0)
+++static int inj_lock, inj_response_done, locked;
+++static struct {
+++ bool reserved, started, self_peer, unicast_peer;
+++ int state, helper_id;
+++ enum inj_response response, response_received;
+++ uint32_t response_status;
+++ uint8_t mac[6], target[6], response_addr[6];
+++ unsigned timeouts;
+++} inj;
+++struct peer_create_params { int vdev_id, peer_type; uint8_t *peer_addr; };
+++struct peer_delete_cmd_params { int vdev_id; };
+++static uint32_t create_status;
+++static int send_error, deletes, stops, vdev_deletes, faults, releases;
+++static bool ready, complete, right_kind, tx_drained;
+++static void spin_lock_bh(int *p) { assert(p==&inj_lock && !locked); locked=1; }
+++static void spin_unlock_bh(int *p) { assert(p==&inj_lock && locked); locked=0; }
+++static void reinit_completion(int *p) { assert(p==&inj_response_done); }
+++static void ether_addr_copy(uint8_t *d, const uint8_t *s) { memcpy(d,s,6); }
+++static bool inj_fw_ready(tp_wma_handle w) { assert(w==&context); return ready; }
+++static unsigned long wait_for_completion_timeout(int *p, unsigned long ms) {
+++ assert(p==&inj_response_done && ms==INJ_CONFIRM_MS && !locked);
+++ if (!complete) return 0;
+++ inj.response_received=right_kind ? inj.response : INJ_RSP_NONE;
+++ inj.response_status=inj.response==INJ_RSP_PEER_DELETE ? 0 : create_status;
+++ return 1;
+++}
+++static int wmi_unified_peer_create_send(void *w, struct peer_create_params *p) {
+++ assert(w==context.wmi_handle && p->vdev_id==4 && p->peer_type==0);
+++ assert(!memcmp(p->peer_addr,inj.mac,6)); return send_error;
+++}
+++static int wmi_unified_peer_delete_send(void *w, uint8_t *mac, struct peer_delete_cmd_params *p) {
+++ assert(w==context.wmi_handle && p->vdev_id==4 && !stops);
+++ assert(mac==inj.mac || mac==inj.target); deletes++; return send_error;
+++}
+++static tp_wma_handle cds_get_context(int id) { assert(id==1); return &context; }
+++static void inj_quiesce(void) {}
+++static bool inj_wait_tx(void) { return tx_drained; }
+++static QDF_STATUS inj_stop(tp_wma_handle w) { assert(w==&context); stops++; return 0; }
+++static QDF_STATUS inj_delete(tp_wma_handle w) { assert(w==&context && stops==1); vdev_deletes++; return 0; }
+++static void inj_release_owner(void) { releases++; }
+++static void inj_fault(const char *why) { assert(why); faults++; }
+++static void reset(void) {
+++ memset(&inj,0,sizeof(inj)); inj.helper_id=4; inj.reserved=inj.started=true;
+++ inj.mac[0]=2; inj.mac[5]=7; context.wmi_handle=&context;
+++ ready=complete=right_kind=tx_drained=true;
+++ create_status=send_error=deletes=stops=vdev_deletes=faults=releases=0;
+++}
+++'''
+++post = r'''
+++int main(void) {
+++ reset(); assert(!inj_create_self_peer(&context) && inj.self_peer);
+++ inj_destroy_locked(); assert(deletes==1 && stops==1 && vdev_deletes==1);
+++ assert(!inj.self_peer && !inj.reserved && inj.state==INJ_STOPPED && !faults);
+++ reset(); create_status=WMI_PEER_EXISTS;
+++ assert(!inj_create_self_peer(&context) && !inj.self_peer);
+++ inj_destroy_locked(); assert(!deletes && stops==1 && vdev_deletes==1 && !faults);
+++ /* A unicast peer is still explicitly deleted with a firmware-owned self. */
+++ reset(); create_status=WMI_PEER_EXISTS; inj.unicast_peer=true;
+++ assert(!inj_create_self_peer(&context)); inj_destroy_locked();
+++ assert(deletes==1 && !inj.unicast_peer && stops==1 && vdev_deletes==1);
+++ /* EXISTS is allowed only for the self-peer, never for a target peer. */
+++ reset(); create_status=WMI_PEER_EXISTS;
+++ assert(inj_peer_command(&context,inj.mac,true,false)==QDF_STATUS_E_FAILURE);
+++ assert(inj.state==INJ_RESET_REQUIRED && !inj.self_peer);
+++ reset(); create_status=2;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_FAILURE && !inj.self_peer);
+++ inj_destroy_locked(); assert(!deletes && !stops && !vdev_deletes && faults==1);
+++ reset(); complete=false;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_FAILURE && !inj.self_peer);
+++ reset(); right_kind=false;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_FAILURE && !inj.self_peer);
+++ reset(); send_error=QDF_STATUS_E_AGAIN;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_AGAIN && !inj.self_peer);
+++ reset(); ready=false;
+++ assert(inj_create_self_peer(&context)==QDF_STATUS_E_AGAIN && !inj.self_peer);
+++ reset(); assert(!inj_create_self_peer(&context)); tx_drained=false;
+++ inj_destroy_locked(); assert(!deletes && !stops && inj.timeouts==1 && faults==1);
+++ /* Loss of a delete confirmation must not advance to STOP or vdev delete. */
+++ reset(); assert(!inj_create_self_peer(&context)); complete=false;
+++ inj_destroy_locked(); assert(deletes==1 && !stops && !vdev_deletes && faults==1);
+++ puts("Production self-peer ownership, failed confirmation and teardown cases passed");
+++}
+++'''
+++names = ['static void inj_expect(', 'static QDF_STATUS inj_wait(',
+++         'static QDF_STATUS inj_peer_command(', 'static QDF_STATUS inj_create_self_peer(',
+++         'static void inj_destroy_locked(']
+++with tempfile.TemporaryDirectory() as tmp:
+++    c, exe = Path(tmp)/'test.c', Path(tmp)/'test'
+++    c.write_text(pre + '\n'.join(function(n) for n in names) + post)
+++    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+++                    '-fsanitize=address,undefined', str(c), '-o', str(exe)], check=True)
+++    subprocess.run([str(exe)], check=True)
++diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py
++new file mode 100644
++index 00000000..96fd1273
++--- /dev/null
+++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py
++@@ -0,0 +1,110 @@
+++#!/usr/bin/env python3
+++"""Run actual final adapter cleanup and both cfg80211 PNO stop callback variants."""
+++from pathlib import Path
+++import subprocess
+++import tempfile
+++
+++ROOT = Path(__file__).resolve().parents[1]
+++main = (ROOT/'core/hdd/src/wlan_hdd_main.c').read_text()
+++scan = (ROOT/'core/hdd/src/wlan_hdd_scan.c').read_text()
+++
+++def function(source, signature, start_at=0):
+++    start = source.index(signature, start_at)
+++    end = source.index('{', start) + 1
+++    depth = 1
+++    while depth:
+++        depth += (source[end] == '{') - (source[end] == '}')
+++        end += 1
+++    return source[start:end], end
+++
+++old, end = function(scan, 'int wlan_hdd_cfg80211_sched_scan_stop(')
+++new, _ = function(scan, 'int wlan_hdd_cfg80211_sched_scan_stop(', end)
+++cleanup, _ = function(main, 'static void hdd_cleanup_adapter(')
+++pre = r'''
+++#include <assert.h>
+++#include <errno.h>
+++#include <stdbool.h>
+++#include <stdint.h>
+++#include <stdio.h>
+++#include <string.h>
+++#define READ_ONCE(x) (x)
+++#define WRITE_ONCE(x,y) ((x)=(y))
+++#define WLAN_HDD_GET_PRIV_PTR(d) ((d)->priv)
+++#define hdd_err(...) ((void)0)
+++#define hdd_debug(...) ((void)0)
+++enum { DEVICE_IFACE_OPENED, NET_DEVICE_REGISTERED };
+++struct wiphy { int unused; } phy;
+++struct hdd_context { int unused; } ctx;
+++struct osif_vdev_sync { int unused; } sync_ctx;
+++struct hdd_adapter;
+++struct net_device { struct hdd_adapter *priv; } dev;
+++struct hdd_adapter {
+++ struct net_device *dev;
+++ bool netdev_unregistering;
+++ unsigned long event_flags;
+++ int mc_list_lock, sta_info_list, cache_sta_info_list;
+++} adapter;
+++static int sync_error, firmware_error, starts, stops, fw_calls, unregisters;
+++static int osif_vdev_sync_op_start(struct net_device *d, struct osif_vdev_sync **out) {
+++ assert(d==&dev && !adapter.netdev_unregistering); starts++;
+++ *out=&sync_ctx; return sync_error;
+++}
+++static void osif_vdev_sync_op_stop(struct osif_vdev_sync *s) { assert(s==&sync_ctx); stops++; }
+++static int __wlan_hdd_cfg80211_sched_scan_stop(struct net_device *d) {
+++ assert(d==&dev && !adapter.netdev_unregistering); fw_calls++; return firmware_error;
+++}
+++static void hdd_apf_context_destroy(struct hdd_adapter *a) { assert(a==&adapter && a->netdev_unregistering); }
+++static void qdf_spinlock_destroy(int *p) { assert(p==&adapter.mc_list_lock); }
+++static void hdd_adapter_destroy_vdev_info(struct hdd_adapter *a) { assert(a==&adapter); }
+++static void hdd_sta_info_deinit(int *p) { assert(p); }
+++static void wlan_hdd_debugfs_csr_deinit(struct hdd_adapter *a) { assert(a==&adapter); }
+++static void hdd_debugfs_exit(struct hdd_adapter *a) { assert(a==&adapter); }
+++static void clear_bit(unsigned b, unsigned long *v) { *v &= ~(1UL << b); }
+++static bool test_bit(unsigned b, unsigned long *v) { return *v & (1UL << b); }
+++static void unregister_netdev(struct net_device *d);
+++static void hdd_unregister_netdevice(struct hdd_adapter *a, struct net_device *d);
+++static void reset(void) {
+++ memset(&adapter,0,sizeof(adapter)); adapter.dev=&dev; dev.priv=&adapter;
+++ adapter.event_flags=(1UL<<DEVICE_IFACE_OPENED)|(1UL<<NET_DEVICE_REGISTERED);
+++ sync_error=firmware_error=starts=stops=fw_calls=unregisters=0;
+++}
+++'''
+++post = r'''
+++static void unregister_netdev(struct net_device *d) {
+++ assert(d==&dev && adapter.netdev_unregistering);
+++ assert(!test_bit(DEVICE_IFACE_OPENED,&adapter.event_flags)); unregisters++;
+++ /* Model cfg80211 GOING_DOWN and DOWN notifications after sync removal. */
+++ assert(!CALL_STOP && !CALL_STOP && !starts && !fw_calls && !stops);
+++}
+++static void hdd_unregister_netdevice(struct hdd_adapter *a, struct net_device *d) {
+++ assert(a==&adapter); unregister_netdev(d);
+++}
+++int main(void) {
+++ reset(); assert(!CALL_STOP && starts==1 && fw_calls==1 && stops==1);
+++ /* Preserve the original normal callback's intentional firmware-error ack. */
+++ reset(); firmware_error=-EIO; assert(!CALL_STOP && fw_calls==1 && stops==1);
+++ const int errors[]={-EAGAIN,-EBUSY,-ESHUTDOWN};
+++ for (unsigned i=0;i<sizeof(errors)/sizeof(errors[0]);i++) {
+++  reset(); sync_error=errors[i]; assert(CALL_STOP==errors[i]);
+++  assert(starts==1 && !fw_calls && !stops && !adapter.netdev_unregistering);
+++ }
+++ for (unsigned rtnl=0;rtnl<2;rtnl++) {
+++  reset(); sync_error=-EAGAIN; hdd_cleanup_adapter(&ctx,&adapter,rtnl);
+++  assert(unregisters==1 && adapter.netdev_unregistering && !starts && !fw_calls);
+++ }
+++ reset(); adapter.event_flags=0; hdd_cleanup_adapter(&ctx,&adapter,false);
+++ assert(!unregisters && !starts);
+++ reset(); hdd_cleanup_adapter(&ctx,NULL,false);
+++ assert(!unregisters && !adapter.netdev_unregistering);
+++ puts("Production scheduled-scan cleanup and live sync error cases passed");
+++}
+++'''
+++with tempfile.TemporaryDirectory() as tmp:
+++    for version, callback in [('old', old), ('new', new)]:
+++        c, exe = Path(tmp)/(version+'.c'), Path(tmp)/version
+++        call = 'wlan_hdd_cfg80211_sched_scan_stop(&phy,&dev' + (',42)' if version=='new' else ')')
+++        c.write_text(pre + callback + '\n' + cleanup + post.replace('CALL_STOP', call))
+++        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+++                        '-Wno-unused-parameter', '-fsanitize=address,undefined',
+++                        str(c), '-o', str(exe)], check=True)
+++        subprocess.run([str(exe)], check=True)
+diff --git "a/\350\241\245\344\270\201/native_global/exported/series" "b/\350\241\245\344\270\201/native_global/exported/series"
+index 3c27316041061eb06ccd75938ab68bea8908c71b..522931781e25a96bb34cb3903fd23ea49b74ee5c 100644
+--- "a/\350\241\245\344\270\201/native_global/exported/series"
++++ "b/\350\241\245\344\270\201/native_global/exported/series"
+@@ -12,3 +12,4 @@
+ 0012-v7-device-regression-results.patch
+ 0013-monitor-ssr-rebuild.patch
+ 0014-v8-ssr-device-validation.patch
++0015-helper-self-peer-and-pno-cleanup.patch
+diff --git "a/\350\241\245\344\270\201/native_global/verify_replay.py" "b/\350\241\245\344\270\201/native_global/verify_replay.py"
+index 62445c850b8d19bad21e37226a04438f176d4ddd..b544b914ce7e62e20e76772a0dd8d544f1c28553 100644
+--- "a/\350\241\245\344\270\201/native_global/verify_replay.py"
++++ "b/\350\241\245\344\270\201/native_global/verify_replay.py"
+@@ -17,7 +17,6 @@ import subprocess
+ 
+ BASE = '4d69a3ed9a176152e85580352723c308f29cbfcb'
+ BUILD = '30426bf8a3e1b57596ee741086e2c491617c58d1'
+-DOC = 'vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md'
+ 
+ 
+ def main():
+@@ -135,9 +134,9 @@ def main():
+         print(f'{route}: all patches applied, complete tree {tree}, clean', flush=True)
+ 
+     changes = git('diff', '--name-only', BUILD, target).decode().splitlines()
+-    assert changes == [DOC], changes
+-    assert not git('diff', BUILD, target, '--', '.', ':!'+DOC).strip()
+-    report['v8_runtime_unchanged'] = True
++    runtime_changes = [p for p in changes if '/docs/' not in p and '/tests/' not in p]
++    report['v8_runtime_unchanged'] = not runtime_changes
++    report['runtime_files_changed_since_v8_build'] = runtime_changes
+     report['changes_since_v8_build'] = changes
+     report['match'] = True
+     (output/'verification.json').write_text(json.dumps(report, indent=2, ensure_ascii=False)+'\n')
+diff --git "a/\350\257\264\346\230\216/op13_retune_debug_20260917.md" "b/\350\257\264\346\230\216/op13_retune_debug_20260917.md"
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6187fadb0ea8d3b99fb931c1c0cedd2a55843a5
+--- /dev/null
++++ "b/\350\257\264\346\230\216/op13_retune_debug_20260917.md"
+@@ -0,0 +1,105 @@
++# 持续换频道调试与源码修正（2026-09-17）
++
++本轮按用户要求回到防呆前的四项验证。并发换频道通过；持续注入换频道再次触发固件
++assert，不能记为稳定性通过。已针对 self-peer 所有权和切模式时残留扫描请求修正源码。
++**新源码未完整构建、未打包、未部署，固件 assert 是否消失仍待新构建复测。**
++
++## 四项原始待测项
++
++| 项目 | 当前结果 |
++| --- | --- |
++| 80/160 MHz SSR | 上一轮已测：RX-only 频道恢复，队列无留帧；见[v8.1补测](op13_v8_1_runtime_20260917.md) |
++| 160 MHz 实际空口接收 | 当前无已知信号源，仍未验证；设频和SSR成功不能代替收包证据 |
++| 并发换频道 | 本轮450个请求完成，341成功、39忙、70 WEXT不支持，符合接口语义，无新增SSR或队列残留 |
++| 长时间带流量换频道 | 本轮约203秒再次固件assert，已保存故障前WMI历史；修复候选待上机验证 |
++
++## 手机与现场
++
++设备PJZ110，序列号`3B1F5QE8WTX87GZQ`。05:22:48 UTC开始，整轮boot ID保持
++`a55dcf19-cf49-4ee8-aa29-c4198fe71cf0`。手机始终运行v8三模块，构建源码
++`30426bf8a3e1b57596ee741086e2c491617c58d1`，qcacld Build ID
++`ff0f34e4ea4eba64f788c495b3a9eabb401d3157`。KSU五脚本已在前一轮热修至`0793727`，
++本轮未更换模块或脚本。只发送Probe测试流量，未重测deauth断线效果。
++
++完整现场在`/root/pt/op13-retune-debug-20260917/`，摘要与文件SHA-256见
++[验证记录](验证/op13-retune-debug-20260917.json)。脚本/原始输出均保留，包括失败返回码。
++
++## 拆分测试
++
++- 20 MHz同频段：240次请求全部成功，无SSR。原测试器只等0.3秒便检查尾帧，
++  返回1；后来`after-same-band.txt`确认submitted=completed=27332、所有队列0。
++  后续测试器改为观察实际qdisc/driver排空（上限8秒），原始失败记录保留。
++- 20 MHz跨频段2462↔5745：240次、99.032秒全部成功，新增31572 accepted、
++  25071 completed、6501切换前未提交帧丢弃，最终排空。
++- 20/40/80 MHz混合：480次、161.478秒全部成功，新增30265 accepted、23624 completed、
++  6641 dropped；最终80 MHz RX-only且排空。此轮chroot内尚无debugfs绑定，不能声称
++  留有该次完整WMI历史；后续修正私有挂载后才进行故障捕获。
++- 并发两个nl80211线程加一个WEXT线程：48.962秒、450个请求。nl80211为297成功+3忙；
++  WEXT为44同频道确认成功+36忙+70不支持实际换频。最终submitted=completed=81727，
++  queues/used/stale/timeouts0。部分多参数STEP打印有交错，完整线程计数保留。
++- 8个CPU固定线程同时使用PACKET_QDISC_BYPASS：15.209秒，5201帧完成、170462次ENOBUFS，
++  峰值63/64槽、31排队和32在途；backpressure仍0。**未命中真实NETDEV_TX_BUSY分支**。
++  生产代码抽取的队列及Radiotap主机测试覆盖满队列/BUSY不修改skb，但不代替真机证据。
++
++## 固件assert再次复现与self-peer线索
++
++混合序列计划900次，在536次成功后，从2412/20切到2437/20返回-EAGAIN；约202.754秒。
++失败前30排队+32在途；结束时submitted=completed=116169，队列均0，helper处于state4。
++其后自动SSR恢复2412/20、state2；新增6个Probe完成，137 Beacon、19 Probe响应。
++
++内核时钟3684.568562收到hang，3684.879778记录
++`cmnos_assert_patched.c:604:0x8Asserted in:0x1f07818:0x1f0134c, line#1444`，
++3685.345780 helper STOP确认kind5失败，3686.855597 TX恢复。与上一轮跨频段切换
++约110秒故障签名相同，本次失败边界为同频段，不能仅归因于跨频段。
++
++故障前WMI环形日志捕获（WMI/QDF时钟与dmesg时钟不同，不能直接相减）：
++
++1. helper4使用独立MAC `7e:6a:17:06:60:9a`，CREATE后START成功。
++2. PEER_CREATE_CONF返回status1，即WMI_PEER_EXISTS；历史中三个独立helper MAC均见此状态。
++3. 最后一批TX完成后，host发出该self-peer DELETE，收到DELETE响应。
++4. 随后VDEV_STOP，没有捕获STOP响应或VDEV_DELETE便出现故障。
++
++原sam-derived实现接受EXISTS后仍无条件设置`self_peer=true`，退出便认为自己拥有
++该peer并删除。原生STA路径对此仅管理host object，让固件处理vdev自身peer生命周期。
++源码现在只在create确认status0时记录host所有权；EXISTS允许继续TX初始化，但不主动
++删除固件已有self-peer。单播peer删除、TX排空和STOP/DELETE确认机制保持原有语义。
++
++sam主补丁同样有无条件所有权赋值，不能把这个问题描述成“直接抄sam即可修复”。
++本次是结合peach实测对sam路线的适配。**这是可证实的所有权假设修正；缺少固件断言
++地址到源码的映射，也尚未运行新模块，不能宣称已证明并解决assert全部根因。**
++
++## scheduled scan残留警告
++
++用被动PNO扫描做对照：start→直接stop均返回0；再次start成功后进入全局监听，
++`rdev_sched_scan_stop`在最终接口注销时两次返回-11（3821.051763及3821.076560），
++第一次后即触发cfg80211 core.c:1535 WARNING。相关trace完整保存。
++
++`hdd_close_all_adapters`先撤销vdev sync，最终unregister通知再让cfg80211清理请求。
++stop包装层在sync失败处提前返回，已有的“允许卸载清理”逻辑未被执行。
++新增`netdev_unregistering`，只在最终`hdd_cleanup_adapter`设置；该阶段的stop只确认
++host请求清理，不访问已经停止的firmware/vdev。运行中的EAGAIN/EBUSY/ESHUTDOWN仍返回。
++不复用较早设置的`delete_in_progress`，也不全局吞掉-EAGAIN。
++
++## 主机验证、源码和补丁
++
++源码提交`7387a666ebca7d4a22676c350e4c598ffd831d1f`，完整tree
++`38a1790c9c4b24073c8773c7d7703d424519033f`。7项相关ASan/UBSan测试通过：
++新增self-peer确认/所有权/失败清理、实际adapter cleanup及两个PNO回调版本；以及
++原有调度器、SSR恢复、退出事务、SSR重建和频道并发回归。详见证据内主机输出。
++
++邮件序列新增`0015-helper-self-peer-and-pno-cleanup.patch`，合并补丁
++`0001-peach-v2-native-global-monitor.patch`同步更新。两条应用路线的完整checkout
++重放结果见[补丁验证](验证/op13-retune-patch-replay-20260917.json)。0015改变运行时代码，
++因此源码现在不再与v8模块一致；验证脚本会如实记录此差异。
++
++## 收尾与下一步
++
++最终monstop成功，con_mode0/state0，queued/inflight/used/retained/stopping0、pool5/5。
++Wi-Fi恢复原网络、原IP且VALIDATED，始终扫描恢复1，发送息屏键；三模块文件与加载notes
++再次核对为v8。诊断trace实例已保存并删除；debugfs只在私有mount namespace中挂载。
++
++下一步需要统一构建本次源码，然后用相同PNO复现和带Probe混合换频矩阵比较结果。
++每轮完整构建结束报告并停下，不连续编译。本轮没有构建、打包或部署新模块。
++160 MHz真实RX、平板端共享完整流程仍缺条件；monitor持有wake lock，Dozing不代表
++真正深度suspend，不强行绕过该设计。已暂停且禁用的v8.2打包草稿不能直接运行；
++后续包应同时考虑本次内核修正和前轮脚本热修，不再把旧v8.1 ZIP当成修复版。
+diff --git "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md" "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
+index ce0b4267459489b496de3af57824a8058094ed11..f4d144062e6f2ca4efe653cf1470324d83faf2a2 100644
+--- "a/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
++++ "b/\350\257\264\346\230\216/op13_sam_global_helper_handoff.md"
+@@ -403,3 +403,19 @@ sleep掩盖；下一步拆20MHz同/跨频段与20↔宽带宽，并查helper pee
+ boot未变。手机三模块仍v8；源码HEAD3b8463c2未改、无编译。手机五个脚本已热修
+ 但module.prop暂仍v8.1；现存v8.1 ZIP仍为旧脚本，后续打包必须用本轮修复。
+ 报告[真机补测](op13_v8_1_runtime_20260917.md)，证据op13-v8.1-runtime-20260917/。
++
++
++## 后续换频道压力调试与0015（2026-09-17）
++
++用户明确继续调试，不继续打包草稿。450次并发频道请求完成；240跨频段、480次
++20/40/80带Probe切换分别排空。更长混合序列在536次成功后、2412→2437/20时再次
++出现固件assert line1444，SSR恢复，不能判为耐久通过。WMI捕获EXISTS self-peer
++被host删除后STOP无确认；源码区分创建成功/固件已有peer的所有权，后者留给vdev
++生命周期。sam原实现也存在无条件所有权赋值，本次为peach现场适配，非已证实固件根因。
++
++被动PNO直接stop返回0，切模式最终注销两次stop返回-EAGAIN并WARN已稳定复现。
++新增最终cleanup标记，让cfg80211释放host请求；正常运行的sync错误仍返回。
++7项相关主机回归通过，源码7387a666，邮件补丁新增0015、合并补丁同步；未完整构建
++或上机验证新源码。报告[本轮调试](op13_retune_debug_20260917.md)。手机仍v8模块+
++0793727脚本；已恢复managed、Wi-Fi连接/VALIDATED、始终扫描1，pool5/5且队列0，
++boot不变。下一步统一构建后对照复测PNO与持续换频道，不连续编译。
+diff --git "a/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-debug-20260917.json" "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-debug-20260917.json"
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c10a572687ccec0a0ae8997463782482d397ef3
+--- /dev/null
++++ "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-debug-20260917.json"
+@@ -0,0 +1,936 @@
++{
++  "date": "2026-09-17",
++  "serial": "3B1F5QE8WTX87GZQ",
++  "boot_id": "a55dcf19-cf49-4ee8-aa29-c4198fe71cf0",
++  "tested_module_build_commit": "30426bf8a3e1b57596ee741086e2c491617c58d1",
++  "tested_script_commit": "079372701e03382d9e968f8751b0d02333e431a8",
++  "source_fix_commit": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
++  "source_tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
++  "full_build_started": false,
++  "new_modules_deployed": false,
++  "package_created": false,
++  "endurance_pass": false,
++  "firmware_assert_root_cause_proven": false,
++  "source_fixes_device_validated": false,
++  "results": {
++    "same-band-tx": {
++      "mode": "same-band",
++      "seconds": 104.44222376199968,
++      "steps": 240,
++      "busy": 0,
++      "faults": [],
++      "error": null,
++      "traffic": {
++        "sent": 210063
++      },
++      "peaks": {
++        "queued": 62,
++        "inflight": 32,
++        "used": 62
++      },
++      "initial": {
++        "state": 2,
++        "accepted": 17956,
++        "submitted": 12951,
++        "completed": 12951,
++        "failed": 0,
++        "dropped": 5005,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "final": {
++        "state": 2,
++        "accepted": 38870,
++        "submitted": 27275,
++        "completed": 27243,
++        "failed": 0,
++        "dropped": 11567,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 28,
++        "inflight": 32,
++        "used": 60,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "channel": "Interface wlan0\n\tifindex 73\n\twdev 0x8\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 0\n\tchannel 11 (2462 MHz), width: 20 MHz, center1: 2462 MHz\n\ttxpower 0.00 dBm\n",
++      "pass": false,
++      "later_drain_check": "after-same-band.txt: submitted=completed27332, queued=inflight=used0; original harness rc1 preserved"
++    },
++    "cross-band-tx": {
++      "mode": "cross-band",
++      "seconds": 99.03184496199992,
++      "steps": 240,
++      "busy": 0,
++      "faults": [],
++      "error": null,
++      "traffic": {
++        "sent": 212096
++      },
++      "peaks": {
++        "queued": 61,
++        "inflight": 32,
++        "used": 62
++      },
++      "initial": {
++        "state": 2,
++        "accepted": 38899,
++        "submitted": 27332,
++        "completed": 27332,
++        "failed": 0,
++        "dropped": 11567,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "final": {
++        "state": 2,
++        "accepted": 70471,
++        "submitted": 52403,
++        "completed": 52403,
++        "failed": 0,
++        "dropped": 18068,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "channel": "Interface wlan0\n\tifindex 73\n\twdev 0x8\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 0\n\tchannel 149 (5745 MHz), width: 20 MHz, center1: 5745 MHz\n\ttxpower 0.00 dBm\n",
++      "pass": true
++    },
++    "wide-tx": {
++      "mode": "wide",
++      "seconds": 161.47813285500024,
++      "steps": 480,
++      "busy": 0,
++      "faults": [],
++      "error": null,
++      "traffic": {
++        "sent": 356864
++      },
++      "peaks": {
++        "queued": 56,
++        "inflight": 32,
++        "used": 62
++      },
++      "initial": {
++        "state": 2,
++        "accepted": 70471,
++        "submitted": 52403,
++        "completed": 52403,
++        "failed": 0,
++        "dropped": 18068,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "final": {
++        "state": 0,
++        "accepted": 100736,
++        "submitted": 76027,
++        "completed": 76027,
++        "failed": 0,
++        "dropped": 24709,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "channel": "Interface wlan0\n\tifindex 73\n\twdev 0x8\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 0\n\tchannel 149 (5745 MHz), width: 80 MHz, center1: 5775 MHz\n\ttxpower 0.00 dBm\n",
++      "pass": true
++    },
++    "concurrent-controls": {
++      "mode": "mixed",
++      "seconds": 48.96212373099979,
++      "steps": 450,
++      "busy": 109,
++      "faults": [],
++      "error": null,
++      "traffic": {
++        "sent": 116736
++      },
++      "peaks": {
++        "queued": 44,
++        "inflight": 32,
++        "used": 62
++      },
++      "initial": {
++        "state": 2,
++        "accepted": 100736,
++        "submitted": 76027,
++        "completed": 76027,
++        "failed": 0,
++        "dropped": 24709,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "final": {
++        "state": 2,
++        "accepted": 110411,
++        "submitted": 81727,
++        "completed": 81727,
++        "failed": 0,
++        "dropped": 28684,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "channel": "Interface wlan0\n\tifindex 73\n\twdev 0x8\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 0\n\tchannel 11 (2462 MHz), width: 20 MHz, center1: 2462 MHz\n\ttxpower 0.00 dBm\n",
++      "control_counts": {
++        "nl80211-a": {
++          "ok": 148,
++          "command failed: Device or resource busy (-16)": 2
++        },
++        "nl80211-b": {
++          "ok": 149,
++          "command failed: Device or resource busy (-16)": 1
++        },
++        "wext": {
++          "Error for wireless request \"Set Frequency\" (8B04) :\n    SET failed on device wlan0 ; Operation not supported.": 70,
++          "ok": 44,
++          "Error for wireless request \"Set Frequency\" (8B04) :\n    SET failed on device wlan0 ; Device or resource busy.": 36
++        }
++      },
++      "pass": true,
++      "interpretation": {
++        "success": 341,
++        "EBUSY": 39,
++        "EOPNOTSUPP": 70
++      }
++    },
++    "parallel-bypass": {
++      "cpus": [
++        0,
++        1,
++        2,
++        3,
++        4,
++        5,
++        6,
++        7
++      ],
++      "counts": {
++        "0": {
++          "sent": 558,
++          "105": 18514
++        },
++        "1": {
++          "sent": 626,
++          "105": 20572
++        },
++        "2": {
++          "sent": 652,
++          "105": 21494
++        },
++        "3": {
++          "sent": 702,
++          "105": 21761
++        },
++        "4": {
++          "sent": 687,
++          "105": 21385
++        },
++        "5": {
++          "105": 21906,
++          "sent": 688
++        },
++        "6": {
++          "105": 21839,
++          "sent": 662
++        },
++        "7": {
++          "105": 22991,
++          "sent": 626
++        }
++      },
++      "initial": {
++        "state": 2,
++        "accepted": 110411,
++        "submitted": 81727,
++        "completed": 81727,
++        "failed": 0,
++        "dropped": 28684,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 62,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "final": {
++        "state": 2,
++        "accepted": 115612,
++        "submitted": 86928,
++        "completed": 86928,
++        "failed": 0,
++        "dropped": 28684,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 63,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "peaks": {
++        "used": 63,
++        "queued": 31,
++        "inflight": 32
++      },
++      "faults": [],
++      "seconds": 15.209259786000075,
++      "busy_branch_hit": false,
++      "total_ENOBUFS": 170462,
++      "total_sent": 5201
++    },
++    "mixed-long-wmi": {
++      "mode": "mixed",
++      "seconds": 202.7543335690002,
++      "steps": 536,
++      "busy": 1,
++      "faults": [],
++      "error": "RuntimeError({'i': 536, 'seconds': 202.742, 'freq': ['2437', 'HT20'], 'rc': 245, 'error': 'command failed: Resource temporarily unavailable (-11)', 'before': {'state': 2, 'accepted': 154716, 'submitted': 116169, 'completed': 116137, 'failed': 0, 'dropped': 38517, 'backpressure': 0, 'stale': 0, 'retries': 0, 'timeouts': 0, 'drained': 0, 'queued': 30, 'inflight': 32, 'used': 62, 'peak': 63, 'max_completion_ms': 560, 'pool_allocs': 3, 'pool_frees': 2, 'retained': 0, 'reset_reclaims': 0, 'stopping': 0}, 'after': {'state': 4, 'accepted': 154716, 'submitted': 116169, 'completed': 116169, 'failed': 0, 'dropped': 38547, 'backpressure': 0, 'stale': 0, 'retries': 0, 'timeouts': 0, 'drained': 0, 'queued': 0, 'inflight': 0, 'used': 0, 'peak': 63, 'max_completion_ms': 560, 'pool_allocs': 3, 'pool_frees': 2, 'retained': 0, 'reset_reclaims': 0, 'stopping': 0}})",
++      "traffic": {
++        "sent": 435833
++      },
++      "peaks": {
++        "queued": 62,
++        "inflight": 32,
++        "used": 62
++      },
++      "initial": {
++        "state": 2,
++        "accepted": 115612,
++        "submitted": 86928,
++        "completed": 86928,
++        "failed": 0,
++        "dropped": 28684,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 63,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "final": {
++        "state": 4,
++        "accepted": 154716,
++        "submitted": 116169,
++        "completed": 116169,
++        "failed": 0,
++        "dropped": 38547,
++        "backpressure": 0,
++        "stale": 0,
++        "retries": 0,
++        "timeouts": 0,
++        "drained": 0,
++        "queued": 0,
++        "inflight": 0,
++        "used": 0,
++        "peak": 63,
++        "max_completion_ms": 560,
++        "pool_allocs": 3,
++        "pool_frees": 2,
++        "retained": 0,
++        "reset_reclaims": 0,
++        "stopping": 0
++      },
++      "channel": "Interface wlan0\n\tifindex 73\n\twdev 0x8\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 0\n",
++      "qdisc": "qdisc mq 0: root \n Sent 12854820 bytes 292155 pkt (dropped 0, overlimits 0 requeues 1853) \n backlog 0b 0p requeues 1853\nqdisc pfifo_fast 0: parent :11 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :10 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :f bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 12854820 bytes 292155 pkt (dropped 0, overlimits 0 requeues 1853) \n backlog 0b 0p requeues 1853\nqdisc pfifo_fast 0: parent :e bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :d bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :c bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :b bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :a bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :9 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :8 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :7 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :6 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :5 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :4 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :3 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :2 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :1 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\n",
++      "pass": false
++    },
++    "pno-reproduce": {
++      "direct_stop": 0,
++      "cleanup_stops": [
++        -11,
++        -11
++      ],
++      "warning": "cfg80211 core.c:1535",
++      "trace_instance_removed": true
++    },
++    "restore": {
++      "con_mode": 0,
++      "state": 0,
++      "queued": 0,
++      "inflight": 0,
++      "used": 0,
++      "retained": 0,
++      "pool_allocs": 5,
++      "pool_frees": 5,
++      "wifi_connected": true,
++      "wifi_validated": true,
++      "scan_always": 1,
++      "same_boot": true,
++      "payload_v8_identity_verified": true
++    }
++  },
++  "source_host_regressions": [
++    {
++      "test": "test_inject_self_peer.py",
++      "returncode": 0,
++      "seconds": 0.08062452299782308,
++      "output": "Production self-peer ownership, failed confirmation and teardown cases passed\n"
++    },
++    {
++      "test": "test_sched_scan_teardown.py",
++      "returncode": 0,
++      "seconds": 0.13525587899857783,
++      "output": "Production scheduled-scan cleanup and live sync error cases passed\nProduction scheduled-scan cleanup and live sync error cases passed\n"
++    },
++    {
++      "test": "test_native_injection.py",
++      "returncode": 0,
++      "seconds": 0.13508938499944634,
++      "output": "Production scheduler: helper endpoint, flags, full queue, early completion, ordered peer switch, retries, pause, timeout and input rejection passed\n"
++    },
++    {
++      "test": "test_inject_recovery.py",
++      "returncode": 0,
++      "seconds": 0.08889839499897789,
++      "output": "SSR monitor restore eligibility, failure handling and stop latch cases passed\n"
++    },
++    {
++      "test": "test_mode_handoff.py",
++      "returncode": 0,
++      "seconds": 0.07591739100098494,
++      "output": "9 production HDD mode handoff cases passed\n"
++    },
++    {
++      "test": "test_monitor_ssr_rebuild.py",
++      "returncode": 0,
++      "seconds": 0.16925662599896896,
++      "output": "SSR rebuild: real STA initialization preserves all monitor fields; RX/order/failure gates/WEXT/non-global cases passed\nNegative control: old shared union fails saved-channel assertion as expected\n"
++    },
++    {
++      "test": "test_monitor_channel_serialization.py",
++      "returncode": 0,
++      "seconds": 0.0840138380008284,
++      "output": "Concurrent WEXT/nl80211 rejects overlap; WEXT confirmation never invokes firmware; all exits release lock; callback publishes state before wake\n"
++    }
++  ],
++  "busy_host_regressions": [
++    {
++      "test": "test_native_injection.py",
++      "rc": 0,
++      "output": "Production scheduler: helper endpoint, flags, full queue, early completion, ordered peer switch, retries, pause, timeout and input rejection passed"
++    },
++    {
++      "test": "test_monitor_radiotap.py",
++      "rc": 0,
++      "output": "66091 production Radiotap/FCS, raw contract, bounds and BUSY cases passed\n4096 malformed-header bounds probes passed\nTX operation synchronization and allocation-failure paths passed"
++    }
++  ],
++  "evidence_root": "/root/pt/op13-retune-debug-20260917",
++  "files": {
++    "NOTES.md": {
++      "bytes": 3609,
++      "sha256": "1f4aea24f87625237004b1679b5d16528dbed6ff13c1912c50b1e118d21a94c5"
++    },
++    "after-same-band.json": {
++      "bytes": 50,
++      "sha256": "5ac667b4790f5776ddf483d6e0fabfba769b4a6e0c5e61b04f11c7d8c27bae90"
++    },
++    "after-same-band.sh": {
++      "bytes": 80,
++      "sha256": "804577a5450fef4901628211abfc8bd185aa720c97d157a5a7fb2d21e5c87c0c"
++    },
++    "after-same-band.txt": {
++      "bytes": 433,
++      "sha256": "589fc5d427190581d416d740947eca9f09247513a3d06fc9b948bcfba8850452"
++    },
++    "baseline-and-start.json": {
++      "bytes": 50,
++      "sha256": "bf22ca60596ab5a5e5ae135b91c8f0c9236e8836890eb4d783319e45ce8b9cea"
++    },
++    "baseline-and-start.sh": {
++      "bytes": 476,
++      "sha256": "dfa335a172fad54df2ab1ed5f0f1bb1a22161761bd36bb10e4fb9b9d9808299d"
++    },
++    "baseline-and-start.txt": {
++      "bytes": 722,
++      "sha256": "8c504f3bdea0ddbdbe3713167de66a2e62e3204656c30a04e9a84fce8a3213f4"
++    },
++    "busy-host-regressions.json": {
++      "bytes": 491,
++      "sha256": "75b22a69c985d94e3b219182f6a4c10bd52c4577ea997e63570d1839ae601aa1"
++    },
++    "chroot-debugfs-check.json": {
++      "bytes": 50,
++      "sha256": "5ac667b4790f5776ddf483d6e0fabfba769b4a6e0c5e61b04f11c7d8c27bae90"
++    },
++    "chroot-debugfs-check.sh": {
++      "bytes": 921,
++      "sha256": "c8b09fc490cdd2187ba8382c11f85c610f41207a16bc78a46b0c439207a6f0bb"
++    },
++    "chroot-debugfs-check.txt": {
++      "bytes": 182,
++      "sha256": "fb1660a615c5f7fa9063d6084a3858b52a5bf33af906130227725eb1b8e27c2d"
++    },
++    "concurrent-controls.json": {
++      "bytes": 51,
++      "sha256": "50989d0c081a1e07038903e72a55e4bcc72936f7882197878090f1ddf22b3cbe"
++    },
++    "concurrent-controls.sh": {
++      "bytes": 6839,
++      "sha256": "a8f2bf55fdcf16204ab45565fc09ed727d42800fc820fd1f1bb908b8cddbbe70"
++    },
++    "concurrent-controls.txt": {
++      "bytes": 200773,
++      "sha256": "68a199f84ce77d60546a8ae7a0875e3d4b26dce5ecc47d2b1cd936c88ade5af6"
++    },
++    "concurrent-prepare.json": {
++      "bytes": 50,
++      "sha256": "3d3b4483e2cd71d7357c6138d896681b04a144481f27b9e16a3771272fc9f9df"
++    },
++    "concurrent-prepare.sh": {
++      "bytes": 100,
++      "sha256": "e960fa7ff43aa984842883b1bacaa80b35e3f57873ab252920228ed30af80612"
++    },
++    "concurrent-prepare.txt": {
++      "bytes": 256,
++      "sha256": "0d5a7de7ba1aaa3589a1812abab07d4a5b781713830f3ce0930fa2e9c464bc2f"
++    },
++    "concurrent_controls.py": {
++      "bytes": 4493,
++      "sha256": "535459673f0c446a3c16ffc6257d35576af4718a047163a0843fac294ed4fd89"
++    },
++    "cross-band-tx.json": {
++      "bytes": 51,
++      "sha256": "3daedc85ae00d1a04132d2d9b9c98798d020b9dfbc6f94bc06acbcb8bc102952"
++    },
++    "cross-band-tx.sh": {
++      "bytes": 5477,
++      "sha256": "d783b3884d4b503385943a2e66a6461357ddcdaab589d59f7b7b7f4efd4d76e4"
++    },
++    "cross-band-tx.txt": {
++      "bytes": 193186,
++      "sha256": "98aad7f428bb82a22c6a545f641a9a1687f8fdc62611f516f5100a43d249419f"
++    },
++    "debugfs-inventory.json": {
++      "bytes": 50,
++      "sha256": "3c507b5a7d352994ee606af3f755590194c61e8ed2955f1c0291863d0ab3114a"
++    },
++    "debugfs-inventory.sh": {
++      "bytes": 964,
++      "sha256": "ad7538c84f4ea55c63706e6ccf36e5e5f37603f525b5fa81e1d808e1d5d6b03b"
++    },
++    "debugfs-inventory.txt": {
++      "bytes": 1676,
++      "sha256": "6c2a71cda5cf657d3c818ea803786d19a3b21311aa91a81ba8047ddf1ada4abf"
++    },
++    "device.py": {
++      "bytes": 1576,
++      "sha256": "0c62135d6072b81ef83d468a435955d65a1117032c20d234eb770d0efb35d063"
++    },
++    "diagnostics-paths.json": {
++      "bytes": 50,
++      "sha256": "5ac667b4790f5776ddf483d6e0fabfba769b4a6e0c5e61b04f11c7d8c27bae90"
++    },
++    "diagnostics-paths.sh": {
++      "bytes": 305,
++      "sha256": "3cbb52b152c2dc0edfc0e4de576d3c80c4d02917316062348623f5f547ff4c18"
++    },
++    "diagnostics-paths.txt": {
++      "bytes": 336,
++      "sha256": "50dda8a6ca97925fe3126d184beba2faaf59028c11ec0484458e4f96e97d875f"
++    },
++    "dmesg-before-long.json": {
++      "bytes": 50,
++      "sha256": "e86b81bd67494e4e2362800460a29e07c719d0763e513d9b76269f4dcfbc2360"
++    },
++    "dmesg-before-long.sh": {
++      "bytes": 6,
++      "sha256": "ecdd46797ccbbd216430279b15b436d2ed9f0afa18d3115f7cb21d88d7c7f227"
++    },
++    "dmesg-before-long.txt": {
++      "bytes": 2100477,
++      "sha256": "2bad5d11fd9b0548229ee1f73cb153abe8a3230e4184fa19d264269a9aebe7a8"
++    },
++    "fault-wmi-control.tsv": {
++      "bytes": 990,
++      "sha256": "a86aaf81a403620be244d6ee041503f2139fc21443fe0669d89a64310035c90b"
++    },
++    "fault-wmi-history.json": {
++      "bytes": 177443,
++      "sha256": "262c5edeb9f4e6b76a33184587e0a74d891fbd3577bd192d918324915d5c9e96"
++    },
++    "final-restore.json": {
++      "bytes": 51,
++      "sha256": "edf48d03c5eeb0e77cdc45ff81e38ea777139ed79ee3d28b18f3f35ab957f9b0"
++    },
++    "final-restore.sh": {
++      "bytes": 497,
++      "sha256": "9f8b079b76d2542194c010f78a73708be01727c71a34a986e9806051225f02e6"
++    },
++    "final-restore.txt": {
++      "bytes": 3103,
++      "sha256": "4fd6de664a32716da179e9573d2704981b069ffebfe12eacf47c2c56064cebb4"
++    },
++    "mixed-fault-dmesg.json": {
++      "bytes": 50,
++      "sha256": "e86b81bd67494e4e2362800460a29e07c719d0763e513d9b76269f4dcfbc2360"
++    },
++    "mixed-fault-dmesg.sh": {
++      "bytes": 135,
++      "sha256": "f4454e468c3330e8ba093f7c3022518708271f968e3fe86aea591249756cf826"
++    },
++    "mixed-fault-dmesg.txt": {
++      "bytes": 2104460,
++      "sha256": "607673a2a71799a056dfb8cdb60d0ff0f8c17ba9e416a07a61d17178fc1e9524"
++    },
++    "mixed-long-wmi.json": {
++      "bytes": 52,
++      "sha256": "0f42e7f7f640b50fa0eb9ca04711f4712ef869b86a07a9cd965a21abaeaa1a16"
++    },
++    "mixed-long-wmi.sh": {
++      "bytes": 6457,
++      "sha256": "571c0a10cc29cab6ed2b277e9f2cb1e770291aa30fdd9bf8096ed34611e1d2ad"
++    },
++    "mixed-long-wmi.txt": {
++      "bytes": 606342,
++      "sha256": "687d67b68864ccda8e06d45efd4ab3107051f1c59314cb83cf5b6f3c81e2eb76"
++    },
++    "mounted.py": {
++      "bytes": 1219,
++      "sha256": "8e0a2a40c56be5c1b074e2f9dd2c1c9be0391e684eac6bc3b7df533252317d15"
++    },
++    "parallel-bypass.json": {
++      "bytes": 51,
++      "sha256": "fc026a14890ccc49c923f15b406c330e01d8c17680c936b7c609574fe6645d74"
++    },
++    "parallel-bypass.sh": {
++      "bytes": 3538,
++      "sha256": "765797cd4148a30151d6a1b2d5f1093608dd815c5a78f7966af51ecd15a2b20c"
++    },
++    "parallel-bypass.txt": {
++      "bytes": 4106,
++      "sha256": "a20987bff5da9918b03583f1d2582a0691e4be85bb828b947d0566070fe63374"
++    },
++    "parallel_bypass.py": {
++      "bytes": 2025,
++      "sha256": "1aeca45fb96f7771a51ef2596e43a0d209f3721bd9edccc223b49160fe4c0c5b"
++    },
++    "pno-command-help.json": {
++      "bytes": 50,
++      "sha256": "5ac667b4790f5776ddf483d6e0fabfba769b4a6e0c5e61b04f11c7d8c27bae90"
++    },
++    "pno-command-help.sh": {
++      "bytes": 1026,
++      "sha256": "6b04e2fbc3b8eee4217a3ad841e4417b9040dea15908e3c2fdd328b347658adf"
++    },
++    "pno-command-help.txt": {
++      "bytes": 546,
++      "sha256": "f24844a03eb1310e64cc90a99142ccaffb4621a0343e7f1f3aa3bc3c980f27c3"
++    },
++    "pno-reproduce.json": {
++      "bytes": 50,
++      "sha256": "494b57d0574176af13a30ba7112df26fbe92e78b575296fa737848dd74d033cb"
++    },
++    "pno-reproduce.sh": {
++      "bytes": 2194,
++      "sha256": "a33298a67c46d539816881d4dac442da2c409d338af708742e1b0ca5e685fea4"
++    },
++    "pno-reproduce.txt": {
++      "bytes": 2845,
++      "sha256": "03df0c0e9fdd11a569e1f532c75b6863fac86c5950a56daa8f8ae44f251a3774"
++    },
++    "pno_reproduce.sh": {
++      "bytes": 1229,
++      "sha256": "c9fc96396fad768d4c1dd089a3eea2445a5f0d245a2072cdfffe13e6e1acd357"
++    },
++    "post-reproduced-ssr-probe.json": {
++      "bytes": 50,
++      "sha256": "ab3a53d23b5d0728325608533e194e77965bd0613455fd0db0d34e0a5111bce6"
++    },
++    "post-reproduced-ssr-probe.sh": {
++      "bytes": 2642,
++      "sha256": "d8433c60f48585d1cf926ba704042804268be4113833149158b868f154fb53b5"
++    },
++    "post-reproduced-ssr-probe.txt": {
++      "bytes": 847,
++      "sha256": "5fe5702e1fbeb5facc2192877172035532a4f052b37e3204847ddea1309134eb"
++    },
++    "probe-symbols.json": {
++      "bytes": 51,
++      "sha256": "8eb805998fe3d282a39cb903f5656ebc4cb74921fa8bac32f4779c41bf48d23e"
++    },
++    "probe-symbols.sh": {
++      "bytes": 459,
++      "sha256": "ba9be655321275ca1da07d8998e882efa8165d36a074804f6431945d76955e7f"
++    },
++    "probe-symbols.txt": {
++      "bytes": 31,
++      "sha256": "742bf6daefe95e7877a183003cc0635ad5b72782671aa87f613c1b662abecf00"
++    },
++    "retune_matrix.py": {
++      "bytes": 4223,
++      "sha256": "5c887d6b66cb63f50ba204c7b105770e01556b39be081e0fca99e29801bcbeba"
++    },
++    "run_python_long.py": {
++      "bytes": 572,
++      "sha256": "d99354f08c20a76e9585e0e7b418fc9623da2fd761e02be429a8d737ebaaf310"
++    },
++    "same-band-tx.json": {
++      "bytes": 52,
++      "sha256": "ccaa15e9482e91d715b23ad0a9ea87b00a736be2ac8bb0bce60f1863c03ed64a"
++    },
++    "same-band-tx.sh": {
++      "bytes": 5101,
++      "sha256": "bef6d97ec32ad038f4e5539db0ea645a9735b3d2a573060b5ded6f9b0fd53038"
++    },
++    "same-band-tx.txt": {
++      "bytes": 192863,
++      "sha256": "d87f60cd677d790712a2f8113f3edb18fd3cda5cafd94eae2bbad2c57414ddab"
++    },
++    "sched-trace-setup.json": {
++      "bytes": 50,
++      "sha256": "9c7c08fd919baba46bd77c40d98f6ff9cc85200a106ab4637305f00ab0f1671d"
++    },
++    "sched-trace-setup.sh": {
++      "bytes": 1324,
++      "sha256": "147f2028123307ae977567e48eaab275d96a334fd0f876f832b700b749ac6153"
++    },
++    "sched-trace-setup.txt": {
++      "bytes": 16,
++      "sha256": "b74b46e20c7e3976143bfcb333044e4b68981ac0c1d7ba650326c44d17401ae2"
++    },
++    "source-host-regressions.json": {
++      "bytes": 1707,
++      "sha256": "bad540e32f5f2e4c36a9bc44ae0b129b9f712d1dd4b484303cf487a28197748d"
++    },
++    "source-test_inject_recovery.py.txt": {
++      "bytes": 78,
++      "sha256": "2083b36df7f0e08dac54359338d6634927b46dc09f3c66500b5b53a6039fcfba"
++    },
++    "source-test_inject_self_peer.py.txt": {
++      "bytes": 78,
++      "sha256": "0269eb118a6be7be131757de2b3fb012dbecb8c6c2de30f264f7a66789c721b6"
++    },
++    "source-test_mode_handoff.py.txt": {
++      "bytes": 43,
++      "sha256": "920133ee64242c2777818852c7c368b0bc8afc6a924fa672c30518b7ecfa8ad5"
++    },
++    "source-test_monitor_channel_serialization.py.txt": {
++      "bytes": 144,
++      "sha256": "2bccb16060c0c8f0da7845889ed280707b047be83cc1cae6f4689b2ad3111ef1"
++    },
++    "source-test_monitor_ssr_rebuild.py.txt": {
++      "bytes": 196,
++      "sha256": "577fbbe1ef862d0022d6154b23698864b1d5579fc9cb8e6b085416d1d570ac05"
++    },
++    "source-test_native_injection.py.txt": {
++      "bytes": 148,
++      "sha256": "7431b5b5ef524b4bb6fea9b21ebb80cb5cef1114d5eda1091ac8b1a482300c7e"
++    },
++    "source-test_sched_scan_teardown.py.txt": {
++      "bytes": 134,
++      "sha256": "f41a2b52507f3bc9b852af8657ab35faf39cfb3fa15a2cd9b6c360274bfba49a"
++    },
++    "test-summary-partial.json": {
++      "bytes": 8207,
++      "sha256": "cf10a42442a396486b40135e5a0ad27782c9990f7c692e5398bf865cffb82545"
++    },
++    "test-summary.json": {
++      "bytes": 14177,
++      "sha256": "77f40d926776ddec525af4db0a0964501578d59f83a27b61ae0d5d9ae9fd810f"
++    },
++    "test_monitor_radiotap.py.txt": {
++      "bytes": 182,
++      "sha256": "49f0e87e86610c6f233b2a8987892d2641daa3019861d22592292c0bbbc7b23b"
++    },
++    "test_native_injection.py.txt": {
++      "bytes": 148,
++      "sha256": "7431b5b5ef524b4bb6fea9b21ebb80cb5cef1114d5eda1091ac8b1a482300c7e"
++    },
++    "trace-capabilities.json": {
++      "bytes": 50,
++      "sha256": "9c7c08fd919baba46bd77c40d98f6ff9cc85200a106ab4637305f00ab0f1671d"
++    },
++    "trace-capabilities.sh": {
++      "bytes": 1012,
++      "sha256": "6a4a95ca3bd246317d32ed7b1715a4289247ecb874484193cf74c0c4de85264a"
++    },
++    "trace-capabilities.txt": {
++      "bytes": 205,
++      "sha256": "d62d17e0772e2b8142170df0966ed1f75a5b715b80b0f13e7ae61001a26fc334"
++    },
++    "trace-save-cleanup.json": {
++      "bytes": 50,
++      "sha256": "9c7c08fd919baba46bd77c40d98f6ff9cc85200a106ab4637305f00ab0f1671d"
++    },
++    "trace-save-cleanup.sh": {
++      "bytes": 1121,
++      "sha256": "5036d4542d4480ec3cd7cfa12280b994640dc90fb49c9be52d7719d5bf1093af"
++    },
++    "trace-save-cleanup.txt": {
++      "bytes": 1577,
++      "sha256": "90ea5b2e42c1f552b7caba095e8f8110a43dc1858bf31b4fcdfd41a226fe9f51"
++    },
++    "tracepoint-list.json": {
++      "bytes": 50,
++      "sha256": "9c7c08fd919baba46bd77c40d98f6ff9cc85200a106ab4637305f00ab0f1671d"
++    },
++    "tracepoint-list.sh": {
++      "bytes": 999,
++      "sha256": "9023167d7fe2647be0b14081758cf71dff30bce51799d442287e1fbf8c47a82f"
++    },
++    "tracepoint-list.txt": {
++      "bytes": 2866,
++      "sha256": "7b5ce6370c178f58c8ee08623911b1b81946bbde26e34d5e40659c72d67e49a0"
++    },
++    "verify-debugfs-bind.json": {
++      "bytes": 50,
++      "sha256": "e86b81bd67494e4e2362800460a29e07c719d0763e513d9b76269f4dcfbc2360"
++    },
++    "verify-debugfs-bind.sh": {
++      "bytes": 1042,
++      "sha256": "c1fc7e2e20dbe1dfb78c172ba27bf10535c308b148d66042527a959d4096c274"
++    },
++    "verify-debugfs-bind.txt": {
++      "bytes": 2,
++      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
++    },
++    "wide-tx.json": {
++      "bytes": 52,
++      "sha256": "fc45c635ed57e6115ddaad76386a1b16a2d94f79449c843bc759c8bc9da6f089"
++    },
++    "wide-tx.sh": {
++      "bytes": 6149,
++      "sha256": "89a809e6938c29cb7b3ab993fc22f5000e4f864148520e534fc470018803be0d"
++    },
++    "wide-tx.txt": {
++      "bytes": 382352,
++      "sha256": "a3056cc8ec62d2129815b68ea68b2dc0f8356eba559f9ab671882b46e8a9a4af"
++    },
++    "wmi-snapshot.json": {
++      "bytes": 50,
++      "sha256": "9c7c08fd919baba46bd77c40d98f6ff9cc85200a106ab4637305f00ab0f1671d"
++    },
++    "wmi-snapshot.sh": {
++      "bytes": 912,
++      "sha256": "8e9a7ed3a7c941bd756bc5f815f3e6e24d014e70348bcbdf3d4983d3c3343d3c"
++    },
++    "wmi-snapshot.txt": {
++      "bytes": 1497,
++      "sha256": "129957a3626fdcdd34e49e5365ff31795cc442ac9ee2af788b3756ed4044553e"
++    }
++  }
++}
+diff --git "a/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-patch-replay-20260917.json" "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-patch-replay-20260917.json"
+new file mode 100644
+index 0000000000000000000000000000000000000000..a3d3c116198981a3da4caf6891dbb38a1edcdf7d
+--- /dev/null
++++ "b/\350\257\264\346\230\216/\351\252\214\350\257\201/op13-retune-patch-replay-20260917.json"
+@@ -0,0 +1,369 @@
++{
++  "base": "4d69a3ed9a176152e85580352723c308f29cbfcb",
++  "target_commit": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
++  "target_tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
++  "mail_patch_count": 15,
++  "method": "full independent checkouts; git am and git apply --index; complete tree equality",
++  "source_file_bytes_and_modes_checked": 20702,
++  "subprojects": [
++    {
++      "path": ".repo/manifests",
++      "revision": "f8e50677874c65b6da41057d2f39be7b4ef3c08a",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": ".repo/repo",
++      "revision": "d27d6829a84f488b7253ea693dcc429076c33914",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/build/bazel_common_rules",
++      "revision": "7104d80549523ce9d9c5b95ec7cab8aba88afdb3",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/common",
++      "revision": "e1b346b6b4f4096eb342ae3684838a942fd6f6c4",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/common-modules/trusty",
++      "revision": "b76f8570a1a3480a158f6bc69590dbf326a444d0",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazel-skylib",
++      "revision": "1699b2281164661387bcab62e08b1248f7908c49",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-apple_support",
++      "revision": "f6003e1e3763f8aad9fb9acae79cfa5fff9ae988",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-bazel-central-registry",
++      "revision": "5fa460f7563e307ed8396540aaf2e257f353e908",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-platforms",
++      "revision": "f0d9433341479772b8b645da1208377c2862627c",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-rules_cc",
++      "revision": "dc5e9e76198df0f60f7de1a8c2d947a2a972fa69",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-rules_java",
++      "revision": "c9de4ea84567c22dc3e1aa555b6d468393df5c5d",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-rules_license",
++      "revision": "30733c530db3ec72b5c0cb2d30f798d6aaf1b499",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-rules_pkg",
++      "revision": "33b79a421797cfddf268309523a262f395211a59",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/bazelbuild-rules_python",
++      "revision": "3e22460c62b498cfaa6708003738a3bfaef9cd82",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/dtc",
++      "revision": "6aa78bad656ffc106bb909774fee5fc2d86d4949",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/libcap",
++      "revision": "336d1164b390131c4773b503771e9b53d9bb4f03",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/libcap-ng",
++      "revision": "2bcc92ae19481dd2b8d3ce3abdfbbee49261abe6",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/lz4",
++      "revision": "124599333514066524f55f5f41fbf0d46212e598",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/pigz",
++      "revision": "9bc9fa17d499ddde88b77820f6d063e16c0cdd42",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/python/absl-py",
++      "revision": "af9da234ce5045467014f4e7b53798e8feb2339b",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/toybox",
++      "revision": "dd6f71c76fe1574cf358129be29afa245eff4e36",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/virtio-media",
++      "revision": "6bf5c3d254fe5efc458ea616d18be131d9230f0e",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/zlib",
++      "revision": "4f57254519623a55dcd5bedc454337f6352f2193",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/external/zopfli",
++      "revision": "1e312f1cc3edc4cf7c489aa95a01f2878eb01fd7",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/msm-kernel",
++      "revision": "6028f47faddaa27700f8dd3a1d83906ea8f27170",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/asuite",
++      "revision": "e700ae0a5f3b95470e37f4a0543b4d044e5edfb6",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/build-tools",
++      "revision": "d399f06c8cee351df2b93bac1e767f673d776c16",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/clang-tools",
++      "revision": "70bc10de031e2d0ff7e76adb9746bf339bb135c0",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/clang/host/linux-x86",
++      "revision": "b099698c583b8361ca771f3cc8d6af6f729f39b3",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8",
++      "revision": "e0de596ee4e1128b36fd2be9ec04422360bf404f",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/jdk/jdk11",
++      "revision": "f2f372463c74a896e3d8a0abb33e4667837458c2",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/kernel-build-tools",
++      "revision": "434f141b6d22a773a163fa9c707b19b4d254d989",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/ndk-r26",
++      "revision": "39c0d89e553619d398797309398697764cf3547b",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/rust",
++      "revision": "aff65346a9f85db2c8fd1d0c13b6dcd0bee76390",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/prebuilts/tradefed",
++      "revision": "0d6bd67313f94bd03fc54c350b9de54d94442ee7",
++      "tracked_worktree_clean": true
++    },
++    {
++      "path": "kernel_platform/tools/mkbootimg",
++      "revision": "5fa28e8bc7f708d49a5cd42c8baaa4e8c03e08ef",
++      "tracked_worktree_clean": true
++    }
++  ],
++  "source_live_repo_metadata_status": [
++    " M .repo/TRACE_FILE",
++    " M .repo/manifests.git/.repo_config.json",
++    " M .repo/projects/..git/HEAD",
++    " M .repo/projects/..git/index",
++    " M .repo/projects/..git/index.lock",
++    " M .repo/projects/..git/logs/HEAD",
++    " M .repo/projects/kernel_platform/external/dtc.git/index",
++    " M .repo/projects/kernel_platform/external/libcap-ng.git/index",
++    " M .repo/projects/kernel_platform/external/libcap.git/index",
++    " M .repo/projects/kernel_platform/external/lz4.git/index",
++    " M .repo/projects/kernel_platform/external/toybox.git/index",
++    " M .repo/projects/kernel_platform/external/virtio-media.git/index",
++    " M .repo/projects/kernel_platform/external/zlib.git/index",
++    " M .repo/projects/kernel_platform/external/zopfli.git/index",
++    " M .repo/projects/kernel_platform/msm-kernel.git/index",
++    " M .repo/projects/kernel_platform/prebuilts/asuite.git/index",
++    " M .repo/projects/kernel_platform/prebuilts/build-tools.git/index",
++    " M .repo/projects/kernel_platform/prebuilts/clang/host/linux-x86.git/index",
++    " M .repo/projects/kernel_platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8.git/index",
++    " M .repo/projects/kernel_platform/prebuilts/rust.git/index",
++    " M .repo/projects/kernel_platform/prebuilts/tradefed.git/index",
++    " M .repo/projects/kernel_platform/tools/mkbootimg.git/index"
++  ],
++  "scope": "All committed blobs, file modes, symlinks and gitlink revisions. Live .repo metadata, untracked and ignored build outputs are not source equivalence claims.",
++  "routes": {
++    "mail": {
++      "checkout": "/root/pt/op13-retune-debug-20260917/replay/mail",
++      "tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
++      "clean": true,
++      "manifest_sha256": "19e3a50ef01aebd75da4c9b84a20f6ff5d2a1178b77edf4bf62aab28ed6f028b",
++      "steps": [
++        {
++          "patch": "0001-build-integrate-wlan-qcacld.patch",
++          "source_commit": "d20c69af445ad034becf3f92a5c2f6f9d8b4b6be",
++          "replay_commit": "36cbdd7a1b898ca2873d44a3a9d158e32711c617",
++          "tree": "08ee0322371e26f7162dcd4330d1f5575fe45ac3"
++        },
++        {
++          "patch": "0002-peach-v2-native-global-monitor.patch",
++          "source_commit": "2fa5ca6270d3a8d3395010101fe944bedb524645",
++          "replay_commit": "cb8c4f9c3340de2443453782b49e523650bf34e4",
++          "tree": "f671da57111e32b24a83a7c25342e061c2290903"
++        },
++        {
++          "patch": "0003-monitor-injection-flag.patch",
++          "source_commit": "f5bb38df2661aa553e3567bef254960defcc0fbe",
++          "replay_commit": "dc9120041bf4d544cb8cf92988801cc3aa0a6f04",
++          "tree": "f0f2e82f6becce226d610d3d874b502448a12a90"
++        },
++        {
++          "patch": "0004-native-monitor-tx-hardening.patch",
++          "source_commit": "8e21acf0a4fb5e063a1721a6565349a8a524309d",
++          "replay_commit": "a2909d22054fa0dded396ed8df41a35ab60c471c",
++          "tree": "9791603e005068bfc5fd709542e471df47943d05"
++        },
++        {
++          "patch": "0005-monitor-channel-and-tx-diagnostics.patch",
++          "source_commit": "afc425ebb627d93fa0c94be5eee44843c5440533",
++          "replay_commit": "076fa79d641921054ba9442b9fa4ebc794062f93",
++          "tree": "a8f9dfdb5f6eec7cdfe13d6fef45a1c713387c57"
++        },
++        {
++          "patch": "0006-preserve-deauth-wrong-key.patch",
++          "source_commit": "9fddc16245322333a2941ab3d62f6e7d439ccd08",
++          "replay_commit": "d4716b85d44bab6bd4b555eb19536246448f388a",
++          "tree": "d49936457d680466e33bcfb248b280543f1bc523"
++        },
++        {
++          "patch": "0007-monitor-channel-current-macro-fix.patch",
++          "source_commit": "2cbfb99ff1848517870b7cf2b3e6d8a8a7a82014",
++          "replay_commit": "ba8d7c71be6433c349057c283153e7c0ed26eb0e",
++          "tree": "4aa5dd3c99f7d7cd36c8197257eaeda549d69685"
++        },
++        {
++          "patch": "0008-sam-global-helper-tx.patch",
++          "source_commit": "487101877cee79c39456c6b2650867ba749dd4bd",
++          "replay_commit": "d92b84ad83aa40f839fd8a46f12936ce54e59175",
++          "tree": "27a9cecb521a584ab6e0547b68e3b839c66f3d64"
++        },
++        {
++          "patch": "0009-helper-tx-payload-type.patch",
++          "source_commit": "eab4d48d0034f88961de8f06e371d54985242588",
++          "replay_commit": "ceabaed583f71e65352aada2d6c3bced052777fc",
++          "tree": "864b886f3ca7ae6d8c2924aaf3359906a92ca9d2"
++        },
++        {
++          "patch": "0010-v6-device-probe-validation.patch",
++          "source_commit": "cd811a615772f4c144118f6215ab0d8972544959",
++          "replay_commit": "fa02dfd3c97c108f96395aa3f59f4f741261bd0c",
++          "tree": "34ce32b2deb9ea48195477ef764c877498b72cb8"
++        },
++        {
++          "patch": "0011-monitor-wext-and-host-queue.patch",
++          "source_commit": "c79b6f6541583b148354b731691dc92caeac6adb",
++          "replay_commit": "577d0a657834d4becf68fc1c7cb4bb37083d57b0",
++          "tree": "142504e93ef412150890a784f6f70d5e91d4cfcc"
++        },
++        {
++          "patch": "0012-v7-device-regression-results.patch",
++          "source_commit": "524a92c084f36b8301bac24ae3920c610b53fac0",
++          "replay_commit": "90f8b25a6947102da6f44a76226a901fef47e600",
++          "tree": "422e8a00abf0521a986311b445c014a946a822ef"
++        },
++        {
++          "patch": "0013-monitor-ssr-rebuild.patch",
++          "source_commit": "30426bf8a3e1b57596ee741086e2c491617c58d1",
++          "replay_commit": "4cc30fa7146a926ba174aed02c56404b401df476",
++          "tree": "a3215426a531edd58dd9636b262da0296bac76e4"
++        },
++        {
++          "patch": "0014-v8-ssr-device-validation.patch",
++          "source_commit": "3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb",
++          "replay_commit": "79b809e3174bd4b14f6b4ca0ce845a6f83fb3b82",
++          "tree": "ecae96f26a9713a501edc9950f90731be0375c9d"
++        },
++        {
++          "patch": "0015-helper-self-peer-and-pno-cleanup.patch",
++          "source_commit": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
++          "replay_commit": "9e508100843de2b39530dd7750faac903fc5ee6d",
++          "tree": "38a1790c9c4b24073c8773c7d7703d424519033f"
++        }
++      ]
++    },
++    "combined": {
++      "checkout": "/root/pt/op13-retune-debug-20260917/replay/combined",
++      "tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
++      "clean": true,
++      "manifest_sha256": "19e3a50ef01aebd75da4c9b84a20f6ff5d2a1178b77edf4bf62aab28ed6f028b",
++      "steps": [
++        {
++          "patch": "../qca_inject/0001-add-qcacldko.patch",
++          "tree": "08ee0322371e26f7162dcd4330d1f5575fe45ac3"
++        },
++        {
++          "patch": "0001-peach-v2-native-global-monitor.patch",
++          "tree": "38a1790c9c4b24073c8773c7d7703d424519033f"
++        }
++      ]
++    }
++  },
++  "patch_sha256": {
++    "exported/0001-build-integrate-wlan-qcacld.patch": "f2e7f4ead3e87635f9bc3fa3bc6ce52a1e9cfec1bdd7b9028008ee553d01941d",
++    "exported/0002-peach-v2-native-global-monitor.patch": "271b2cd08b03752b71f695bec1561aaa4ba2c481b508e1d8dbe6ea7f90888cbb",
++    "exported/0003-monitor-injection-flag.patch": "4be8bdbbee109409d3f00d8a4d962e1777c8cc27753a841e3bac1af455932ac6",
++    "exported/0004-native-monitor-tx-hardening.patch": "ffdce17f4de149ff8d0b6536488a470fbc784e714cb717948ad9ff9e37fd4720",
++    "exported/0005-monitor-channel-and-tx-diagnostics.patch": "0722f2c94f5bf7cd789d34e897a5792648f548e02c6cc49ce2407e627df2a82c",
++    "exported/0006-preserve-deauth-wrong-key.patch": "a7b38cd653e43e9552fe72ba29a2225c450f3edef02a770f29a7818248b9befb",
++    "exported/0007-monitor-channel-current-macro-fix.patch": "e5d712710f28ea4488f8f0611ac408b76ab62f5430845ea8e876f1d4657ff472",
++    "exported/0008-sam-global-helper-tx.patch": "de3cccebc96eaa2a17f25a31dc9a4238f7c7cf201fce52b562ef8d80d1cd1d66",
++    "exported/0009-helper-tx-payload-type.patch": "a8a8891aacb0febcab4d3154612c5462835823c5a5910a155b643df4b225aea7",
++    "exported/0010-v6-device-probe-validation.patch": "3e7752237c052a4961596113c074544420b6da8e533ede1e376365e537266ff2",
++    "exported/0011-monitor-wext-and-host-queue.patch": "68d32b88eb4586f0e5f35f510b2619cb886d1ad55852753794aeca1adaf3f517",
++    "exported/0012-v7-device-regression-results.patch": "a94699152759ed59fe4c7f10392c31ec997ab970d712fe8ec583c592b08465f0",
++    "exported/0013-monitor-ssr-rebuild.patch": "8b2783c7a78a9c70fc689a1d53fd1ec0c2f7c28801f99d8000799cabe0db5c83",
++    "exported/0014-v8-ssr-device-validation.patch": "db21a71c9a9f3b9861568dd3e36556d89e083956940313c53d8ddb4bd7771359",
++    "exported/0015-helper-self-peer-and-pno-cleanup.patch": "5850a8abed5785e0f638187388c2dd122d997053826d19ed24b7117b3c0d0538",
++    "../qca_inject/0001-add-qcacldko.patch": "7cc50d8e5f070ef14e5aad360ea2c3b5bb50869683fc71321680bf9724d0ac87",
++    "0001-peach-v2-native-global-monitor.patch": "c440da350c24c7f89d84765a57b1a22681d330354d2b86ebf4c5c447266c1bf5"
++  },
++  "build_started": false,
++  "device_operations": false,
++  "v8_runtime_unchanged": false,
++  "runtime_files_changed_since_v8_build": [
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c"
++  ],
++  "changes_since_v8_build": [
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py",
++    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py"
++  ],
++  "match": true
++}
+-- 
+2.53.0
+
