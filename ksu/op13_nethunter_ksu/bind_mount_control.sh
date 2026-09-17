@@ -63,6 +63,15 @@ apply_one() {
     return 1
   fi
 
+  # A bind retains the source inode's SELinux label. KSU's default
+  # system_file label is not readable/loadable by ColorOS vendor_modprobe;
+  # its recovery script can rmmod successfully and then fail to insmod.
+  # Match the stock vendor module label before exposing the replacement.
+  if ! chcon u:object_r:vendor_file:s0 "$src"; then
+    log_e "failed to label vendor module $src; bind left unchanged"
+    return 1
+  fi
+
   if is_target_bound "$target"; then
     umount "$target" 2>/dev/null || true
   fi

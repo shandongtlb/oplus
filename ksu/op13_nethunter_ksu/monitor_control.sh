@@ -5,6 +5,7 @@ LOGTAG=op13_global_monitor
 MODE=/sys/module/qca_cld3_peach_v2/parameters/con_mode
 STATS=/sys/module/qca_cld3_peach_v2/parameters/inject_stats
 STATE=$MODDIR/.global_monitor_enabled
+FW_STATE=$MODDIR/.global_monitor_framework_state
 . "$MODDIR/module_identity.sh" || exit 1
 . "$MODDIR/wlan_control_common.sh" || exit 1
 
@@ -59,6 +60,10 @@ validate_channel() {
 mon_status() {
   monitor_mode=$(cat "$MODE" 2>/dev/null)
   if [ "$monitor_mode" != 4 ]; then
+    if [ -f "$FW_STATE" ]; then
+      log_i '[global-monitor] OFF / RESTORE PENDING：Wi-Fi/扫描状态恢复未完成，请重试 monstop'
+      return 0
+    fi
     log_i "[global-monitor] OFF (con_mode=${monitor_mode:-不可读})"
     return 0
   fi
@@ -97,9 +102,103 @@ mon_status() {
   fi
 }
 
+framework_wifi_value() {
+  # Runtime state wins over the stale ColorOS wifi_on setting.
+  fw_wifi=$(cmd wifi status 2>/dev/null | awk '
+    /^Wifi is enabled\r?$/ {print 1; exit}
+    /^Wifi is disabled\r?$/ {print 0; exit}')
+  case "$fw_wifi" in 0|1) printf '%s\n' "$fw_wifi"; return 0;; esac
+  dumpsys -t 3 wifi 2>/dev/null | awk '
+    /^Wi-Fi is enabled\r?$/ {value=1; found=1; exit}
+    /^Wi-Fi is disabled\r?$/ {value=0; found=1; exit}
+    END {if (found) print value; else exit 1}'
+}
+
+framework_save() {
+  [ ! -e "$FW_STATE" ] || { die '上次 Wi-Fi 状态尚未恢复，请先运行 monstop'; return 1; }
+  fw_saved_wifi=$(framework_wifi_value) || { die '无法读取当前 Wi-Fi 状态'; return 1; }
+  fw_saved_scan=$(settings get global wifi_scan_always_enabled) || return 1
+  case "$fw_saved_scan" in 0|1) ;; *) die '无法读取始终扫描开关'; return 1;; esac
+  fw_boot=$(cat /proc/sys/kernel/random/boot_id) || return 1
+  fw_tmp=$(mktemp "$FW_STATE.XXXXXX") || return 1
+  if ! printf '%s\n%s\n%s\n' "$fw_boot" "$fw_saved_wifi" "$fw_saved_scan" > "$fw_tmp" ||
+     ! mv -f "$fw_tmp" "$FW_STATE"; then
+    rm -f "$fw_tmp"
+    die '无法保存 Wi-Fi/扫描状态，未切换模式'
+    return 1
+  fi
+}
+
+framework_read_saved() {
+  fw_boot=$(sed -n '1p' "$FW_STATE") || return 1
+  fw_saved_wifi=$(sed -n '2p' "$FW_STATE") || return 1
+  fw_saved_scan=$(sed -n '3p' "$FW_STATE") || return 1
+  case "$fw_saved_wifi:$fw_saved_scan" in 0:0|0:1|1:0|1:1) ;; *) die '保存的 Wi-Fi 状态无效'; return 1;; esac
+  [ "$fw_boot" = "$(cat /proc/sys/kernel/random/boot_id)" ] || {
+    # A previous boot's session does not own this boot's preferences.
+    rm -f "$FW_STATE"
+    die '监听状态来自上次开机，已清除旧记录；本次未改 Wi-Fi 开关'
+    return 1
+  }
+}
+
+framework_scan_set() {
+  settings put global wifi_scan_always_enabled "$1" || return 1
+  case "$1" in 1) fw_scan_word=enabled;; *) fw_scan_word=disabled;; esac
+  cmd wifi set-scan-always-available "$fw_scan_word" >/dev/null 2>&1
+}
+
+framework_wait() {
+  # NumActiveModeManagers is the live owner count. Other curState lines
+  # include the scanner state machine even when there is no STA interface.
+  fw_wait_wifi=$1
+  fw_wait_active=$2
+  fw_wait_count=0
+  while [ "$fw_wait_count" -lt 20 ]; do
+    fw_active=$(dumpsys -t 3 wifi 2>/dev/null | awk '
+      /^NumActiveModeManagers: [0-9]+\r?$/ {print $2; exit}')
+    fw_now=$(framework_wifi_value) || fw_now=
+    if [ "$fw_now" = "$fw_wait_wifi" ]; then
+      case "$fw_wait_active:$fw_active" in
+        0:0) return 0;;
+        1:*) case "$fw_active" in ''|*[!0-9]*) ;; *) [ "$fw_active" -gt 0 ] && return 0;; esac;;
+      esac
+    fi
+    sleep 1
+    fw_wait_count=$((fw_wait_count + 1))
+  done
+  return 1
+}
+
+framework_quiesce() {
+  framework_scan_set 0 || return 1
+  svc wifi disable >/dev/null 2>&1 || cmd wifi set-wifi-enabled disabled >/dev/null 2>&1 || return 1
+  framework_wait 0 0
+}
+
+framework_restore() {
+  [ -f "$FW_STATE" ] || return 0
+  framework_read_saved || return 1
+  # Drop any userspace STA owner requested during monitoring before
+  # restoring the original settings against the recreated mission interfaces.
+  framework_quiesce || { die 'Wi-Fi 框架未停止，保留恢复记录，请重试 monstop'; return 1; }
+  framework_scan_set "$fw_saved_scan" || return 1
+  if [ "$fw_saved_wifi" = 1 ]; then
+    svc wifi enable >/dev/null 2>&1 || cmd wifi set-wifi-enabled enabled >/dev/null 2>&1 || return 1
+  fi
+  fw_expected_active=0
+  [ "$fw_saved_wifi" = 0 ] && [ "$fw_saved_scan" = 0 ] || fw_expected_active=1
+  framework_wait "$fw_saved_wifi" "$fw_expected_active" || {
+    die 'Wi-Fi/扫描恢复尚未就绪，记录已保留，请重试 monstop'
+    return 1
+  }
+  rm -f "$FW_STATE"
+}
+
 rollback_new_monitor() {
   [ "$previous_mode" = 0 ] || return 0
   if printf '0\n' > "$MODE" && wait_for_iface managed; then
+    framework_restore || return 1
     rm -f "$STATE"
     log_i '[global-monitor] 本次启动失败，已退回 managed 模式'
   else
@@ -108,7 +207,7 @@ rollback_new_monitor() {
 }
 
 mon_on() {
-  wlan_require_commands iw ip awk || return 1
+  wlan_require_commands iw ip awk cmd settings svc dumpsys mktemp sed || return 1
   requested_freq=
   [ -z "$1" ] || validate_channel "$1" || return 1
   verify_payload_stack || { die '运行模块与本包不匹配，请先重新切换 WLAN 栈'; return 1; }
@@ -117,6 +216,12 @@ mon_on() {
   case "$previous_mode" in 0|4) ;; *) die "不支持从 con_mode=$previous_mode 启动监听"; return 1;; esac
   wlan_check_sharing || return 1
   if [ "$previous_mode" != 4 ]; then
+    framework_save || return 1
+    if ! framework_quiesce || ! wlan_check_sharing; then
+      die 'Android Wi-Fi/扫描未交出接口，未进入监听'
+      framework_restore
+      return 1
+    fi
     if ! printf '4\n' > "$MODE"; then
       die '无法切换 con_mode=4'
       rollback_new_monitor
@@ -158,8 +263,9 @@ mon_off() {
     printf '0\n' > "$MODE" || { die '无法退出全局 monitor'; return 1; }
   fi
   [ "$(cat "$MODE")" = 0 ] || { die 'con_mode 尚未回到 0'; return 1; }
-  rm -f "$STATE"
   wait_for_iface managed || { die '已退出监听模式，但 managed 接口尚未就绪'; return 1; }
+  framework_restore || return 1
+  rm -f "$STATE"
   log_i '[global-monitor] OFF：已退出监听，managed 接口就绪（不代表 Wi-Fi 已连接）'
 }
 

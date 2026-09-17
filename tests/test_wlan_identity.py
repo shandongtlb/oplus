@@ -60,3 +60,34 @@ dumpsys() { echo 'Wi-Fi is disabled'; }
 '''
 assert run(mock+func(s,'wifi_is_enabled')+'wifi_is_enabled; echo passed')=='passed'
 print('Current Wi-Fi state overrides stale settings and scan-only prose: passed')
+
+# Vendor recovery must be able to read/load the replacement. A failed label
+# update must not remove an existing bind or begin unloading the WLAN stack.
+bind=(r/'bind_mount_control.sh').read_text()
+with tempfile.TemporaryDirectory() as tmp:
+ p=Path(tmp);src=p/'payload.ko';target=p/'vendor.ko'
+ src.touch();target.touch()
+ mock=f'''
+resolve_moddir_file() {{ echo '{src}'; }}
+log_i() {{ :; }}; log_e() {{ :; }}
+is_target_bound() {{ return 0; }}
+chcon() {{ [ "$1" = u:object_r:vendor_file:s0 ] && [ "$2" = '{src}' ] || exit 90; echo label; return "$LABEL_RC"; }}
+umount() {{ echo unmount; }}
+mount() {{ echo mount; }}
+'''
+ command=func(bind,'apply_one')+f'apply_one payload "{target}"'
+ assert run(mock+'LABEL_RC=0\n'+command).splitlines()==['label','unmount','mount']
+ out=run(mock+'LABEL_RC=1\n'+func(bind,'apply_one')+f'if apply_one payload "{target}"; then exit 91; fi')
+ assert out=='label',out
+ controller=p/'bind_mount_control.sh';controller.write_text('#!/bin/sh\nexit 1\n');controller.chmod(0o755)
+ flag=p/'state';flag.touch()
+ mock=f'''
+MODDIR='{p}'
+STATE_FLAG='{flag}'
+log_i() {{ :; }}; log_e() {{ :; }}
+stage_usb_firmware() {{ return 0; }}
+prepare_switch() {{ echo unexpected-unload; exit 92; }}
+'''
+ out=run(mock+func(s,'switch_to_nethunter')+'if switch_to_nethunter; then exit 93; fi')
+ assert out=='' and flag.exists()
+print('Vendor module label, bind failure and reload boundary checks passed')

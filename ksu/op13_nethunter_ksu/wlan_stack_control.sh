@@ -512,7 +512,10 @@ switch_to_nethunter() {
   log_i "switching wlan stack to module payload"
   stage_usb_firmware || true
   if [ -x "$MODDIR/bind_mount_control.sh" ]; then
-    "$MODDIR/bind_mount_control.sh" apply_if_enabled || true
+    "$MODDIR/bind_mount_control.sh" apply_if_enabled || {
+      log_e "failed to prepare vendor module binds; WLAN stack unchanged"
+      return 1
+    }
   fi
   rm -f "$STATE_FLAG"
   if ! prepare_switch; then

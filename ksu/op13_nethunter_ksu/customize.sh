@@ -14,6 +14,10 @@ print_modname() {
 
 set_permissions() {
   set_perm_recursive "$MODPATH" 0 0 0755 0644
+  # Vendor recovery also loads these files through their bind targets.
+  for module_name in cfg80211 mac80211 qca_cld3_peach_v2; do
+    set_perm "$MODPATH/vendor_dlkm/lib/modules/$module_name.ko" 0 0 0644 u:object_r:vendor_file:s0
+  done
   set_perm "$MODPATH/customize.sh" 0 0 0755
   set_perm "$MODPATH/module_identity.sh" 0 0 0755
   set_perm "$MODPATH/wlan_control_common.sh" 0 0 0755

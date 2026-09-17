@@ -23,7 +23,27 @@ def end(code=0):
     sys.exit(code)
 if name == 'log' or name == 'sleep': end()
 if name == 'id': print('0'); end()
+if name in ('cmd', 'svc', 'settings'):
+    if name == 'cmd' and args == ['wifi', 'status']:
+        print('Wifi is ' + ('enabled' if get('wifi', '0') == '1' else 'disabled')); end()
+    if name == 'settings' and args[:3] == ['get', 'global', 'wifi_scan_always_enabled']:
+        print(get('scan', '1')); end()
+    if name == 'settings' and args[:3] == ['put', 'global', 'wifi_scan_always_enabled']:
+        (p / 'scan').write_text(args[3]); end()
+    if name == 'cmd' and args[:2] == ['wifi', 'set-scan-always-available']:
+        end(int(get('scan_set_fail', '0')))
+    if (name == 'svc' and args[:1] == ['wifi']) or (name == 'cmd' and args[:2] == ['wifi', 'set-wifi-enabled']):
+        enable = args[-1] in ('enable', 'enabled')
+        if enable and get('wifi_enable_fail') == '1': end(1)
+        (p / 'wifi').write_text('1' if enable else '0'); end()
+    end(96)
 if name == 'dumpsys':
+    if args[-1:] == ['wifi']:
+        active = get('active_override', str(int(get('wifi', '0') == '1' or get('scan', '1') == '1')))
+        print('NumActiveModeManagers: ' + active)
+        # This unrelated scanner state must not be treated as a live STA.
+        print('curState=ScanOnlyModeState')
+        end()
     print(get('p2p', 'curState=InactiveState'))
     end(int(get('p2p_rc', '0')))
 if name == 'iw':
@@ -84,7 +104,7 @@ class MonitorControl(unittest.TestCase):
         self.bin.mkdir()
         (self.bin / 'mock').write_text(MOCK)
         (self.bin / 'mock').chmod(0o755)
-        for name in ('iw', 'ip', 'dumpsys', 'sleep', 'log', 'id'):
+        for name in ('iw', 'ip', 'dumpsys', 'sleep', 'log', 'id', 'cmd', 'svc', 'settings'):
             (self.bin / name).symlink_to('mock')
         self.env = dict(os.environ, FIXTURE=str(self.p), PATH=str(self.bin) + ':' + os.environ['PATH'])
         self.env.pop('OP13_WLAN_LOCK', None)
@@ -134,7 +154,51 @@ class MonitorControl(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assert_mode('0')
                 self.assertFalse((self.mod / '.global_monitor_enabled').exists())
+                self.assertFalse((self.mod / '.global_monitor_framework_state').exists())
+                self.assertEqual((self.p / 'scan').read_text(), '1')
                 (self.p / failure).unlink()
+
+    def test_framework_settings_restored_and_repeat_start_preserves_snapshot(self):
+        for wifi, scan in (('0', '1'), ('1', '0'), ('1', '1'), ('0', '0')):
+            with self.subTest(wifi=wifi, scan=scan):
+                self.set(mode='0', wifi=wifi, scan=scan)
+                started = self.run_script('monitor_control.sh', 'on', '1')
+                self.assertEqual(started.returncode, 0, started.stderr)
+                state = self.mod / '.global_monitor_framework_state'
+                original = state.read_bytes()
+                self.assertEqual((self.p / 'wifi').read_text(), '0')
+                self.assertEqual((self.p / 'scan').read_text(), '0')
+                again = self.run_script('monitor_control.sh', 'on', '149')
+                self.assertEqual(again.returncode, 0, again.stderr)
+                self.assertEqual(state.read_bytes(), original)
+                stopped = self.run_script('monitor_control.sh', 'off')
+                self.assertEqual(stopped.returncode, 0, stopped.stderr)
+                self.assertEqual((self.p / 'wifi').read_text(), wifi)
+                self.assertEqual((self.p / 'scan').read_text(), scan)
+                self.assertFalse(state.exists())
+
+    def test_restore_failure_retains_snapshot_and_stop_can_retry(self):
+        self.set(wifi='1', scan='1')
+        self.assertEqual(self.run_script('monitor_control.sh', 'on', '1').returncode, 0)
+        self.set(wifi_enable_fail='1')
+        failed = self.run_script('monitor_control.sh', 'off')
+        self.assertNotEqual(failed.returncode, 0)
+        self.assert_mode('0')
+        self.assertTrue((self.mod / '.global_monitor_framework_state').exists())
+        self.assertIn('RESTORE PENDING', self.run_script('monitor_control.sh', 'status').stdout)
+        self.assertNotEqual(self.run_script('monitor_control.sh', 'on', '1').returncode, 0)
+        self.set(wifi_enable_fail='0')
+        self.assertEqual(self.run_script('monitor_control.sh', 'off').returncode, 0)
+        self.assertEqual((self.p / 'wifi').read_text(), '1')
+        self.assertFalse((self.mod / '.global_monitor_framework_state').exists())
+
+    def test_active_framework_owner_blocks_mode_change(self):
+        self.set(active_override='1')
+        result = self.run_script('monitor_control.sh', 'on', '1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_mode('0')
+        self.assertFalse((self.p / 'calls').exists())
+        self.assertTrue((self.mod / '.global_monitor_framework_state').exists())
 
     def test_existing_session_not_turned_off_on_retune_failure(self):
         self.set(mode='4', freq_fail='1', freq='5745')
