@@ -12,7 +12,8 @@
 详见 [v7 真机报告](../../说明/op13_v7_runtime_20260916.md) 和
 [专项结果与SSR定位](../../说明/op13_v7_extended_20260916.md)。
 最新v8已完成一轮统一构建与strip/打包，包含0013 SSR重建修复，提交`30426bf8`。
-v8尚未部署/真机验收。构建和包身份见[v8校验记录](../../说明/验证/op13-v8-build-20260916.json)，
+v8已完成四种SSR场景及用户down/up补测，详见[v8真机记录](../../说明/op13_v8_runtime_20260917.md)。
+构建和包身份见[v8校验记录](../../说明/验证/op13-v8-build-20260916.json)，
 主机检查和补丁重放见[源码校验](../../说明/验证/op13-ssr-fix-20260916.json)。
 
 ## 应用与统一编译
@@ -43,7 +44,7 @@ RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
 - `cd811a61`：记录 v6 用户真机 Probe 成功与验证边界，仅修改文档。
 - `c79b6f65`：sam WEXT handlers/频道确认与主机 qdisc 切换边界；完整保留 v7 构建快照的 11 个文件。
 - `524a92c0`：记录 v7 构建与真机回归，仅修改文档。
-- `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；v8构建通过，待真机验证。
+- `30426bf8`：独立保存monitor context，补齐SSR RX/省电恢复和TX恢复门槛，保留WEXT与暂停状态；v8构建和四种SSR场景验证通过。
 
 v7 实际构建时源码为 `cd811a61` 加工作区改动，收尾时原样提交为 `c79b6f65`；
 不能将收尾提交时间当作构建时间。0012 仅补文档，不改变已测运行时代码。
@@ -96,7 +97,7 @@ NETDEV_TX_BUSY、并发换频或长时间耐久性；160 MHz RX仍缺空口证�
 空闲SSR暴露monitor重建-22和RX恢复缺口，完整退出重进可恢复。0013将monitor
 context移出station union，补DP monitor/省电恢复，并阻止失败后的TX恢复；还保留
 monitor WEXT，跳过固件已停时的UP/STOP等待。13项主机检查通过，旧union负向对照
-可复现参数覆盖；修复已随v8构建/打包，尚未上机，v7包仍有已记录的SSR问题。
+可复现参数覆盖；修复已随v8构建/打包并完成针对性SSR真机验证，v7包仍有已记录的SSR问题。
 
 ### WEXT 兼容实现的来源
 
@@ -120,4 +121,7 @@ oplus 原补丁也有对应历史修复：[0011 WEXT 查询桥](../qca_inject/00
 qcacld Build ID：`ff0f34e4ea4eba64f788c495b3a9eabb401d3157`。
 从已提交的`30426bf8`统一构建，源码前后未变；仅三模块副本strip-debug并打包。
 全部装载段、模块元数据、导入CRC和Build ID保留，ZIP内容/权限校验通过。
-本轮未部署或测试手机，SSR修复仍待上机验收；未执行第二轮构建。
+打包时未部署或测试手机。次日用户热切后完成SSR专项和用户补测，未执行新构建。
+空闲及带流量SSR后RX/TX恢复，40 MHz RX-only队列和管理员暂停状态保持；普通
+Wi-Fi恢复及退出重进通过，用户down/up补测Probe23/30。最新监听仍活动，无在途/
+队列/DMA残留；未执行最终monstop。验证范围及证据见上方v8报告。

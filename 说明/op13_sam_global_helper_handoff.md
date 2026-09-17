@@ -313,3 +313,23 @@ ELF装载段/元数据/CRC/Build ID与raw一致、ZIP完整性/权限/三模块�
 本轮没有启动第二次构建；下一步先验空闲SSR，再验带流量SSR与RX/WEXT/普通Wi-Fi。
 下方“等待构建”和“v7为最新包”为历史状态。
 本次用户同时授权构建和打包，因此单轮成功后接着strip/打包，没有重新构建。
+
+## v8 SSR 真机验证及用户补测收尾（2026-09-17）
+
+开测三模块文件及加载notes与v8一致。四次SSR（20 MHz空闲、发包期间、40 MHz
+RX-only、管理员down）均恢复，四次boot ID不变。空闲及发包期间恢复后有Beacon/
+Probe回应，WEXT正常；故障时32帧在途、30帧排队，保留池在reset后回收，
+reset_reclaims=1。40 MHz收到207 Beacon，无qdisc留帧或切回20 MHz补发。
+管理员down标志保留，up后频道恢复。普通Wi-Fi连接/IP/VALIDATED/扫描及退出重进
+通过，重进后定向Probe20/30。
+
+用户主动拔线导致最后down/up命令未执行，不能据此判断设备崩溃。用户要求仅自己
+补这一项，并回报频道1/20、WEXT正常、tdgcxh Probe23/30；按用户补测结果记录通过。
+粘贴未含down/up命令或身份复核。最新state2，207/177/145，queued/inflight/used/
+retained/timeouts/stale全0；dropped30、drained32是SSR累计清理，pool6/5是活动池。
+failed60中先前30对应NO_ACK，新增30缺TX状态明细，不能归因为SSR失败。
+
+最终仍是用户的监听会话，未执行monstop/最终身份复核。本轮不再加测，不改源码、
+补丁内容或ZIP，也未编译。80/160 MHz SSR、160 MHz RX、并发换频和长期耐久性
+不在本轮结论内。完整结果见[v8报告](op13_v8_runtime_20260917.md)及
+[证据摘要](验证/op13-v8-runtime-20260917.json)。历史“v8待真机验证”以本节为准。
