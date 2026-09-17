@@ -1,45 +1,87 @@
-OnePlus 13 peach_v2 native global monitor — v8.1 control-script update
+OnePlus 13 peach_v2 native global monitor — v8.2
 
-Package: 2026.09.17-peach-native-global-v8.1 / versionCode 2026091701
-Packaged UTC: 2026-09-17T02:59:54.298000+00:00
-Script implementation commit (oplus repository): 3bfce6641c35b490adfddc0cba47bb19007c4639
-Package input repository commit: 2889fd3e2dd8b4f52c35188b50e65f540bfd5a94
-Script patch SHA-256: bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790
-Package metadata and documentation were refreshed during packaging.
-Kernel build source commit: 30426bf8a3e1b57596ee741086e2c491617c58d1
-Current kernel source commit: 3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb (documentation-only changes since build)
-Current combined kernel patch SHA-256: a6b1cd91130995fb8e837e000b0ae89c5a98d3991f27b028c6bb22342ac05ce9
+Package: 2026.09.17-peach-native-global-v8.2 / versionCode 2026091702
+Packaged UTC: 2026-09-17T07:13:44.286941+00:00
+Kernel build source commit: 7387a666ebca7d4a22676c350e4c598ffd831d1f
+Kernel source tree: 38a1790c9c4b24073c8773c7d7703d424519033f
+Script implementation commit (oplus repository): 079372701e03382d9e968f8751b0d02333e431a8
+Package input repository commit: 87a4325bf0195f23b58ba86d020225106728b35b
+Kernel combined patch SHA-256: c440da350c24c7f89d84765a57b1a22681d330354d2b86ebf4c5c447266c1bf5
+Script combined patch SHA-256: 4baf3eda73eea8f82149795744fdcc421b1006adffefac20576fb1b5d8ec200d
 
-Module origin:
-- Reuse the exact three already-stripped files from the verified v8 payload.
-- Original unified build: 2026-09-16 18:10:43–18:22:15 UTC, sun perf, ARM64 4 KiB.
-- Build command: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
-- Original strip: llvm-strip --strip-debug on copies; raw build outputs preserved.
-- No rebuild or second strip was performed for v8.1.
-- Exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko; no CNSS modules.
-- Original archive: op13_nethunter_ksu-peach-native-global-v8-integrated.zip
-- Original archive SHA-256: ec6361da53d4a14c89c98492b5f3bbe84796d7b6abed57f39b625276cd2dff3a
+Build: RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf
+Started UTC: 2026-09-17T06:06:13.569915+00:00
+Finished UTC: 2026-09-17T06:17:54.752331+00:00
+Elapsed seconds: 701.076
+Build log SHA-256: 9cbf6fb462c9297b682b8c66900a63273afcb9ec540f91602ad990c3d31cbb95
+All required kernel, WLAN, install and devicetree phases completed.
+The 45 changed-file hashes/modes matched before and after building.
+No additional build was run during packaging.
+
+Changes: host ownership only for status-zero self-peer creation; acknowledge
+scheduled-scan cleanup only during final adapter destruction. Include the
+phone-tested mksh flock inheritance and runtime Wi-Fi state script fixes.
+Seven relevant extracted-production-code ASan/UBSan regressions passed.
+New module device validation is pending; the repeated firmware assert's full
+root cause is not established by the host fix or successful build.
+
+Payload: exactly cfg80211.ko, mac80211.ko, qca_cld3_peach_v2.ko.
+Input: kernel_platform/out/msm-kernel-sun-perf/dist from this unified build.
+Strip: /root/pt/oneplus13-kernel-b/kernel_platform/prebuilts/clang/host/linux-x86/clang-r510928/bin/llvm-strip --strip-debug on copies; raw build outputs preserved.
+Tool: llvm-strip, compatible with GNU strip
+LLVM (http://llvm.org/):
+  LLVM version 18.0.0
+  Optimized build.
+CNSS modules are build dependencies and are not bundled.
+cfg80211/mac80211 are unchanged outputs reused by the unified build cache.
 
 Validation:
-- Modules byte-identical to v8, ARM64 relocatable, no debug sections.
-- Loaded identity notes equal the ELF Build ID sections and v8 records.
-- All shell/command scripts equal the committed script implementation.
-- 17 script host regressions and existing Build ID/unload regression passed.
-- New control scripts passed ShellCheck; changed shell scripts passed syntax checks.
-- ZIP CRC, every file's bytes, module set and file permissions verified.
-- v8 modules previously passed targeted phone checks documented in NATIVE_INJECTION.md.
-- v8.1 scripts have not been deployed or phone-tested; no device action in this packaging run.
+- ARM64 relocatable ELF; debug sections removed.
+- Every allocated section, .modinfo, __versions and Build ID note preserved.
+- Runtime identity note files regenerated from the packaged ELF files.
+- Script bytes equal the committed phone-tested implementation; shell syntax checked.
+- ZIP CRC, all file contents, exact module set and permissions verified.
+- No deployment or phone testing occurred during this packaging task.
+- Checks do not establish firmware/RF behavior or all ROM dependency CRCs.
 
 Module manifest:
-- cfg80211.ko: 2070456 bytes
+- cfg80211.ko: 2070456 bytes stripped (raw 10201736)
   sha256 488c2a9d2d737c3ccb3168b96a55a9a145b619a0185f759a1948a30f18f3c626
+  raw_sha256 b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c
   Build ID 40533847cea5b0e9aeac19849b37f1dfc7dc9f44
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
-- mac80211.ko: 1963888 bytes
+  depends rfkill
+- mac80211.ko: 1963888 bytes stripped (raw 17277376)
   sha256 6a519c28239e0c209963372fc9b45368e146928f26c2b21de134c63fbae5c66d
+  raw_sha256 3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0
   Build ID abacfa26d25bc862a3383f8f21c4f3eccd333778
   vermagic 6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64
-- qca_cld3_peach_v2.ko: 19785976 bytes
-  sha256 a504e2d440037a241c07748f9076c36f9c39aa194e5977c66f5e903f6d974ea7
-  Build ID ff0f34e4ea4eba64f788c495b3a9eabb401d3157
+  depends cfg80211,libarc4
+- qca_cld3_peach_v2.ko: 19786088 bytes stripped (raw 513218720)
+  sha256 2799780c1e19f737a28db71a1582f2b8cffd6252f3f27ddbc22e7888fadcc53a
+  raw_sha256 2cba03f17820f5c59e31810a8f7f1bd9a63f523b005f1b618fc6acdd1e764649
+  Build ID 947cc6c343cb6c76d4e465450dd84eb95d8be382
   vermagic 6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64
+  depends cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers
+
+Completed build phases:
+kpl-time-check kernel start 06:06:14
+kpl-time-check kernel end 06:06:38
+kpl-time-check oplus DDK start 06:06:38
+kpl-time-check oplus DDK end 06:12:46
+kpl-time-check kernel copy start 06:12:46
+kpl-time-check kernel copy end 06:12:47
+kpl-time-check Preparing UAPI headers start 06:12:51
+kpl-time-check Preparing UAPI headers end 06:12:51
+kpl-time-check setting up Android tree start 06:12:51
+kpl-time-check setting up Android tree end 06:12:54
+kpl-time-check Building WLAN platform start 06:12:54
+kpl-time-check Building WLAN platform end 06:13:05
+kpl-time-check Building WLAN qcacld start 06:13:05
+kpl-time-check Building WLAN qcacld end 06:16:09
+kpl-time-check Installing WLAN modules start 06:16:09
+kpl-time-check Installing WLAN modules end 06:16:09
+kpl-time-check Compiling vendor devicetree start 06:16:09
+kpl-time-check Compiling vendor devicetree end 06:16:14
+kpl-time-check Merging vendor devicetree start 06:16:14
+kpl-time-check Merging vendor devicetree end 06:17:26

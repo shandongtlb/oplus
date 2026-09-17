@@ -1,3 +1,9 @@
+> Package status (v8.2, 2026-09-17): source 7387a666 completed one unified
+> sun perf build, then strip and package checks. These new modules have not
+> been deployed or device-tested. The source document below is the pre-build
+> historical snapshot; its pending-build statements are superseded by this note.
+> BUILD_INFO.txt records the actual packaged identities and verification scope.
+
 # peach_v2 global monitor RX with internal STA TX (experimental)
 
 The public interface remains native `wlan0` in `con_mode=4`. The monitor vdev
@@ -282,3 +288,49 @@ The user reports no known 160 MHz signal source in the current environment;
 or screen-off/resume behavior remain outside this validation. This update
 does not start another build or device test. Full records are in the workspace
 `oplus/说明/op13_v8_runtime_20260917.md` and `op13-v8-runtime-20260917/`.
+
+## Retuning endurance and scheduled-scan cleanup (2026-09-17)
+
+Later testing of the unchanged v8 modules extends and limits the earlier
+validation. On the same boot, 80/160 MHz RX-only SSR restored the saved channel
+and kept TX empty; 160 MHz actual RF receive still lacks a known signal source.
+Concurrent channel control completed 450 requests: 341 succeeded, 39 returned
+busy, and 70 WEXT requests were correctly unsupported. WEXT only confirms the
+current 20 MHz channel; nl80211 performs retuning. Separate 240 cross-band and
+480 mixed 20/40/80 MHz retunes with Probe traffic drained successfully. A
+240 same-band run also drained, but its original harness checked too early
+and returned failure; a later empty-queue observation is recorded separately.
+
+Longer mixed retuning with traffic reproduced a firmware assert after 536
+successful steps (about 203 seconds), on 2412/20 -> 2437/20. The failed request
+returned EAGAIN and was not ignored. The firmware signature matches the prior
+110-second failure: 0x1f07818:0x1f0134c, line 1444. Automatic SSR recovered RX
+and TX; this is a failed endurance test, not a stability pass.
+
+The WMI ring captured self-peer CREATE_CONF status WMI_PEER_EXISTS (1), then
+host PEER_DELETE, its response, and VDEV_STOP without a STOP response before
+the hang. The observed helper MAC was unique. The sam-derived code accepted
+EXISTS but unconditionally treated the peer as host-created and deleted it.
+Native STA self-peer handling only removes the host object in this case.
+Track host ownership only for a successful status-zero creation; leave an
+existing firmware self-peer to vdev teardown. Unicast peer ownership and all
+TX drain/confirmation fences remain unchanged. This repairs an ownership
+assumption, but the opaque firmware assertion has not been mapped to source
+and its complete cause is not yet established.
+
+A separate passive scheduled-scan reproduction compared a successful direct
+stop against final netdev cleanup while entering monitor. Both cfg80211
+cleanup callbacks returned -EAGAIN after vdev sync removal, retaining the
+request and producing net/wireless/core.c:1535 WARNING. Mark final adapter
+cleanup explicitly and acknowledge that callback without firmware access.
+Only this final cleanup bypasses vdev sync; live EAGAIN/EBUSY/ESHUTDOWN errors
+remain visible. Both pre-4.12 and newer callback signatures are covered.
+
+Seven extracted-production-code ASan/UBSan tests pass, including new self-peer
+confirmation/ownership/teardown and actual adapter-cleanup/PNO callback tests,
+plus scheduler, SSR restoration, mode handoff, SSR rebuild and channel
+serialization regressions. Firmware and kernel calls are stubbed. These
+source changes have not been fully built, packaged or tested on the phone.
+The phone still runs v8, and was restored to managed Wi-Fi with all queues
+empty and pool allocations/frees both 5. Evidence and next steps are in
+`oplus/说明/op13_retune_debug_20260917.md` and `op13-retune-debug-20260917/`.

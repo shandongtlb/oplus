@@ -419,3 +419,15 @@ boot未变。手机三模块仍v8；源码HEAD3b8463c2未改、无编译。手�
 或上机验证新源码。报告[本轮调试](op13_retune_debug_20260917.md)。手机仍v8模块+
 0793727脚本；已恢复managed、Wi-Fi连接/VALIDATED、始终扫描1，pool5/5且队列0，
 boot不变。下一步统一构建后对照复测PNO与持续换频道，不连续编译。
+
+
+## v8.2 已完整构建、strip打包（2026-09-17）
+
+用户随后授权编译，再要求strip完打包。源码7387a666一轮统一sun perf构建成功，
+06:06:13–06:17:54 UTC，701.076秒；45改动文件前后快照相同。三模块副本strip-debug，
+包`ksu/op13_nethunter_ksu-peach-native-global-v8.2-integrated.zip`，7073009字节，SHA-256
+`51d2b905dd351cb31d740ed6fd13bc5d34b60393e08e0515b8b108e85fd3f76c`。qcacld Build ID 947cc6c343cb6c76d4e465450dd84eb95d8be382，
+包括0015 self-peer与PNO修正；脚本含0793727真机热修。旧v8/v8.1 ZIP保持原样。
+装载段/元数据/CRC/Build ID、92文件内容/权限/ZIP校验通过，身份note已同步。
+本轮未部署/操作手机，新模块耐久与PNO仍待验。源码补丁保持不变，详见
+[v8.2包记录](op13_v8_2_package_20260917.md)。上文“尚未构建打包”已由本节更新。

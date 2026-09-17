@@ -1,27 +1,23 @@
 # OnePlus 13 ColorOS16 NetHunter KernelSU Module
 
-This v8.1 package updates the control scripts and documentation. All three
-WLAN module files are byte-for-byte identical to the stripped v8 payload.
-There is no new kernel build. Native global monitor uses `con_mode=4` and
-`wlan0` for RX, with sam-derived internal firmware-only STA helper TX.
+This v8.2 package includes newly built qcacld from source commit `7387a666`,
+with helper self-peer ownership and scheduled-scan cleanup fixes. It uses native
+global monitor (`con_mode=4`, `wlan0`) with sam-derived internal STA helper TX.
+The three modules come from the completed 2026-09-17 unified `sun perf` build;
+cfg80211/mac80211 were reused by the build cache and remain identical to v8.
 
-The scripts validate channel arguments before mode changes, propagate failures,
-roll back a failed new monitor session, and share a file lock across monitor,
-reset, hot-switch, Action and bind controls. Status distinguishes paused,
-channel-not-confirmed, TX-ready, RX-only and recovery states. Active hotspot/P2P
-checks help avoid interrupting an existing OPPO tablet-sharing session.
-See `QUICK_MONITOR_GUIDE.md` for behavior and limits.
+Control scripts include channel validation, shared operation locks, rollback
+and failure reporting, plus the phone-tested mksh lock inheritance and ColorOS
+Wi-Fi status fixes. Active hotspot/P2P checks protect existing shared sessions.
+See `QUICK_MONITOR_GUIDE.md` for operation and `BUILD_INFO.txt` for identities.
 
-The control scripts now include the phone-tested mksh flock inheritance and
-ColorOS Wi-Fi status fixes. Reset, stack switching, hotspot/P2P guards and
-80/160 MHz SSR were exercised on the phone. Continuous injection combined
-with rapid retuning triggered one firmware assert; automatic recovery and
-subsequent Probe worked, but endurance has not passed. A scheduled-scan
-warning on a mode transition also remains under investigation.
-The existing v8.1 ZIP predates these script fixes. This source directory is
-newer than that archive; BUILD_INFO.txt still describes its packaged snapshot.
-160 MHz RF reception, actual system suspend and tablet sharing end-to-end
-remain unverified. See the runtime report in the workspace documentation.
+The preceding v8 modules passed targeted Probe, SSR and concurrent-retuning
+checks, but continuous injection with rapid retuning twice triggered a firmware
+assert. A scheduled-scan cleanup warning was also reproduced. v8.2 addresses
+the observed host ownership and cleanup defects. Seven relevant host regressions
+and the unified build passed; these new modules have not been phone-tested.
+Whether the firmware assertion is resolved still requires endurance testing.
+160 MHz actual RF receive remains unverified without a known signal source.
 
 The three WLAN `.ko` files come from the integrated `sun perf` build with
 `qca_inject/0001-add-qcacldko.patch` plus the sam-derived helper TX port, and are processed with `llvm-strip --strip-debug`.

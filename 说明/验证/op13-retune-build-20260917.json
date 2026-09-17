@@ -1,0 +1,471 @@
+{
+  "started_utc": "2026-09-17T06:06:13.569915+00:00",
+  "source_head": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
+  "source_tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
+  "command": "RECOMPILE_KERNEL=1 ./kernel_platform/oplus/build/oplus_build_kernel.sh sun perf",
+  "source_snapshot_before": {
+    "kernel_platform/build/kernel/android/prepare_vendor.sh": {
+      "sha256": "f7711bf96bd616d2c7fe97ca79c17e800cbc437e2ec4597fdc865a43f3fac21c",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/target_if/mlme/vdev_mgr/src/target_if_vdev_mgr_rx_ops.c": {
+      "sha256": "75993d66fda9826dd11537047769ac8f3a9b3862f4b85f520e64238a2fd3e4e7",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/core/src/wlan_mgmt_txrx_main.c": {
+      "sha256": "c2b670638ab305874a65c534f214dd67fcefc8143789c9ad633d67736a3d5334",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/core/src/wlan_mgmt_txrx_main_i.h": {
+      "sha256": "08096a1739582b4fb5158666f7d7a6794e89ed39e749d78113431d55954cd900",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/dispatcher/inc/wlan_mgmt_txrx_utils_api.h": {
+      "sha256": "a24323f576a86db2611e244017e518f8be553971ac7bff2132a41e749a9643ef",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/dispatcher/src/wlan_mgmt_txrx_tgt_api.c": {
+      "sha256": "7097e1b446afeea79a1f19b9c40b3ed7abe8f9adf5d90456b4d07273c6f9d1ea",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/dispatcher/src/wlan_mgmt_txrx_utils_api.c": {
+      "sha256": "1c8f33e23855f35884891c4d5c0c0fc3daf3ff4cb3b9a0cd729b842e72d8cf6c",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/global_umac_dispatcher/lmac_if/inc/wlan_lmac_if_def.h": {
+      "sha256": "77ab0b3e6c5545b82577059f295d67905ea400a4a6e9df43b0ddb0a5c03ecfe2",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/inc/wlan_vdev_mgr_tgt_if_tx_defs.h": {
+      "sha256": "c397b6e2c410b55e5c756b5916b659feb98d3828ef7d45f4a7e2acce55bc32a0",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wmi/inc/wmi_unified_param.h": {
+      "sha256": "878443312ed48e8bf16aab827a6459fc6ac12da56cdead5e08de40247368ae64",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wmi/src/wmi_unified_tlv.c": {
+      "sha256": "fa385ac634b74daf4230dd9c9c3f2944b0a9188f12793cb4448fc751d3dc8147",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild": {
+      "sha256": "f9a729f900cfad54a7ad392945eab63a7190ee1c272706a8008fd83a8181aa59",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h": {
+      "sha256": "01cc39f8462b8e903af449c3577c8794e8725672ed9ceae6bf55e76913ef399f",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c": {
+      "sha256": "ec0e4bf7f9e8f7f1c8741c5d6d987df5eeec6e72413fb7f191a5d6a97673a9e4",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/cds/src/cds_api.c": {
+      "sha256": "99e4838fc1c0da419ec76a44e1339706582a896fa0cdc9b3f33b0e2b63e6928e",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h": {
+      "sha256": "71f8ba197e562d3501f8853483e10ed024800e3948137a4020fe4da49075e329",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c": {
+      "sha256": "40a69f00834298915e92751bb16ff041353bcd8bc85d884cdbc9eabc60d22e8f",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h": {
+      "sha256": "45eb8d3b7f3f3511871e16179e60919dca0ed1919c72c2926fe3db86c245e9db",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_driver_ops.c": {
+      "sha256": "5b738935011838f3d339d3cd32d9653ff39f30bbb84077400c0e218b143eec92",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c": {
+      "sha256": "92ae82aed8a81580cc0f17c8f35ad973f0296118f6eb590f9b1eeff2d40fd69e",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c": {
+      "sha256": "ae1b4a7c39326db31eb5502557d46bbf154d01d8a6f23f2f28cce3636a8d3989",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c": {
+      "sha256": "44e92b1a166e682b9fe841bc7973a49c506e5dcedfa454388333681b4dad1fd1",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h": {
+      "sha256": "7a3d6dca64a213ea1ede92baf2ba8df9b1fd3bae9c8ad5614150cdc7b56b554f",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_inject_queue.h": {
+      "sha256": "05f4bd48105675ee668cae7b7779377accfbb2fd6170d4afaad16ea3226e01b6",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_dev_if.c": {
+      "sha256": "d9225b66c4b1a5585cf5c225dc1800cf6ee64dfe9efe7df2a60f88ddc35e7608",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c": {
+      "sha256": "a2417e6076395d0d21b7f9c0f48490d772295dee3693089021f4acdc38a5ca19",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c": {
+      "sha256": "1e283cdf064c811e7fe1b8079cab3214b20e0fc83651ecce7d3d1dba78f28d00",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c": {
+      "sha256": "bfa2a00d03d143eba5d54392a12270915b120ae463f5237b58e34f3ff3b796aa",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md": {
+      "sha256": "7a59f5e3c9e49083bdc3d168ae9f30f19f70b6497ea1e2d700c7523151a04084",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py": {
+      "sha256": "1857a91f95d6ba1ba4ed10e0852a0aed1ddcb96477a73ab03c47ebbd5bc1b027",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py": {
+      "sha256": "0d1cc5665c206350afb2a02c28c3484c76d956bbaa0837ef505f9a42966648c2",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_tx_status.py": {
+      "sha256": "3ff1b3c914c62ddb4e8340455bdd2d6c49a94d740b35f82dac27c45d5d9155a0",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_mode_handoff.py": {
+      "sha256": "149aa54ebbf2d62dd7d922a3d18f6a6e09af9b1be439480ac473795c1f065129",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel.py": {
+      "sha256": "8b2faccf42163fab18f953becb0ed46152e867f81f3c8587ecf066d329a4c58e",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_alloc.py": {
+      "sha256": "145ad754e45484118133e1f0a7f91be31146a9e71a20cceffe529e30da0010f9",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_serialization.py": {
+      "sha256": "c63d67cc426dc1f8660424c6e96ab96fd85790db9ef5904c86f89de695bb1123",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_host_queue.py": {
+      "sha256": "5506ebd377ec03be40b6bffd38057c01b84578c18d73a662328ce50ee72e1970",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_radiotap.py": {
+      "sha256": "31d38b015f107a9625839785c5b32616d93abaf72fbb074c5aafd7bd8a8cc869",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_restore_result.py": {
+      "sha256": "29ad9ace66ac6135cc739c8faef51d9f73746e44ad6cd68f7f58c04c83a2dc84",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_rebuild.py": {
+      "sha256": "74afc51c41203843fa0fd0121e780f79e8b1b2f6ffc03f8cdd3fdf09bede93e2",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_stop.py": {
+      "sha256": "d558956f472ba6ebb47e5c21961dcd831600088a81fbcf928b7f9b7262e88386",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_wext.py": {
+      "sha256": "4f2ec894ac5ae8a559129997d7abc31734a32e3af6457f89280ef94b1e3b3e9c",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py": {
+      "sha256": "6525a3f91d86824c1c2751f2d6cf45b80b5789f702690b5ec610fd6c4da1fafa",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py": {
+      "sha256": "7759c519635d45c31f8a5151f6c6aa75bc7d6ed0308d53d10b003e7d8a1cad75",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/wlan_qcacld3_modules.bzl": {
+      "sha256": "96a03b2ab13b1850ab7e4e2db6925f581d0c3106ac14166087853783f11eae7c",
+      "mode": "0o755"
+    }
+  },
+  "wrapper_returncode": 0,
+  "finished_utc": "2026-09-17T06:17:54.752331+00:00",
+  "seconds": 701.076,
+  "source_snapshot_after": {
+    "kernel_platform/build/kernel/android/prepare_vendor.sh": {
+      "sha256": "f7711bf96bd616d2c7fe97ca79c17e800cbc437e2ec4597fdc865a43f3fac21c",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/target_if/mlme/vdev_mgr/src/target_if_vdev_mgr_rx_ops.c": {
+      "sha256": "75993d66fda9826dd11537047769ac8f3a9b3862f4b85f520e64238a2fd3e4e7",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/core/src/wlan_mgmt_txrx_main.c": {
+      "sha256": "c2b670638ab305874a65c534f214dd67fcefc8143789c9ad633d67736a3d5334",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/core/src/wlan_mgmt_txrx_main_i.h": {
+      "sha256": "08096a1739582b4fb5158666f7d7a6794e89ed39e749d78113431d55954cd900",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/dispatcher/inc/wlan_mgmt_txrx_utils_api.h": {
+      "sha256": "a24323f576a86db2611e244017e518f8be553971ac7bff2132a41e749a9643ef",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/dispatcher/src/wlan_mgmt_txrx_tgt_api.c": {
+      "sha256": "7097e1b446afeea79a1f19b9c40b3ed7abe8f9adf5d90456b4d07273c6f9d1ea",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/mgmt_txrx/dispatcher/src/wlan_mgmt_txrx_utils_api.c": {
+      "sha256": "1c8f33e23855f35884891c4d5c0c0fc3daf3ff4cb3b9a0cd729b842e72d8cf6c",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/global_umac_dispatcher/lmac_if/inc/wlan_lmac_if_def.h": {
+      "sha256": "77ab0b3e6c5545b82577059f295d67905ea400a4a6e9df43b0ddb0a5c03ecfe2",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/inc/wlan_vdev_mgr_tgt_if_tx_defs.h": {
+      "sha256": "c397b6e2c410b55e5c756b5916b659feb98d3828ef7d45f4a7e2acce55bc32a0",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wmi/inc/wmi_unified_param.h": {
+      "sha256": "878443312ed48e8bf16aab827a6459fc6ac12da56cdead5e08de40247368ae64",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qca-wifi-host-cmn/wmi/src/wmi_unified_tlv.c": {
+      "sha256": "fa385ac634b74daf4230dd9c9c3f2944b0a9188f12793cb4448fc751d3dc8147",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild": {
+      "sha256": "f9a729f900cfad54a7ad392945eab63a7190ee1c272706a8008fd83a8181aa59",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h": {
+      "sha256": "01cc39f8462b8e903af449c3577c8794e8725672ed9ceae6bf55e76913ef399f",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_action.c": {
+      "sha256": "ec0e4bf7f9e8f7f1c8741c5d6d987df5eeec6e72413fb7f191a5d6a97673a9e4",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/cds/src/cds_api.c": {
+      "sha256": "99e4838fc1c0da419ec76a44e1339706582a896fa0cdc9b3f33b0e2b63e6928e",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h": {
+      "sha256": "71f8ba197e562d3501f8853483e10ed024800e3948137a4020fe4da49075e329",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c": {
+      "sha256": "40a69f00834298915e92751bb16ff041353bcd8bc85d884cdbc9eabc60d22e8f",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h": {
+      "sha256": "45eb8d3b7f3f3511871e16179e60919dca0ed1919c72c2926fe3db86c245e9db",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_driver_ops.c": {
+      "sha256": "5b738935011838f3d339d3cd32d9653ff39f30bbb84077400c0e218b143eec92",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c": {
+      "sha256": "92ae82aed8a81580cc0f17c8f35ad973f0296118f6eb590f9b1eeff2d40fd69e",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_rx_monitor.c": {
+      "sha256": "ae1b4a7c39326db31eb5502557d46bbf154d01d8a6f23f2f28cce3636a8d3989",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c": {
+      "sha256": "44e92b1a166e682b9fe841bc7973a49c506e5dcedfa454388333681b4dad1fd1",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_api.h": {
+      "sha256": "7a3d6dca64a213ea1ede92baf2ba8df9b1fd3bae9c8ad5614150cdc7b56b554f",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/inc/wma_inject_queue.h": {
+      "sha256": "05f4bd48105675ee668cae7b7779377accfbb2fd6170d4afaad16ea3226e01b6",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_dev_if.c": {
+      "sha256": "d9225b66c4b1a5585cf5c225dc1800cf6ee64dfe9efe7df2a60f88ddc35e7608",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c": {
+      "sha256": "a2417e6076395d0d21b7f9c0f48490d772295dee3693089021f4acdc38a5ca19",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_main.c": {
+      "sha256": "1e283cdf064c811e7fe1b8079cab3214b20e0fc83651ecce7d3d1dba78f28d00",
+      "mode": "0o755"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_mgmt.c": {
+      "sha256": "bfa2a00d03d143eba5d54392a12270915b120ae463f5237b58e34f3ff3b796aa",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md": {
+      "sha256": "7a59f5e3c9e49083bdc3d168ae9f30f19f70b6497ea1e2d700c7523151a04084",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_recovery.py": {
+      "sha256": "1857a91f95d6ba1ba4ed10e0852a0aed1ddcb96477a73ab03c47ebbd5bc1b027",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py": {
+      "sha256": "0d1cc5665c206350afb2a02c28c3484c76d956bbaa0837ef505f9a42966648c2",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_tx_status.py": {
+      "sha256": "3ff1b3c914c62ddb4e8340455bdd2d6c49a94d740b35f82dac27c45d5d9155a0",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_mode_handoff.py": {
+      "sha256": "149aa54ebbf2d62dd7d922a3d18f6a6e09af9b1be439480ac473795c1f065129",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel.py": {
+      "sha256": "8b2faccf42163fab18f953becb0ed46152e867f81f3c8587ecf066d329a4c58e",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_alloc.py": {
+      "sha256": "145ad754e45484118133e1f0a7f91be31146a9e71a20cceffe529e30da0010f9",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_channel_serialization.py": {
+      "sha256": "c63d67cc426dc1f8660424c6e96ab96fd85790db9ef5904c86f89de695bb1123",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_host_queue.py": {
+      "sha256": "5506ebd377ec03be40b6bffd38057c01b84578c18d73a662328ce50ee72e1970",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_radiotap.py": {
+      "sha256": "31d38b015f107a9625839785c5b32616d93abaf72fbb074c5aafd7bd8a8cc869",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_restore_result.py": {
+      "sha256": "29ad9ace66ac6135cc739c8faef51d9f73746e44ad6cd68f7f58c04c83a2dc84",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_rebuild.py": {
+      "sha256": "74afc51c41203843fa0fd0121e780f79e8b1b2f6ffc03f8cdd3fdf09bede93e2",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_ssr_stop.py": {
+      "sha256": "d558956f472ba6ebb47e5c21961dcd831600088a81fbcf928b7f9b7262e88386",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_monitor_wext.py": {
+      "sha256": "4f2ec894ac5ae8a559129997d7abc31734a32e3af6457f89280ef94b1e3b3e9c",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_native_injection.py": {
+      "sha256": "6525a3f91d86824c1c2751f2d6cf45b80b5789f702690b5ec610fd6c4da1fafa",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py": {
+      "sha256": "7759c519635d45c31f8a5151f6c6aa75bc7d6ed0308d53d10b003e7d8a1cad75",
+      "mode": "0o644"
+    },
+    "vendor/qcom/opensource/wlan/qcacld-3.0/wlan_qcacld3_modules.bzl": {
+      "sha256": "96a03b2ab13b1850ab7e4e2db6925f581d0c3106ac14166087853783f11eae7c",
+      "mode": "0o755"
+    }
+  },
+  "source_head_after": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
+  "source_matches_prebuild_snapshot": true,
+  "missing_markers": [],
+  "qcacld_target_completed": true,
+  "errors": [],
+  "phases": [
+    "kpl-time-check kernel start 06:06:14",
+    "kpl-time-check kernel end 06:06:38",
+    "kpl-time-check oplus DDK start 06:06:38",
+    "kpl-time-check oplus DDK end 06:12:46",
+    "kpl-time-check kernel copy start 06:12:46",
+    "kpl-time-check kernel copy end 06:12:47",
+    "kpl-time-check Preparing UAPI headers start 06:12:51",
+    "kpl-time-check Preparing UAPI headers end 06:12:51",
+    "kpl-time-check setting up Android tree start 06:12:51",
+    "kpl-time-check setting up Android tree end 06:12:54",
+    "kpl-time-check Building WLAN platform start 06:12:54",
+    "kpl-time-check Building WLAN platform end 06:13:05",
+    "kpl-time-check Building WLAN qcacld start 06:13:05",
+    "kpl-time-check Building WLAN qcacld end 06:16:09",
+    "kpl-time-check Installing WLAN modules start 06:16:09",
+    "kpl-time-check Installing WLAN modules end 06:16:09",
+    "kpl-time-check Compiling vendor devicetree start 06:16:09",
+    "kpl-time-check Compiling vendor devicetree end 06:16:14",
+    "kpl-time-check Merging vendor devicetree start 06:16:14",
+    "kpl-time-check Merging vendor devicetree end 06:17:26"
+  ],
+  "build_log_sha256": "9cbf6fb462c9297b682b8c66900a63273afcb9ec540f91602ad990c3d31cbb95",
+  "build_success": true,
+  "modules": {
+    "cfg80211.ko": {
+      "path": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/cfg80211.ko",
+      "raw_bytes": 10201736,
+      "raw_sha256": "b70a163a9095816466f151368d2e56cb20f8b0f37286bf57e4ed67ff1aba273c",
+      "build_id": "40533847cea5b0e9aeac19849b37f1dfc7dc9f44",
+      "mtime_utc": "2026-09-15T16:55:02.077022+00:00",
+      "elf64_aarch64_relocatable": true,
+      "debug_info_present": true,
+      "modversions_present": true,
+      "modinfo": "\nString dump of section '.modinfo':\n[     0] author=Johannes Berg\n[    15] license=GPL\n[    21] description=wireless configuration support\n[    4c] alias=net-pf-16-proto-16-family-nl80211\n[    74] parmtype=cfg80211_disable_40mhz_24ghz:bool\n[    9f] parm=cfg80211_disable_40mhz_24ghz:Disable 40MHz support in the 2.4GHz band\n[    ea] parmtype=ieee80211_regdom:charp\n[   10a] parm=ieee80211_regdom:IEEE 802.11 regulatory domain code\n[   143] firmware=regulatory.db.p7s\n[   15e] firmware=regulatory.db\n[   175] parmtype=bss_entries_limit:int\n[   194] parm=bss_entries_limit:limit to number of scan BSS entries (per wiphy, default 1000)\n[   1e9] vermagic=6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64\n[   244] name=cfg80211\n[   252] intree=Y\n[   25b] scmversion=g6028f47fadda\n[   274] depends=rfkill\n",
+      "matches_v8_raw_sha256": true
+    },
+    "mac80211.ko": {
+      "path": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/mac80211.ko",
+      "raw_bytes": 17277376,
+      "raw_sha256": "3423e4c5704a69d31ea36db6d6b05ab754e6c10f83c6a3e0de5e4871407c04b0",
+      "build_id": "abacfa26d25bc862a3383f8f21c4f3eccd333778",
+      "mtime_utc": "2026-09-15T16:55:02.060021+00:00",
+      "elf64_aarch64_relocatable": true,
+      "debug_info_present": true,
+      "modversions_present": true,
+      "modinfo": "\nString dump of section '.modinfo':\n[     0] description=IEEE 802.11 subsystem\n[    22] license=GPL\n[    2e] parmtype=ieee80211_default_rc_algo:charp\n[    57] parm=ieee80211_default_rc_algo:Default rate control algorithm for mac80211 to use\n[    a9] parmtype=max_nullfunc_tries:int\n[    c9] parm=max_nullfunc_tries:Maximum nullfunc tx tries before disconnecting (reason 4).\n[   11c] parmtype=max_probe_tries:int\n[   139] parm=max_probe_tries:Maximum probe tries before disconnecting (reason 4).\n[   183] parmtype=beacon_loss_count:int\n[   1a2] parm=beacon_loss_count:Number of beacon intervals before we decide beacon was lost.\n[   1f6] parmtype=probe_wait_ms:int\n[   211] parm=probe_wait_ms:Maximum time(ms) to wait for probe response before disconnecting (reason 4).\n[   271] vermagic=6.6.118-android15-8-o-g6028f47fadda-4k SMP preempt mod_unload modversions aarch64\n[   2cc] name=mac80211\n[   2da] intree=Y\n[   2e3] scmversion=g6028f47fadda\n[   2fc] depends=cfg80211,libarc4\n",
+      "matches_v8_raw_sha256": true
+    },
+    "qca_cld3_peach_v2.ko": {
+      "path": "/root/pt/oneplus13-kernel-b/kernel_platform/out/msm-kernel-sun-perf/dist/qca_cld3_peach_v2.ko",
+      "raw_bytes": 513218720,
+      "raw_sha256": "2cba03f17820f5c59e31810a8f7f1bd9a63f523b005f1b618fc6acdd1e764649",
+      "build_id": "947cc6c343cb6c76d4e465450dd84eb95d8be382",
+      "mtime_utc": "2026-09-17T06:16:09.567861+00:00",
+      "elf64_aarch64_relocatable": true,
+      "debug_info_present": true,
+      "modversions_present": true,
+      "modinfo": "\nString dump of section '.modinfo':\n[     0] parmtype=prealloc_disabled:bool\n[    20] parmtype=qdf_log_dump_at_kernel_enable:bool\n[    4c] parmtype=qdf_log_flush_timer_period:uint\n[    75] license=Dual BSD/GPL\n[    8a] author=Qualcomm Atheros, Inc.\n[    a8] description=WLAN HOST DEVICE DRIVER\n[    cc] parmtype=enable_dfs_chan_scan:int\n[    ee] parmtype=enable_11d:int\n[   106] parmtype=country_code:charp\n[   122] parmtype=mon_tx_wrong_key:bool\n[   141] parm=mon_tx_wrong_key:Force wrong-key on other management frames\n[   182] parmtype=inject_peer_setup_only:bool\n[   1a7] parm=inject_peer_setup_only:Create injection peers but suppress TX\n[   1ea] parm=inject_tx_status:Injection firmware completion status counters\n[   22e] built_with=DDK\n[   23d] vermagic=6.6.118-android15-8-o-4k SMP preempt mod_unload modversions aarch64\n[   28a] name=qca_cld3_peach_v2\n[   2a1] depends=cfg80211,cnss_prealloc,qcom_iommu_util,ipam,sched-walt,qcom_va_minidump,cnss_nl,cnss_utils,cnss2,rproc_qcom_common,qmi_helpers\n",
+      "matches_v8_raw_sha256": false
+    }
+  },
+  "qcacld_changed_from_v8": true,
+  "verified_symbols": [
+    "wma_inject_ensure_tx_vdev",
+    "wma_inject_mon_frame",
+    "wma_inject_prepare_mode_stop",
+    "wlan_hdd_cfg80211_sched_scan_stop",
+    "hdd_mon_wext_handler_def"
+  ],
+  "missing_symbols": [],
+  "stripped": false,
+  "packaged": false,
+  "device_operations": false,
+  "new_tracked_worktree_status_excluding_live_repo": [
+    " M kernel_platform/external/dtc",
+    " M kernel_platform/external/libcap",
+    " M kernel_platform/external/libcap-ng",
+    " M kernel_platform/external/lz4",
+    " M kernel_platform/external/toybox",
+    " M kernel_platform/external/virtio-media",
+    " M kernel_platform/external/zlib",
+    " M kernel_platform/external/zopfli",
+    " M kernel_platform/oplus/bazel/oplus_modules_variant.bzl",
+    " M kernel_platform/prebuilts/asuite",
+    " M kernel_platform/prebuilts/build-tools",
+    " M kernel_platform/prebuilts/clang/host/linux-x86",
+    " M kernel_platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8",
+    " M kernel_platform/prebuilts/rust",
+    " M kernel_platform/prebuilts/tradefed",
+    " M kernel_platform/tools/mkbootimg"
+  ],
+  "source_snapshot_file_count": 45
+}

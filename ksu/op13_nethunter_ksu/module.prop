@@ -1,6 +1,6 @@
 id=op13_coloros16_nethunter
 name=OnePlus 13 ColorOS16 NetHunter
-version=2026.09.17-peach-native-global-v8.1
-versionCode=2026091701
+version=2026.09.17-peach-native-global-v8.2
+versionCode=2026091702
 author=shandongtlb
-description=v8 WLAN modules with monitor control guards, shared operation lock and accurate TX/RX status
+description=Global monitor with helper peer ownership and scheduled-scan cleanup fixes; updated control scripts
