@@ -1,5 +1,8 @@
 # peach_v2 原生全局监听与注入实验线
 
+2026-09-17 已完成本轮干净基线完整重放及当前源码核对，见
+[最终审计报告](../../说明/op13_patch_closeout_20260917.md)。
+
 一加 13 的硬件是 `peach_v2`。本线使用高通 `QDF_GLOBAL_MONITOR_MODE`
 （`con_mode=4`）及原生 `wlan0` monitor vdev。2026-09-16 按用户要求，
 以 sam 完整实现为主要依据：monitor 负责 RX/主机所有权，内部 STA helper 负责 TX。

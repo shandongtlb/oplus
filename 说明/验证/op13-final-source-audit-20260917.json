@@ -1,0 +1,581 @@
+{
+  "date": "2026-09-17",
+  "kernel": {
+    "base": "4d69a3ed9a176152e85580352723c308f29cbfcb",
+    "target_commit": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
+    "target_tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
+    "mail_patch_count": 15,
+    "method": "full independent checkouts; git am and git apply --index; complete tree equality",
+    "source_file_bytes_and_modes_checked": 20702,
+    "subprojects": [
+      {
+        "path": ".repo/manifests",
+        "revision": "f8e50677874c65b6da41057d2f39be7b4ef3c08a",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": ".repo/repo",
+        "revision": "d27d6829a84f488b7253ea693dcc429076c33914",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/build/bazel_common_rules",
+        "revision": "7104d80549523ce9d9c5b95ec7cab8aba88afdb3",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/common",
+        "revision": "e1b346b6b4f4096eb342ae3684838a942fd6f6c4",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/common-modules/trusty",
+        "revision": "b76f8570a1a3480a158f6bc69590dbf326a444d0",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazel-skylib",
+        "revision": "1699b2281164661387bcab62e08b1248f7908c49",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-apple_support",
+        "revision": "f6003e1e3763f8aad9fb9acae79cfa5fff9ae988",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-bazel-central-registry",
+        "revision": "5fa460f7563e307ed8396540aaf2e257f353e908",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-platforms",
+        "revision": "f0d9433341479772b8b645da1208377c2862627c",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-rules_cc",
+        "revision": "dc5e9e76198df0f60f7de1a8c2d947a2a972fa69",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-rules_java",
+        "revision": "c9de4ea84567c22dc3e1aa555b6d468393df5c5d",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-rules_license",
+        "revision": "30733c530db3ec72b5c0cb2d30f798d6aaf1b499",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-rules_pkg",
+        "revision": "33b79a421797cfddf268309523a262f395211a59",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/bazelbuild-rules_python",
+        "revision": "3e22460c62b498cfaa6708003738a3bfaef9cd82",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/dtc",
+        "revision": "6aa78bad656ffc106bb909774fee5fc2d86d4949",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/libcap",
+        "revision": "336d1164b390131c4773b503771e9b53d9bb4f03",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/libcap-ng",
+        "revision": "2bcc92ae19481dd2b8d3ce3abdfbbee49261abe6",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/lz4",
+        "revision": "124599333514066524f55f5f41fbf0d46212e598",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/pigz",
+        "revision": "9bc9fa17d499ddde88b77820f6d063e16c0cdd42",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/python/absl-py",
+        "revision": "af9da234ce5045467014f4e7b53798e8feb2339b",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/toybox",
+        "revision": "dd6f71c76fe1574cf358129be29afa245eff4e36",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/virtio-media",
+        "revision": "6bf5c3d254fe5efc458ea616d18be131d9230f0e",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/zlib",
+        "revision": "4f57254519623a55dcd5bedc454337f6352f2193",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/external/zopfli",
+        "revision": "1e312f1cc3edc4cf7c489aa95a01f2878eb01fd7",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/msm-kernel",
+        "revision": "6028f47faddaa27700f8dd3a1d83906ea8f27170",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/asuite",
+        "revision": "e700ae0a5f3b95470e37f4a0543b4d044e5edfb6",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/build-tools",
+        "revision": "d399f06c8cee351df2b93bac1e767f673d776c16",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/clang-tools",
+        "revision": "70bc10de031e2d0ff7e76adb9746bf339bb135c0",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/clang/host/linux-x86",
+        "revision": "b099698c583b8361ca771f3cc8d6af6f729f39b3",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8",
+        "revision": "e0de596ee4e1128b36fd2be9ec04422360bf404f",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/jdk/jdk11",
+        "revision": "f2f372463c74a896e3d8a0abb33e4667837458c2",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/kernel-build-tools",
+        "revision": "434f141b6d22a773a163fa9c707b19b4d254d989",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/ndk-r26",
+        "revision": "39c0d89e553619d398797309398697764cf3547b",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/rust",
+        "revision": "aff65346a9f85db2c8fd1d0c13b6dcd0bee76390",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/prebuilts/tradefed",
+        "revision": "0d6bd67313f94bd03fc54c350b9de54d94442ee7",
+        "tracked_worktree_clean": true
+      },
+      {
+        "path": "kernel_platform/tools/mkbootimg",
+        "revision": "5fa28e8bc7f708d49a5cd42c8baaa4e8c03e08ef",
+        "tracked_worktree_clean": true
+      }
+    ],
+    "source_live_repo_metadata_status": [
+      " M .repo/TRACE_FILE",
+      " M .repo/manifests.git/.repo_config.json",
+      " M .repo/projects/..git/HEAD",
+      " M .repo/projects/..git/index",
+      " M .repo/projects/..git/index.lock",
+      " M .repo/projects/..git/logs/HEAD",
+      " M .repo/projects/kernel_platform/external/dtc.git/index",
+      " M .repo/projects/kernel_platform/external/libcap-ng.git/index",
+      " M .repo/projects/kernel_platform/external/libcap.git/index",
+      " M .repo/projects/kernel_platform/external/lz4.git/index",
+      " M .repo/projects/kernel_platform/external/toybox.git/index",
+      " M .repo/projects/kernel_platform/external/virtio-media.git/index",
+      " M .repo/projects/kernel_platform/external/zlib.git/index",
+      " M .repo/projects/kernel_platform/external/zopfli.git/index",
+      " M .repo/projects/kernel_platform/msm-kernel.git/index",
+      " M .repo/projects/kernel_platform/prebuilts/asuite.git/index",
+      " M .repo/projects/kernel_platform/prebuilts/build-tools.git/index",
+      " M .repo/projects/kernel_platform/prebuilts/clang/host/linux-x86.git/index",
+      " M .repo/projects/kernel_platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8.git/index",
+      " M .repo/projects/kernel_platform/prebuilts/rust.git/index",
+      " M .repo/projects/kernel_platform/prebuilts/tradefed.git/index",
+      " M .repo/projects/kernel_platform/tools/mkbootimg.git/index"
+    ],
+    "scope": "All committed blobs, file modes, symlinks and gitlink revisions. Live .repo metadata, untracked and ignored build outputs are not source equivalence claims.",
+    "routes": {
+      "mail": {
+        "checkout": "/root/pt/op13-final-audit-20260917/kernel-replay/mail",
+        "tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
+        "clean": true,
+        "manifest_sha256": "19e3a50ef01aebd75da4c9b84a20f6ff5d2a1178b77edf4bf62aab28ed6f028b",
+        "steps": [
+          {
+            "patch": "0001-build-integrate-wlan-qcacld.patch",
+            "source_commit": "d20c69af445ad034becf3f92a5c2f6f9d8b4b6be",
+            "replay_commit": "aa6051bd8dcd311ef9fe7c43bab3c293824042f2",
+            "tree": "08ee0322371e26f7162dcd4330d1f5575fe45ac3"
+          },
+          {
+            "patch": "0002-peach-v2-native-global-monitor.patch",
+            "source_commit": "2fa5ca6270d3a8d3395010101fe944bedb524645",
+            "replay_commit": "bfa7332d13aa47a1471985787e5190827f71dbf3",
+            "tree": "f671da57111e32b24a83a7c25342e061c2290903"
+          },
+          {
+            "patch": "0003-monitor-injection-flag.patch",
+            "source_commit": "f5bb38df2661aa553e3567bef254960defcc0fbe",
+            "replay_commit": "3c2850f3925a086329367f5639be60d2cb57bb76",
+            "tree": "f0f2e82f6becce226d610d3d874b502448a12a90"
+          },
+          {
+            "patch": "0004-native-monitor-tx-hardening.patch",
+            "source_commit": "8e21acf0a4fb5e063a1721a6565349a8a524309d",
+            "replay_commit": "fa370a1fe50623d95f3f42e1738a67bd41bfebaa",
+            "tree": "9791603e005068bfc5fd709542e471df47943d05"
+          },
+          {
+            "patch": "0005-monitor-channel-and-tx-diagnostics.patch",
+            "source_commit": "afc425ebb627d93fa0c94be5eee44843c5440533",
+            "replay_commit": "dbf3a0cadb2574aa0647d39c9375ec771e0ab5ec",
+            "tree": "a8f9dfdb5f6eec7cdfe13d6fef45a1c713387c57"
+          },
+          {
+            "patch": "0006-preserve-deauth-wrong-key.patch",
+            "source_commit": "9fddc16245322333a2941ab3d62f6e7d439ccd08",
+            "replay_commit": "d49f0d6837b79d70abe1c1ca38af449071710883",
+            "tree": "d49936457d680466e33bcfb248b280543f1bc523"
+          },
+          {
+            "patch": "0007-monitor-channel-current-macro-fix.patch",
+            "source_commit": "2cbfb99ff1848517870b7cf2b3e6d8a8a7a82014",
+            "replay_commit": "0e3473aa8b62f72e915a3dab29b1407deb41338e",
+            "tree": "4aa5dd3c99f7d7cd36c8197257eaeda549d69685"
+          },
+          {
+            "patch": "0008-sam-global-helper-tx.patch",
+            "source_commit": "487101877cee79c39456c6b2650867ba749dd4bd",
+            "replay_commit": "de8cfe618d340efe16623e2dd0f5c7846e507dd7",
+            "tree": "27a9cecb521a584ab6e0547b68e3b839c66f3d64"
+          },
+          {
+            "patch": "0009-helper-tx-payload-type.patch",
+            "source_commit": "eab4d48d0034f88961de8f06e371d54985242588",
+            "replay_commit": "b1d78eca1843b6ae20274a16845061412c2f8141",
+            "tree": "864b886f3ca7ae6d8c2924aaf3359906a92ca9d2"
+          },
+          {
+            "patch": "0010-v6-device-probe-validation.patch",
+            "source_commit": "cd811a615772f4c144118f6215ab0d8972544959",
+            "replay_commit": "c64987930c240f551249c760a104270a3b415f0f",
+            "tree": "34ce32b2deb9ea48195477ef764c877498b72cb8"
+          },
+          {
+            "patch": "0011-monitor-wext-and-host-queue.patch",
+            "source_commit": "c79b6f6541583b148354b731691dc92caeac6adb",
+            "replay_commit": "3d4921eb8c6891e8aa8d6fe89635b42bc19ffc34",
+            "tree": "142504e93ef412150890a784f6f70d5e91d4cfcc"
+          },
+          {
+            "patch": "0012-v7-device-regression-results.patch",
+            "source_commit": "524a92c084f36b8301bac24ae3920c610b53fac0",
+            "replay_commit": "3f93929e195218d8276303f73a234f5509f3d1ea",
+            "tree": "422e8a00abf0521a986311b445c014a946a822ef"
+          },
+          {
+            "patch": "0013-monitor-ssr-rebuild.patch",
+            "source_commit": "30426bf8a3e1b57596ee741086e2c491617c58d1",
+            "replay_commit": "fbd2d079c69a47ccaa7c41d25140a873c3ea28f1",
+            "tree": "a3215426a531edd58dd9636b262da0296bac76e4"
+          },
+          {
+            "patch": "0014-v8-ssr-device-validation.patch",
+            "source_commit": "3b8463c28c8bf1aad4502dcb1a6125bb64eb90fb",
+            "replay_commit": "3686d8fb153a4f3906d829a4a769c4b234543731",
+            "tree": "ecae96f26a9713a501edc9950f90731be0375c9d"
+          },
+          {
+            "patch": "0015-helper-self-peer-and-pno-cleanup.patch",
+            "source_commit": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
+            "replay_commit": "0c5bcf7a480303ee2b2b0f519152c661ebd742db",
+            "tree": "38a1790c9c4b24073c8773c7d7703d424519033f"
+          }
+        ]
+      },
+      "combined": {
+        "checkout": "/root/pt/op13-final-audit-20260917/kernel-replay/combined",
+        "tree": "38a1790c9c4b24073c8773c7d7703d424519033f",
+        "clean": true,
+        "manifest_sha256": "19e3a50ef01aebd75da4c9b84a20f6ff5d2a1178b77edf4bf62aab28ed6f028b",
+        "steps": [
+          {
+            "patch": "../qca_inject/0001-add-qcacldko.patch",
+            "tree": "08ee0322371e26f7162dcd4330d1f5575fe45ac3"
+          },
+          {
+            "patch": "0001-peach-v2-native-global-monitor.patch",
+            "tree": "38a1790c9c4b24073c8773c7d7703d424519033f"
+          }
+        ]
+      }
+    },
+    "patch_sha256": {
+      "exported/0001-build-integrate-wlan-qcacld.patch": "f2e7f4ead3e87635f9bc3fa3bc6ce52a1e9cfec1bdd7b9028008ee553d01941d",
+      "exported/0002-peach-v2-native-global-monitor.patch": "271b2cd08b03752b71f695bec1561aaa4ba2c481b508e1d8dbe6ea7f90888cbb",
+      "exported/0003-monitor-injection-flag.patch": "4be8bdbbee109409d3f00d8a4d962e1777c8cc27753a841e3bac1af455932ac6",
+      "exported/0004-native-monitor-tx-hardening.patch": "ffdce17f4de149ff8d0b6536488a470fbc784e714cb717948ad9ff9e37fd4720",
+      "exported/0005-monitor-channel-and-tx-diagnostics.patch": "0722f2c94f5bf7cd789d34e897a5792648f548e02c6cc49ce2407e627df2a82c",
+      "exported/0006-preserve-deauth-wrong-key.patch": "a7b38cd653e43e9552fe72ba29a2225c450f3edef02a770f29a7818248b9befb",
+      "exported/0007-monitor-channel-current-macro-fix.patch": "e5d712710f28ea4488f8f0611ac408b76ab62f5430845ea8e876f1d4657ff472",
+      "exported/0008-sam-global-helper-tx.patch": "de3cccebc96eaa2a17f25a31dc9a4238f7c7cf201fce52b562ef8d80d1cd1d66",
+      "exported/0009-helper-tx-payload-type.patch": "a8a8891aacb0febcab4d3154612c5462835823c5a5910a155b643df4b225aea7",
+      "exported/0010-v6-device-probe-validation.patch": "3e7752237c052a4961596113c074544420b6da8e533ede1e376365e537266ff2",
+      "exported/0011-monitor-wext-and-host-queue.patch": "68d32b88eb4586f0e5f35f510b2619cb886d1ad55852753794aeca1adaf3f517",
+      "exported/0012-v7-device-regression-results.patch": "a94699152759ed59fe4c7f10392c31ec997ab970d712fe8ec583c592b08465f0",
+      "exported/0013-monitor-ssr-rebuild.patch": "8b2783c7a78a9c70fc689a1d53fd1ec0c2f7c28801f99d8000799cabe0db5c83",
+      "exported/0014-v8-ssr-device-validation.patch": "db21a71c9a9f3b9861568dd3e36556d89e083956940313c53d8ddb4bd7771359",
+      "exported/0015-helper-self-peer-and-pno-cleanup.patch": "5850a8abed5785e0f638187388c2dd122d997053826d19ed24b7117b3c0d0538",
+      "../qca_inject/0001-add-qcacldko.patch": "7cc50d8e5f070ef14e5aad360ea2c3b5bb50869683fc71321680bf9724d0ac87",
+      "0001-peach-v2-native-global-monitor.patch": "c440da350c24c7f89d84765a57b1a22681d330354d2b86ebf4c5c447266c1bf5"
+    },
+    "build_started": false,
+    "device_operations": false,
+    "v8_runtime_unchanged": false,
+    "runtime_files_changed_since_v8_build": [
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c"
+    ],
+    "changes_since_v8_build": [
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_main.h",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_scan.c",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_inject.c",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/docs/peach-native-injection.md",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_inject_self_peer.py",
+      "vendor/qcom/opensource/wlan/qcacld-3.0/tests/test_sched_scan_teardown.py"
+    ],
+    "match": true
+  },
+  "ksu": {
+    "base": "af83a9622345530317a8c4b3cde61131477a292d",
+    "target": "1df6bcae8d4e5827a56bcde78512f37bb022d8b6",
+    "target_tree": "ebd7174b74e7acbd5d5956e870d9de463877dbb2",
+    "current_head": "51233e52ba0735a399076429b426900ee089d6e1",
+    "current_head_tree": "f8070387979d4f58fc0a191e86effc0fefdb2388",
+    "source_files_bytes_modes_checked": 206,
+    "current_head_differences_only_export_artifacts": [
+      "补丁/ksu_scripts/0005-record-script-runtime-export.patch",
+      "补丁/ksu_scripts/0006-record-helper-pno-source-fixes.patch",
+      "补丁/ksu_scripts/0007-record-v8.2-package.patch",
+      "补丁/ksu_scripts/0008-record-v8.2-runtime-validation.patch",
+      "补丁/ksu_scripts/0009-fix-sharing-framework-and-vendor-labels.patch",
+      "补丁/ksu_scripts/README.md",
+      "补丁/ksu_scripts/combined-monitor-control.patch",
+      "补丁/ksu_scripts/series",
+      "补丁/ksu_scripts/verification-sharing-recovery.json"
+    ],
+    "routes": {
+      "mail": {
+        "tree": "ebd7174b74e7acbd5d5956e870d9de463877dbb2",
+        "complete_manifest_equal": true,
+        "clean": true,
+        "steps": [
+          {
+            "commit": "3bfce6641c35b490adfddc0cba47bb19007c4639",
+            "patch": "0001-monitor-control-guards.patch",
+            "tree": "d11cce5f9ded3789719670b24388a5d68bc86de6",
+            "sha256": "bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790"
+          },
+          {
+            "commit": "2889fd3e2dd8b4f52c35188b50e65f540bfd5a94",
+            "patch": "0002-record-control-guard-export.patch",
+            "tree": "338956349e6ffc3dad397a0dc7b09c6710c6e2e8",
+            "sha256": "46f601d67bae3e7613cc4b663698507a2ed4a7e9eb58422243a4b7935a200015"
+          },
+          {
+            "commit": "0b9e13ade8cb5a1c4857c8c9e0de9e527dfe7701",
+            "patch": "0003-record-v8.1-package.patch",
+            "tree": "63ef124ce5c1ec48b3eebd7ec0ea045ea947ee18",
+            "sha256": "30986c1c0e6975d4bdb4dec1fd25c8823a6f892444bddefe40edd82fff9223e0"
+          },
+          {
+            "commit": "079372701e03382d9e968f8751b0d02333e431a8",
+            "patch": "0004-fix-mksh-lock-and-wifi-state.patch",
+            "tree": "a4aa77c02f267330645a6c06fc6b681ffc63543b",
+            "sha256": "f7bd083c2a862d74152931bf64323ac06d15977109ff90e4a4e2ccf995862005"
+          },
+          {
+            "commit": "b8205b08eba123a2fe22ac88167a043d4dd2956f",
+            "patch": "0005-record-script-runtime-export.patch",
+            "tree": "fb1e56188d146fc418659d4bc60c4371f113bfc4",
+            "sha256": "59d79a3f0c3490ac9df2097f497bb0c54e9e6ef45dd788567008593a40dae9b1"
+          },
+          {
+            "commit": "87a4325bf0195f23b58ba86d020225106728b35b",
+            "patch": "0006-record-helper-pno-source-fixes.patch",
+            "tree": "1ff33b518ceec78609262970871b6026e8be7938",
+            "sha256": "9d5cfd887283b838410684ea7a5c2d542e094c2caa00152d89f72b6672514567"
+          },
+          {
+            "commit": "d8ea7d4bdea978bb22feb1efcb5a3f3990f9c663",
+            "patch": "0007-record-v8.2-package.patch",
+            "tree": "dc03ec8882a04742167836bb21a11c061c110fb6",
+            "sha256": "83278af3987ec64f6815f0c12d6866ed222664cade071888ccada23edae5f25d"
+          },
+          {
+            "commit": "d4f61418db866ca2bbd9fa1e97ee69b6495bb78f",
+            "patch": "0008-record-v8.2-runtime-validation.patch",
+            "tree": "02fe0f00dbebe8392d505797e5605823f54c2afa",
+            "sha256": "7c4679ba04f3c902ddff9ab00df795bf8141b1ca426855dd9326136183b1205a"
+          },
+          {
+            "commit": "1df6bcae8d4e5827a56bcde78512f37bb022d8b6",
+            "patch": "0009-fix-sharing-framework-and-vendor-labels.patch",
+            "tree": "ebd7174b74e7acbd5d5956e870d9de463877dbb2",
+            "sha256": "7e7cf94ab587b266e6d996a9a55c7d311d7536b8641b4bc4f8620badf5c49a1f"
+          }
+        ]
+      },
+      "combined": {
+        "tree": "ebd7174b74e7acbd5d5956e870d9de463877dbb2",
+        "complete_manifest_equal": true,
+        "clean": true,
+        "steps": [
+          {
+            "patch": "combined-monitor-control.patch",
+            "sha256": "336dc68eca360b1ea53c8401009e81a5ac05ef316a9be98efd74bcb2950ff957"
+          }
+        ]
+      }
+    },
+    "match": true
+  },
+  "build_residue_restoration": {
+    "restored_subproject_files": 24,
+    "projects": [
+      {
+        "project": "kernel_platform/external/dtc",
+        "files": [
+          "Android.bp",
+          "libfdt/Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/external/libcap",
+        "files": [
+          "Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/external/libcap-ng",
+        "files": [
+          "Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/external/lz4",
+        "files": [
+          "lib/Android.bp",
+          "programs/Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/external/toybox",
+        "files": [
+          "Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/external/virtio-media",
+        "files": [
+          "device/Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/external/zlib",
+        "files": [
+          "Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/external/zopfli",
+        "files": [
+          "Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/prebuilts/asuite",
+        "files": [
+          "acloud/linux-x86/Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/prebuilts/build-tools",
+        "files": [
+          "Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/prebuilts/clang/host/linux-x86",
+        "files": [
+          "Android.bp",
+          "soong/Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8",
+        "files": [
+          "Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/prebuilts/rust",
+        "files": [
+          "Android.bp",
+          "soong/Android.bp"
+        ]
+      },
+      {
+        "project": "kernel_platform/prebuilts/tradefed",
+        "files": [
+          "filegroups/suite/Android.bp",
+          "filegroups/tradefed/Android.bp",
+          "test_harness/Android.bp",
+          "test_harness/Android.mk"
+        ]
+      },
+      {
+        "project": "kernel_platform/tools/mkbootimg",
+        "files": [
+          "Android.bp",
+          "gki/Android.bp",
+          "rust/Android.bp"
+        ]
+      }
+    ],
+    "generated_config_restored": "kernel_platform/oplus/bazel/oplus_modules_variant.bzl",
+    "runtime_source_changed": false,
+    "build_products_removed": false,
+    "active_repo_metadata_restored": false,
+    "evidence_build_log": "op13-retune-build-20260917/build.log:14972"
+  },
+  "kernel_patches_identical_to_previous_verified_exports": true,
+  "runtime_implementation_changed_this_audit": false,
+  "build_started": false,
+  "device_operations": false,
+  "final_exact_head_snapshot": "/root/pt/op13-final-audit-20260917/delivery/verification.json",
+  "snapshot_scope": "Final committed oplus HEAD, with no committed-file exclusions; exported after closeout commit to an external directory to avoid recursive inclusion."
+}
