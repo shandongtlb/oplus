@@ -1,0 +1,12 @@
+{
+  "base_commit": "af83a9622345530317a8c4b3cde61131477a292d",
+  "target_commit": "3bfce6641c35b490adfddc0cba47bb19007c4639",
+  "target_tree": "d11cce5f9ded3789719670b24388a5d68bc86de6",
+  "replayed_tree": "d11cce5f9ded3789719670b24388a5d68bc86de6",
+  "patch_sha256": "bedb6986e404de20af444e7a61b8429263f50d5a8336843412417841bec6b790",
+  "method": "temporary Git index, read-tree baseline, git apply --cached, compare complete tree",
+  "host_tests": 17,
+  "device_tested": false,
+  "kernel_changed": false,
+  "package_changed": false
+}
