@@ -431,3 +431,19 @@ boot不变。下一步统一构建后对照复测PNO与持续换频道，不连�
 装载段/元数据/CRC/Build ID、92文件内容/权限/ZIP校验通过，身份note已同步。
 本轮未部署/操作手机，新模块耐久与PNO仍待验。源码补丁保持不变，详见
 [v8.2包记录](op13_v8_2_package_20260917.md)。上文“尚未构建打包”已由本节更新。
+
+
+## v8.2 两项针对性真机验收通过（2026-09-17）
+
+用户刷入热切后授权，11:29–11:52 UTC确认三模块文件/loaded notes匹配v8.2。
+开始检测到真实OPPO Pad Mini P2P-client，防呆正确拦截，用户关闭后继续；没有强行断开。
+PNO直接stop0、再次start后切模式最终cfg stop0，旧core.c1535 WARN未复现。
+15分钟混合带Probe压力2293设置请求全0，新增123772完成、41800切换丢弃，
+最终队列/qdisc空，timeout/stale/retained/SSR0。WMI确认EXISTS self-peer不再host删除，
+STOP/DELETE响应正常；本轮通过不等于固件断言源码映射已明确或所有长期场景已覆盖。
+40/80队列不跨频道补发，80短窗口0Beacon不算监听RX验收；160MHz仍缺信号源。
+压力后6Probe完成/10响应，monstop后pool1/1，临时Wi-Fi连接/IP/VALIDATED/新扫描正常。
+最终恢复开测前Wi-Fi关闭、始终扫描1，managed/Dozing，boot不变，trace实例已删除。
+早期入口拦截后误运行Probe的编排错误保留，驱动计数0；不记为新模块注入失败。
+报告[本次验收](op13_v8_2_runtime_20260917.md)，证据op13-v8.2-runtime-20260917/。
+本轮未改源码/构建/打包，7387a666/0015及v8.2 ZIP保持不变。

@@ -1,0 +1,713 @@
+{
+  "date": "2026-09-17",
+  "serial": "3B1F5QE8WTX87GZQ",
+  "boot_id": "0d53ec60-3129-4161-afbe-ea36a52510d9",
+  "utc_start": "2026-09-17T11:29:19Z",
+  "utc_final_restore": "2026-09-17T11:52:57Z",
+  "identity": {
+    "modules_match_package": true,
+    "loaded_build_notes_match": true,
+    "script_mismatches": [
+      "customize.sh",
+      "monstart",
+      "monstop",
+      "scanap"
+    ],
+    "kernel_commit": "7387a666ebca7d4a22676c350e4c598ffd831d1f",
+    "serial": "3B1F5QE8WTX87GZQ",
+    "boot_id": "0d53ec60-3129-4161-afbe-ea36a52510d9",
+    "script_notes": {
+      "customize.sh": "Installer-only file absent after install; no running dependency",
+      "monstart/monstop": "Installed absolute-path forwarding stubs; target matches module monitor_control.sh",
+      "scanap": "Matches service.sh generated scanap implementation, not static template",
+      "scanap_generator_verified": true
+    },
+    "control_scripts_match_package": true
+  },
+  "pno": {
+    "start": 0,
+    "direct_stop": 0,
+    "restart": 0,
+    "mode_switch": 0,
+    "final_cleanup_stop": 0,
+    "final_cleanup_kernel_time": 8273.31091,
+    "warning_seen": false,
+    "trace_instance_removed": true
+  },
+  "initial_blocked_attempt": {
+    "reason": "Actual OPPO Pad Mini P2P-client connection",
+    "mode_entry_returncode": 1,
+    "user_disabled_sharing_before_retry": true,
+    "probe_harness_was_run_in_managed": true,
+    "probe_driver_counters_unchanged": true,
+    "not_a_driver_failure": true
+  },
+  "probe_after_pno": {
+    "before": {
+      "state": 2,
+      "accepted": 0,
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 0,
+      "max_completion_ms": 0,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "after": {
+      "state": 2,
+      "accepted": 6,
+      "submitted": 6,
+      "completed": 6,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 1,
+      "max_completion_ms": 4,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "beacons": 198,
+    "probe_responses": 18,
+    "responders": [
+      "a2:98:57:2d:00:2c",
+      "a2:98:57:2d:00:3a",
+      "ca:cd:55:8b:df:7b"
+    ]
+  },
+  "wide40": {
+    "before": {
+      "state": 0,
+      "accepted": 6,
+      "submitted": 6,
+      "completed": 6,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 1,
+      "max_completion_ms": 4,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "after": {
+      "state": 0,
+      "accepted": 6,
+      "submitted": 6,
+      "completed": 6,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 1,
+      "max_completion_ms": 4,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "beacons": 270,
+    "probe_responses": 0,
+    "responders": []
+  },
+  "wide80": {
+    "before": {
+      "state": 0,
+      "accepted": 7,
+      "submitted": 7,
+      "completed": 7,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 1,
+      "max_completion_ms": 8,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "after": {
+      "state": 0,
+      "accepted": 7,
+      "submitted": 7,
+      "completed": 7,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 1,
+      "max_completion_ms": 8,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "beacons": 0,
+    "probe_responses": 0,
+    "responders": []
+  },
+  "stress": {
+    "result": "pass",
+    "duration_seconds": 901.8686810620002,
+    "steps": 2293,
+    "per_config": {
+      "2412 HT20": 383,
+      "2437 HT20": 382,
+      "2462 HT20": 382,
+      "5745 HT20": 382,
+      "2412 HT40+": 382,
+      "5745 80 5775": 382
+    },
+    "driver_deltas": {
+      "accepted": 165572,
+      "submitted": 123772,
+      "completed": 123772,
+      "dropped": 41800,
+      "timeouts": 0,
+      "pool_allocs": 0,
+      "failed": 0,
+      "stale": 0,
+      "backpressure": 0
+    },
+    "host_send_calls": 1985659,
+    "dmesg_watch": {
+      "checks": 421,
+      "errors": [],
+      "elapsed": 905.1939818989995,
+      "last_kernel_timestamp": 9285.122773
+    },
+    "checked_fault_markers": []
+  },
+  "stress_final": {
+    "mode": "mixed",
+    "seconds": 901.8686810620002,
+    "steps": 2293,
+    "busy": 0,
+    "faults": [],
+    "error": null,
+    "traffic": {
+      "sent": 1985659
+    },
+    "peaks": {
+      "queued": 62,
+      "inflight": 32,
+      "used": 62
+    },
+    "initial": {
+      "state": 2,
+      "accepted": 8,
+      "submitted": 8,
+      "completed": 8,
+      "failed": 0,
+      "dropped": 0,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 1,
+      "max_completion_ms": 8,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "final": {
+      "state": 2,
+      "accepted": 165580,
+      "submitted": 123780,
+      "completed": 123780,
+      "failed": 0,
+      "dropped": 41800,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 62,
+      "max_completion_ms": 448,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "channel": "Interface wlan0\n\tifindex 38\n\twdev 0x4\n\taddr ac:45:ca:19:23:9f\n\ttype monitor\n\twiphy 0\n\tchannel 1 (2412 MHz), width: 20 MHz, center1: 2412 MHz\n\ttxpower 0.00 dBm\n",
+    "qdisc": "qdisc mq 0: root \n Sent 20208672 bytes 459288 pkt (dropped 0, overlimits 0 requeues 2329) \n backlog 0b 0p requeues 2329\nqdisc pfifo_fast 0: parent :11 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :10 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :f bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :e bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 20208672 bytes 459288 pkt (dropped 0, overlimits 0 requeues 2329) \n backlog 0b 0p requeues 2329\nqdisc pfifo_fast 0: parent :d bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :c bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :b bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :a bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :9 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :8 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :7 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :6 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :5 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :4 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :3 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :2 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\nqdisc pfifo_fast 0: parent :1 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1\n Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0\n",
+    "pass": true,
+    "duration_target": 900.0
+  },
+  "post_stress_probe": {
+    "before": {
+      "state": 2,
+      "accepted": 165580,
+      "submitted": 123780,
+      "completed": 123780,
+      "failed": 0,
+      "dropped": 41800,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 62,
+      "max_completion_ms": 448,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "after": {
+      "state": 2,
+      "accepted": 165586,
+      "submitted": 123786,
+      "completed": 123786,
+      "failed": 0,
+      "dropped": 41800,
+      "backpressure": 0,
+      "stale": 0,
+      "retries": 0,
+      "timeouts": 0,
+      "drained": 0,
+      "queued": 0,
+      "inflight": 0,
+      "used": 0,
+      "peak": 62,
+      "max_completion_ms": 448,
+      "pool_allocs": 1,
+      "pool_frees": 0,
+      "retained": 0,
+      "reset_reclaims": 0,
+      "stopping": 0
+    },
+    "beacons": 179,
+    "probe_responses": 10,
+    "responders": [
+      "a2:98:57:2d:00:2c",
+      "a2:98:57:2d:00:3a",
+      "ca:cd:55:8b:df:7b",
+      "ca:cd:55:8b:e2:07"
+    ]
+  },
+  "wmi_summary": {
+    "counts": {
+      "('CMD', '0x6001')": 7,
+      "('CMD', '0x5006')": 6,
+      "('CMD', '0x5002')": 6,
+      "('Event', '0x5002')": 5,
+      "('Event', '0x5006')": 5,
+      "('Event', '0x601a')": 5
+    },
+    "self_peer_create_confirm_statuses": {
+      "1": 5
+    },
+    "sample_count": 40,
+    "note": "Partial last history window only; WMI clock differs from dmesg uptime"
+  },
+  "final_restore": {
+    "managed": true,
+    "wifi_enabled": false,
+    "wifi_scan_always": 1,
+    "wakefulness": "Dozing",
+    "pool_allocs": 1,
+    "pool_frees": 1,
+    "queued": 0,
+    "inflight": 0,
+    "used": 0,
+    "retained": 0,
+    "same_boot": true,
+    "payload_reverified": true,
+    "wifi_connection_validated_before_restoring_off": true,
+    "fresh_scan_results": true
+  },
+  "build_started": false,
+  "new_package_created": false,
+  "source_changed": false,
+  "evidence_root": "/root/pt/op13-v8.2-runtime-20260917",
+  "files": {
+    "NOTES.md": {
+      "bytes": 2632,
+      "sha256": "74be51fdc0ef43d869c6f6b4b5bc862595a2e3574da04e30a47eb99f5973757f"
+    },
+    "after-pno-dmesg.json": {
+      "bytes": 50,
+      "sha256": "e86b81bd67494e4e2362800460a29e07c719d0763e513d9b76269f4dcfbc2360"
+    },
+    "after-pno-dmesg.sh": {
+      "bytes": 6,
+      "sha256": "ecdd46797ccbbd216430279b15b436d2ed9f0afa18d3115f7cb21d88d7c7f227"
+    },
+    "after-pno-dmesg.txt": {
+      "bytes": 2112517,
+      "sha256": "5a7f38767ce2571dbdc51080882885bde355fde000c0226646b1b4567daea29e"
+    },
+    "baseline.json": {
+      "bytes": 50,
+      "sha256": "45edccea42bb4ec3d5276e791cca986abc7d7bdbcc4214771bd0e3817254ec45"
+    },
+    "baseline.sh": {
+      "bytes": 913,
+      "sha256": "ea24ef0d0eadb3749c1b2b153a543eb7a4c72a69f6ac687055197322f1e7284c"
+    },
+    "baseline.txt": {
+      "bytes": 6550,
+      "sha256": "c2d02ae991131608677307408943868292c3423295ee0505dc57e5dd54f7d8fe"
+    },
+    "device.py": {
+      "bytes": 1577,
+      "sha256": "6e4ab9677290d6a946d2b43d5c622481f9c1331e3c0a06d4069369b2ea34e6dc"
+    },
+    "dmesg-before.json": {
+      "bytes": 50,
+      "sha256": "3c507b5a7d352994ee606af3f755590194c61e8ed2955f1c0291863d0ab3114a"
+    },
+    "dmesg-before.sh": {
+      "bytes": 6,
+      "sha256": "ecdd46797ccbbd216430279b15b436d2ed9f0afa18d3115f7cb21d88d7c7f227"
+    },
+    "dmesg-before.txt": {
+      "bytes": 2113800,
+      "sha256": "1cb015ff30f9ef5d8ef3772b55764b5a731dca6285ff3410d99dd31c06af3357"
+    },
+    "exit-and-wifi.json": {
+      "bytes": 51,
+      "sha256": "ba419b22b274565ff22a0c10c24a34778ac5ed91d377eda3a8fd49d1e1a8e891"
+    },
+    "exit-and-wifi.sh": {
+      "bytes": 464,
+      "sha256": "5f15de24efc08844189101acf536f9aacdd82716f4becbd9769f4f75e49f60f9"
+    },
+    "exit-and-wifi.txt": {
+      "bytes": 5684,
+      "sha256": "addb72f14752d482ab68be93ca663a80348c35f78ee24f7f2a67202de49f948c"
+    },
+    "final-dmesg.json": {
+      "bytes": 50,
+      "sha256": "e86b81bd67494e4e2362800460a29e07c719d0763e513d9b76269f4dcfbc2360"
+    },
+    "final-dmesg.sh": {
+      "bytes": 6,
+      "sha256": "ecdd46797ccbbd216430279b15b436d2ed9f0afa18d3115f7cb21d88d7c7f227"
+    },
+    "final-dmesg.txt": {
+      "bytes": 2083587,
+      "sha256": "b57ebc0af2f91982d1de2e84cd575c87f3e56a0978b771cf92f11fce67e95488"
+    },
+    "final-log-check.json": {
+      "bytes": 92,
+      "sha256": "d50afe97871bd8c92e819537b3edb2e417826e89ea5f2cdf79ed707c6e4cde9f"
+    },
+    "final-restore.json": {
+      "bytes": 50,
+      "sha256": "83d0365bf9d44ee10a1c8269e2ba173c845abe77aa2f9e4733ff7de6dbe5894c"
+    },
+    "final-restore.sh": {
+      "bytes": 1667,
+      "sha256": "9a7bf764cbc66d609be908827b9aec029ced486990a5a72e9663cbcb5b6f33e5"
+    },
+    "final-restore.txt": {
+      "bytes": 1315,
+      "sha256": "4c030797be59885d1902c21c22ec597ba19dea351d4c505d794992f71d10d197"
+    },
+    "final-wmi-control.json": {
+      "bytes": 5892,
+      "sha256": "d97dff669cad78bdb6c074dbe542cfc89eb85e3abaa68224a27c0ae3e2ba1b45"
+    },
+    "identity-check.json": {
+      "bytes": 704,
+      "sha256": "4e6b4d7fb2ce86bbdd7e1a05ac9ebf49f57fcc6f44ded4102b29cf34420d3aea"
+    },
+    "initial-probe.json": {
+      "bytes": 50,
+      "sha256": "c11391f6584fcf4c58ca21581b1b8b0254be442fb0349e519d5f0a8448c0e443"
+    },
+    "initial-probe.sh": {
+      "bytes": 2643,
+      "sha256": "d2bb013396dd68ae857996ff725f1e7f0b24c1704bb6a8fa51bac6ad17ca28cf"
+    },
+    "initial-probe.txt": {
+      "bytes": 807,
+      "sha256": "bfdda40e5967544afffa50f9cb555cffc55ac090bdfd2e83c2eece30513a10f1"
+    },
+    "installed-monstart": {
+      "bytes": 97,
+      "sha256": "a3f99a8a4659e73b6f6105973fcc46ffdbe07486158f46a6dbc430b9d75da060"
+    },
+    "installed-monstop": {
+      "bytes": 98,
+      "sha256": "35baaab90b1bf5590c01052dd53713fbde5b09d684841ec844ecfadb27e2eea6"
+    },
+    "installed-scanap": {
+      "bytes": 1764,
+      "sha256": "1dc3b5fb3a46f66418cd8822c0c7fd59defc48ea79c6ffb9207fe1e319459c8a"
+    },
+    "last-wmi-history.json": {
+      "bytes": 176399,
+      "sha256": "930bf8a58480edce828c610aea21acc3ef6b4792036b2527146348ccc1525da0"
+    },
+    "mid-stress-wmi-control.json": {
+      "bytes": 2372,
+      "sha256": "7da786450e86caa8d2c212e3fb921933e48f1e5b5d2894e146e065c33b3dc900"
+    },
+    "mid-stress-wmi.json": {
+      "bytes": 50,
+      "sha256": "5ac667b4790f5776ddf483d6e0fabfba769b4a6e0c5e61b04f11c7d8c27bae90"
+    },
+    "mid-stress-wmi.sh": {
+      "bytes": 1082,
+      "sha256": "49569454ec8d9427220eaae30108f84614a2b76f1ca89a105e6fd63d67dd22a4"
+    },
+    "mid-stress-wmi.txt": {
+      "bytes": 6748,
+      "sha256": "0b73938bdfbfa3a8661a9f7533ff27e388ddfc0c777140bad0b92362fe08d791"
+    },
+    "mixed-15min-result.json": {
+      "bytes": 4292,
+      "sha256": "ef14818d86a2e84a833737d97501a339768e8b340beb55c173210c605b379bba"
+    },
+    "mixed-15min.json": {
+      "bytes": 51,
+      "sha256": "87f6b2f0d005e2b3d6473e02f210f7f04f7b1ec72e890cb22e8e291fb6660393"
+    },
+    "mixed-15min.sh": {
+      "bytes": 7048,
+      "sha256": "e366cd7e319d7fd03b4155a955df6ea398465fc07a78f73c0765d0331023f775"
+    },
+    "mixed-15min.txt": {
+      "bytes": 1989459,
+      "sha256": "528a38020ccf6e7c36d8563b4f4ec7741faab305bcf313035d1591d901a0a584"
+    },
+    "mounted.py": {
+      "bytes": 1219,
+      "sha256": "8e0a2a40c56be5c1b074e2f9dd2c1c9be0391e684eac6bc3b7df533252317d15"
+    },
+    "p2p-inspect.json": {
+      "bytes": 50,
+      "sha256": "3c507b5a7d352994ee606af3f755590194c61e8ed2955f1c0291863d0ab3114a"
+    },
+    "p2p-inspect.sh": {
+      "bytes": 244,
+      "sha256": "ec381b8765593727c5ea1e3e0be44a0eaf3496ed9348fed77f20c031856f2741"
+    },
+    "p2p-inspect.txt": {
+      "bytes": 22727,
+      "sha256": "a2a205de8d0ccf7490eab28456fb74272f059d749207f0d5e3a4bdf6c83e47bb"
+    },
+    "pno-log-check.json": {
+      "bytes": 77,
+      "sha256": "091333939cfbba6643b5adfd12d0e707898586ba3fb3b7546e3f431e8fa35785"
+    },
+    "pno-retest.json": {
+      "bytes": 50,
+      "sha256": "01c666e4d8954f69a88581eb19f165ceeb47aa7060bfa70655931a17cdb1e018"
+    },
+    "pno-retest.sh": {
+      "bytes": 2422,
+      "sha256": "43221a910d4c6abda61a0bcdd3d23fcd9f878efee0eeb341c90b03330837d540"
+    },
+    "pno-retest.txt": {
+      "bytes": 2142,
+      "sha256": "495c4604e3aa439ec1528acd89b749198ec69faba5636f1f87e11e89bf51cdbc"
+    },
+    "pno-setup-and-test.json": {
+      "bytes": 50,
+      "sha256": "c5c0f682ffc337e7f2a13c28f98abf20e300aa0c33a8e7d95e0f3855854dec36"
+    },
+    "pno-setup-and-test.sh": {
+      "bytes": 2422,
+      "sha256": "43221a910d4c6abda61a0bcdd3d23fcd9f878efee0eeb341c90b03330837d540"
+    },
+    "pno-setup-and-test.txt": {
+      "bytes": 1774,
+      "sha256": "1466a6e0fdfd0096eb97befc1b2b566f727070ad4f02d5d708670305f3105ce3"
+    },
+    "post-stress-probe.json": {
+      "bytes": 50,
+      "sha256": "41d73437b8771d7eea75bb7b78f9adda3011b36001d7b1574543f26c4dda9a7e"
+    },
+    "post-stress-probe.sh": {
+      "bytes": 2716,
+      "sha256": "cfbacdb7a5e284dab4dc1568b457c317b83c4a7aadb21a8194439a21ac672882"
+    },
+    "post-stress-probe.txt": {
+      "bytes": 847,
+      "sha256": "b3245777c4c51b7ce1ca9d3f045c648565b856eafb91d1aab4acc32fc1170a15"
+    },
+    "probe-after-pno.json": {
+      "bytes": 50,
+      "sha256": "cca5c5a1df8330518324a24a35a0b188e35c514eca0a02e77956ff97094bda88"
+    },
+    "probe-after-pno.sh": {
+      "bytes": 2716,
+      "sha256": "cfbacdb7a5e284dab4dc1568b457c317b83c4a7aadb21a8194439a21ac672882"
+    },
+    "probe-after-pno.txt": {
+      "bytes": 782,
+      "sha256": "cbf9b29d3c51611a3ab95dd634903aad37ee12e3b8a59cf66cdd14a1a969dd74"
+    },
+    "probe.py": {
+      "bytes": 1346,
+      "sha256": "16a1e4fb84300cc444650027a332893a156743aa6dc063b76efa3c32a92c2c10"
+    },
+    "progress.py": {
+      "bytes": 750,
+      "sha256": "cc6d4c4b8df610da673676fe3cf48680f8e4edc4085e62dd344718f1bddb3c0d"
+    },
+    "retune_matrix.py": {
+      "bytes": 4719,
+      "sha256": "adea67d7662b0638179b74329efdf5900a2ea93e28a6224b5561a9da369af9e4"
+    },
+    "run_python_long.py": {
+      "bytes": 573,
+      "sha256": "51b1eb75651adf2fcf3744e37c38e3690847fd7fad847d064fbc5c1611c3abb0"
+    },
+    "sharing-status.json": {
+      "bytes": 50,
+      "sha256": "94c5fb31dad8a23bc7d29955b62711014d7618b4fa4bb04ef8af57b13aa3645e"
+    },
+    "sharing-status.sh": {
+      "bytes": 97,
+      "sha256": "137da22e52733a6ebeaeecea14745b0ef19308780cd847ce107ad58ee9f171b0"
+    },
+    "sharing-status.txt": {
+      "bytes": 146,
+      "sha256": "5007aa988f2fb741dc204af1ce4760592c77fadeb0c058a508d99b2bab6ce164"
+    },
+    "stop-dmesg-watch": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stress-dmesg-stream.txt": {
+      "bytes": 19125372,
+      "sha256": "16ac1ff8408222e898f5d637ca2328ab7506d52d8b3a3d7f585d2d7c60dd3d50"
+    },
+    "stress-dmesg-watch.json": {
+      "bytes": 108,
+      "sha256": "d3ec0a05416bcc9093949a7ca76358bca1083b6083839216349a7f644ec6c262"
+    },
+    "stress-summary.json": {
+      "bytes": 654,
+      "sha256": "a7bd66169b3a3cbfa2393f1e3cb5bfc25c39480dfb1f1ca740c5fa7ec0645aeb"
+    },
+    "watch_dmesg.py": {
+      "bytes": 1034,
+      "sha256": "9127c5db98dd634bd9d73bf57299e287a63df5781b590db943737ee163e05567"
+    },
+    "wide40-prepare.json": {
+      "bytes": 50,
+      "sha256": "e043a2b3cfab60ed00c4a0992a1e59bf3f4fb2d6b76b52d675c14c932518f727"
+    },
+    "wide40-prepare.sh": {
+      "bytes": 1068,
+      "sha256": "02cf1c5722faedd6909123b6311096b3a6e3af4623464a8d1369a53acda5b305"
+    },
+    "wide40-prepare.txt": {
+      "bytes": 395,
+      "sha256": "d7429e49da21468c9dce21f18b5cc3305ecfd6f38fc40b2be0430a563fcc6530"
+    },
+    "wide40-queue.json": {
+      "bytes": 50,
+      "sha256": "76bb0bcecc5b308bdeaa75396e14310f147bdaaa48731aa4fddda73cc94093c1"
+    },
+    "wide40-queue.sh": {
+      "bytes": 3596,
+      "sha256": "e2d0f67ca97a5db92019de05cacac3d0e54b311d11d25f66c191aac04397ba56"
+    },
+    "wide40-queue.txt": {
+      "bytes": 1667,
+      "sha256": "022d1641876177fab4f247db2ef5cd31c63a2c80136b70fe5c0973c45f829962"
+    },
+    "wide80-prepare.json": {
+      "bytes": 50,
+      "sha256": "3d3b4483e2cd71d7357c6138d896681b04a144481f27b9e16a3771272fc9f9df"
+    },
+    "wide80-prepare.sh": {
+      "bytes": 1070,
+      "sha256": "35bdd99afdd7db9250eda1bbf6b1d676b0e883dea5dc19ae17e5917057cd761f"
+    },
+    "wide80-prepare.txt": {
+      "bytes": 397,
+      "sha256": "6e7387e128d05db9fcbfc7232d926279fa9055369337bd335fab55d89955b862"
+    },
+    "wide80-queue.json": {
+      "bytes": 50,
+      "sha256": "284aef4dcca0ae8c1f15de4b48b42928c066d7a8a8c8e63f7bc7ea1c39c57153"
+    },
+    "wide80-queue.sh": {
+      "bytes": 3596,
+      "sha256": "e2d0f67ca97a5db92019de05cacac3d0e54b311d11d25f66c191aac04397ba56"
+    },
+    "wide80-queue.txt": {
+      "bytes": 1663,
+      "sha256": "e258895adf97fedfca2af5e72005d9ee6dcdd6e8c37d28590b4ae7c4dad1b0ee"
+    },
+    "wide_queue.py": {
+      "bytes": 1986,
+      "sha256": "24e90b950b5d3a80a7e82f0417cd55b90b9ee34123105e7902399dcadb9331b1"
+    }
+  }
+}
